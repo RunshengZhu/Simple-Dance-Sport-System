@@ -1,0 +1,19 @@
+{
+  "app_name": "体育舞蹈赛事独立打分软件",
+  "version": "1.0.0",
+  "current_event": null,
+  "recent_events": [],
+  "default_data_dir": null,
+  "events_dir": null,
+  "log_level": "DEBUG",
+  "auto_save": true,
+  "auto_save_interval": 300,
+  "backup_count": 5,
+  "ui": {
+    "theme": "default",
+    "font_size": 10,
+    "window_size": "1200x800",
+    "window_position": "center"
+  },
+  "export_dir": null
+}

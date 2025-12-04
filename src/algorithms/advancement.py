@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+晋级分组算法模块
+"""
+
+import random
+from typing import List, Dict, Tuple, Any
+from ..utils.logger import get_logger
+
+logger = get_logger()
+
+
+def snake_distribution(competitors: List[int], group_count: int) -> Dict[int, List[int]]:
+    """
+    蛇形排列法分配选手到各组
+    
+    Args:
+        competitors: 选手背番号列表（已按成绩排序）
+        group_count: 组数
+        
+    Returns:
+        Dict[int, List[int]]: 组号到选手列表的映射
+    """
+    if not competitors or group_count <= 0:
+        return {}
+    
+    # 初始化各组
+    groups = {i: [] for i in range(group_count)}
+    
+    # 蛇形分配
+    for i, competitor in enumerate(competitors):
+        group_index = i % group_count
+        
+        # 奇数轮（第1, 3, 5...轮）正向分配
+        # 偶数轮（第2, 4, 6...轮）反向分配
+        round_num = i // group_count
+        if round_num % 2 == 1:
+            # 偶数轮反向分配
+            group_index = group_count - 1 - (i % group_count)
+        
+        groups[group_index].append(competitor)
+    
+    logger.debug(f"蛇形分配完成: {len(competitors)}名选手分配到{group_count}组")
+    return groups
+
+
+def random_distribution(competitors: List[int], group_count: int) -> Dict[int, List[int]]:
+    """
+    随机分配法分配选手到各组
+    
+    Args:
+        competitors: 选手背番号列表
+        group_count: 组数
+        
+    Returns:
+        Dict[int, List[int]]: 组号到选手列表的映射
+    """
+    if not competitors or group_count <= 0:
+        return {}
+    
+    # 随机打乱选手顺序
+    shuffled_competitors = competitors.copy()
+    random.shuffle(shuffled_competitors)
+    
+    # 初始化各组
+    groups = {i: [] for i in range(group_count)}
+    
+    # 轮流分配选手到各组
+    for i, competitor in enumerate(shuffled_competitors):
+        group_index = i % group_count
+        groups[group_index].append(competitor)
+    
+    logger.debug(f"随机分配完成: {len(competitors)}名选手分配到{group_count}组")
+    return groups
+
+
+def distribute_competitors_to_events(
+    competitors: List[int], 
+    events: List[Any], 
+    method: str = "snake"
+) -> Dict[str, List[int]]:
+    """
+    将选手分配到各个场次
+    
+    Args:
+        competitors: 选手背番号列表（已按成绩排序）
+        events: 场次列表
+        method: 分配方法，"snake"或"random"
+        
+    Returns:
+        Dict[str, List[int]]: 场次ID到选手列表的映射
+    """
+    if not competitors or not events:
+        return {}
+    
+    # 按场次ID排序，确保分配顺序一致
+    sorted_events = sorted(events, key=lambda e: e.id)
+    group_count = len(sorted_events)
+    
+    # 根据方法选择分配算法
+    if method == "snake":
+        groups = snake_distribution(competitors, group_count)
+    elif method == "random":
+        groups = random_distribution(competitors, group_count)
+    else:
+        logger.error(f"未知的分配方法: {method}")
+        return {}
+    
+    # 将组号映射到场次ID
+    event_assignments = {}
+    for i, event in enumerate(sorted_events):
+        event_assignments[event.id] = groups.get(i, [])
+    
+    logger.debug(f"选手分配完成: 使用{method}方法分配到{group_count}个场次")
+    return event_assignments
+
+
+def get_advancing_competitors(project_id: str, round: str, data_manager: Any) -> List[int]:
+    """
+    获取指定项目和轮次的所有晋级选手
+    
+    Args:
+        project_id: 项目编号
+        round: 轮次
+        data_manager: 数据管理器实例
+        
+    Returns:
+        List[int]: 晋级选手背番号列表（按成绩排序）
+    """
+    # 获取该轮次的所有场次
+    events = data_manager.get_events_by_project_and_round(project_id, round)
+    if not events:
+        return []
+    
+    # 收集所有晋级的选手
+    advancing_competitors = set()
+    
+    for event in events:
+        # 获取场次结果
+        result = data_manager.get_results(event.id)
+        if not result:
+            continue
+        
+        results_data = result.results_data
+        
+        # 从结果中获取晋级选手
+        if 'overall_results' in results_data:
+            overall_results = results_data['overall_results']
+            # 筛选晋级状态为True的选手
+            for result_item in overall_results:
+                # 处理字典格式的结果项
+                if isinstance(result_item, dict):
+                    if result_item.get('advancement_status', False):
+                        advancing_competitors.add(result_item.get('competitor_number'))
+                else:
+                    # 处理对象格式的结果项
+                    if result_item.advancement_status:
+                        advancing_competitors.add(result_item.competitor_number)
+    
+    # 获取选手成绩信息并排序
+    competitor_scores = {}
+    for event in events:
+        result = data_manager.get_results(event.id)
+        if not result:
+            continue
+        
+        results_data = result.results_data
+        
+        if 'overall_results' in results_data:
+            overall_results = results_data['overall_results']
+            for result_item in overall_results:
+                # 处理字典格式的结果项
+                if isinstance(result_item, dict):
+                    if result_item.get('advancement_status', False):
+                        competitor_scores[result_item.get('competitor_number')] = result_item.get('total_score', result_item.get('score', 0))
+                else:
+                    # 处理对象格式的结果项
+                    if result_item.advancement_status:
+                        competitor_scores[result_item.competitor_number] = result_item.total_score
+    
+    # 按成绩从高到低排序（Mark制分数越高越好）
+    sorted_competitors = sorted(
+        advancing_competitors, 
+        key=lambda x: competitor_scores.get(x, 0), 
+        reverse=True
+    )
+    
+    logger.debug(f"获取晋级选手完成: 项目{project_id}轮次{round}共{len(sorted_competitors)}名选手晋级")
+    return sorted_competitors
