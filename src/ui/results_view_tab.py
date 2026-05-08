@@ -10,14 +10,14 @@ from typing import Dict, List, Optional, Tuple, Any
 import datetime
 
 from src.models.data_models import Competition, Event, Competitor
-from src.models.data_manager import DataManager
+from src.models.optimized_data_manager import OptimizedDataManager
 from src.utils.results_view_manager import ResultsViewManager
 
 
 class ResultsViewTab:
     """结果查看选项卡"""
     
-    def __init__(self, parent: tk.Widget, data_manager: DataManager):
+    def __init__(self, parent: tk.Widget, data_manager: OptimizedDataManager):
         """
         初始化结果查看选项卡
         

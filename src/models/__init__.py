@@ -8,10 +8,10 @@ from .data_models import (
     Competitor, Judge, Dance, Event, ScoreRecord, Result, Competition,
     ScoringType, EventStatus
 )
-from .data_manager import DataManager, data_manager
+from .optimized_data_manager import OptimizedDataManager, data_manager
 
 __all__ = [
     'Competitor', 'Judge', 'Dance', 'Event', 'ScoreRecord', 'Result', 'Competition',
     'ScoringType', 'EventStatus',
-    'DataManager', 'data_manager'
+    'OptimizedDataManager', 'data_manager'
 ]

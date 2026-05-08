@@ -1482,3 +1482,5 @@ class OptimizedDataManager:
         except Exception as e:
             self.logger.error(f"删除赛事失败: {e}")
             return False
+
+data_manager = OptimizedDataManager()

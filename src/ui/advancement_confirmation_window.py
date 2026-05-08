@@ -11,7 +11,7 @@ import logging
 
 from ..models.data_models import Event, Competitor
 from ..algorithms.advancement import distribute_competitors_to_events, get_advancing_competitors
-from ..models.data_manager import DataManager
+from ..models.optimized_data_manager import OptimizedDataManager
 from ..utils.logger import get_logger
 from .window_utils import center_window
 
@@ -24,7 +24,7 @@ class AdvancementConfirmationWindow:
     def __init__(
         self, 
         parent: tk.Widget, 
-        data_manager: DataManager,
+        data_manager: OptimizedDataManager,
         project_id: str,
         current_round: str,
         previous_round_events: List[Event],
