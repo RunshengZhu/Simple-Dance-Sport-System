@@ -1,16 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { login, getUserInfo } from '@/api/auth'
+import { login } from '@/api/auth'
 
 export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem('token') || '')
-  const username = ref('')
+  const userName = ref('')
   const role = ref('')
 
-  const loginAction = async (username: string, password: string) => {
-    const res: any = await login(username, password)
+  const loginAction = async (name: string, pwd: string) => {
+    const res: any = await login(name, pwd)
     token.value = res.access_token
-    username.value = res.username
+    userName.value = res.username
     role.value = res.role
     localStorage.setItem('token', res.access_token)
     return res
@@ -18,14 +18,14 @@ export const useUserStore = defineStore('user', () => {
 
   const logout = () => {
     token.value = ''
-    username.value = ''
+    userName.value = ''
     role.value = ''
     localStorage.removeItem('token')
   }
 
   return {
     token,
-    username,
+    userName,
     role,
     loginAction,
     logout

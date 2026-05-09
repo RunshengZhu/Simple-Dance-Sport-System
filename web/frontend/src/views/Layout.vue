@@ -30,7 +30,7 @@
           </el-icon>
         </div>
         <div class="header-right">
-          <span class="username">{{ userStore.username }}</span>
+          <span class="username">{{ userStore.userName }}</span>
           <el-button type="danger" text @click="handleLogout">退出</el-button>
         </div>
       </el-header>
