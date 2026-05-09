@@ -5,6 +5,16 @@ export const getRanking = (competitionId: string) => {
   return request.get(`/api/v1/competitions/${competitionId}/ranking`)
 }
 
+// 计算单位总分
+export const calculateRanking = (competitionId: string) => {
+  return request.post(`/api/v1/competitions/${competitionId}/calculate-ranking`)
+}
+
+// 获取单位详情
+export const getUnitDetails = (competitionId: string, unit: string) => {
+  return request.get(`/api/v1/competitions/${competitionId}/ranking/${encodeURIComponent(unit)}`)
+}
+
 // 获取奖项配置
 export const getAwardConfig = (eventId: string) => {
   return request.get(`/api/v1/events/${eventId}/award-config`)

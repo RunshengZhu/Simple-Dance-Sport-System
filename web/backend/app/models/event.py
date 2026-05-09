@@ -14,6 +14,7 @@ class Event(Base):
     scoring_type = Column(String(50), nullable=False)
     dances = Column(JSON, default=[])
     advancement_count = Column(Integer, default=0)
+    competitor_numbers = Column(JSON, default=[])
     status = Column(String(50), default="pending")
     parent_event_id = Column(String(36), ForeignKey("events.id"))
     child_event_id = Column(String(36), ForeignKey("events.id"))

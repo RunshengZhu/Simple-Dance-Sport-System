@@ -10,6 +10,7 @@ class EventBase(BaseModel):
     scoring_type: str
     dances: List[str] = []
     advancement_count: int = 0
+    competitor_numbers: List[str] = []
     status: str = "pending"
 
 
@@ -23,6 +24,7 @@ class EventUpdate(BaseModel):
     scoring_type: Optional[str] = None
     dances: Optional[List[str]] = None
     advancement_count: Optional[int] = None
+    competitor_numbers: Optional[List[str]] = None
     status: Optional[str] = None
 
 

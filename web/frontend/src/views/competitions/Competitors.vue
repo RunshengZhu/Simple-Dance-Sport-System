@@ -3,11 +3,41 @@
     <el-page-header @back="$router.back()" content="选手管理" />
 
     <div class="page-header mt-20">
-      <h3>{{ competitionName }} - 选手列表</h3>
-      <el-button type="primary" @click="showDialog = true">添加选手</el-button>
+      <h3>{{ competitionName }} - 选手列表 ({{ list.length }}人)</h3>
+      <div class="header-actions">
+        <el-button type="success" @click="handleImportTestData" :loading="importing">
+          导入测试数据
+        </el-button>
+        <el-button type="primary" @click="showDialog = true">添加选手</el-button>
+      </div>
     </div>
 
-    <el-card>
+    <el-row :gutter="20" class="mt-20">
+      <el-col :span="24">
+        <el-card>
+          <template #header>
+            <div class="flex-between">
+              <span>导入选手 (CSV)</span>
+              <el-upload
+                :action="`/api/v1/competitions/${compId}/import-competitors`"
+                :headers="{ Authorization: `Bearer ${token}` }"
+                :show-file-list="false"
+                :on-success="handleUploadSuccess"
+                :on-error="handleUploadError"
+                accept=".csv"
+              >
+                <el-button type="primary" size="small">上传CSV文件</el-button>
+              </el-upload>
+            </div>
+          </template>
+          <el-alert type="info" :closable="false">
+            CSV格式要求: 背番号,姓名,学校/单位,参赛组别
+          </el-alert>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-card class="mt-20">
       <el-table :data="list" v-loading="loading">
         <el-table-column prop="number" label="番号" width="80" />
         <el-table-column prop="name" label="姓名" />
@@ -64,20 +94,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getCompetition } from '@/api/competitions'
 import { getCompetitors, createCompetitor, deleteCompetitor } from '@/api/competitors'
+import request from '@/api/request'
 
 const route = useRoute()
 const compId = route.params.id as string
+
+const token = computed(() => localStorage.getItem('token') || '')
 
 const competitionName = ref('')
 const list = ref<any[]>([])
 const loading = ref(false)
 const showDialog = ref(false)
 const submitting = ref(false)
+const importing = ref(false)
 
 const form = reactive({
   number: '',
@@ -132,7 +166,37 @@ const handleDelete = async (id: string) => {
   }
 }
 
+const handleImportTestData = async () => {
+  importing.value = true
+  try {
+    const res: any = await request.post(`/api/v1/competitions/${compId}/setup-from-test-data`)
+    ElMessage.success(`导入完成: ${res.competitors_imported}选手, ${res.events_imported}场次`)
+    loadData()
+  } catch (e) {
+    console.error(e)
+    ElMessage.error('导入失败')
+  } finally {
+    importing.value = false
+  }
+}
+
+const handleUploadSuccess = (res: any) => {
+  ElMessage.success(`导入成功: ${res.imported}选手`)
+  loadData()
+}
+
+const handleUploadError = () => {
+  ElMessage.error('导入失败')
+}
+
 onMounted(() => {
   loadData()
 })
 </script>
+
+<style scoped>
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+</style>

@@ -73,7 +73,10 @@ class ScoringService:
             return [], {}
 
         player_list = [c["number"] for c in competitors]
-        valid_scores = self._validate_skating_scores(player_list, scores)
+        
+        valid_scores = {}
+        for judge_id, judge_scores in scores.items():
+            valid_scores[judge_id] = judge_scores
 
         if not valid_scores:
             return [{"competitor_number": p, "rank": 1} for p in player_list], {}
@@ -84,120 +87,68 @@ class ScoringService:
 
         rankings = {}
         decision_ranges = {}
-        remaining = player_list.copy()
-        current_rank = 1
-
-        while remaining:
-            winner = self._determine_winner(
-                remaining, valid_scores, majority_threshold, num_players
-            )
-
-            if winner:
-                rankings[winner] = current_rank
-                decision_ranges[winner] = self._find_decision_range(
-                    winner, valid_scores, majority_threshold, num_players
-                )
-                remaining.remove(winner)
-                current_rank += 1
+        
+        for player in player_list:
+            total_points = 0
+            rank_counts = {}
+            for judge_id, judge_scores in valid_scores.items():
+                if player in judge_scores:
+                    rank = judge_scores[player]
+                    rank_counts[rank] = rank_counts.get(rank, 0) + 1
+                    total_points += rank
+            
+            if rank_counts:
+                avg_rank = total_points / len([j for j in valid_scores.values() if player in j])
+                rankings[player] = {
+                    "avg_rank": avg_rank,
+                    "first_place_votes": rank_counts.get(1, 0),
+                    "total_rank": total_points
+                }
             else:
-                for p in remaining:
-                    rankings[p] = current_rank
-                break
+                rankings[player] = {
+                    "avg_rank": num_players,
+                    "first_place_votes": 0,
+                    "total_rank": num_players * num_players
+                }
+
+        sorted_players = sorted(player_list, key=lambda p: (
+            -rankings[p]["first_place_votes"],
+            rankings[p]["avg_rank"],
+            rankings[p]["total_rank"]
+        ))
+
+        final_results = []
+        current_rank = 1
+        prev_avg = None
+        prev_first = None
+
+        for i, player in enumerate(sorted_players):
+            r = rankings[player]
+            if prev_avg is not None and abs(r["avg_rank"] - prev_avg) < 0.01 and r["first_place_votes"] == prev_first:
+                pass
+            else:
+                current_rank = i + 1
+            
+            final_results.append({
+                "competitor_number": player,
+                "rank": current_rank,
+                "avg_rank": r["avg_rank"],
+                "first_place_votes": r["first_place_votes"]
+            })
+            prev_avg = r["avg_rank"]
+            prev_first = r["first_place_votes"]
 
         results = []
         for comp in competitors:
+            comp_result = next((r for r in final_results if r["competitor_number"] == comp["number"]), None)
             results.append({
                 "competitor_number": comp["number"],
                 "competitor_name": comp.get("name", ""),
-                "rank": rankings.get(comp["number"], current_rank),
-                "decision_range": decision_ranges.get(comp["number"], {})
+                "rank": comp_result["rank"] if comp_result else 1
             })
 
         results.sort(key=lambda x: x["rank"])
-        return results, decision_ranges
-
-    def _validate_skating_scores(
-        self,
-        players: List[str],
-        scores: Dict[str, Dict[str, int]]
-    ) -> Dict[str, Dict[str, int]]:
-        """验证滑冰系统评分"""
-        valid_scores = {}
-        n = len(players)
-
-        for judge_id, judge_scores in scores.items():
-            if len(judge_scores) != n:
-                continue
-            if any(p not in judge_scores for p in players):
-                continue
-
-            ranks = list(judge_scores.values())
-            if min(ranks) < 1 or max(ranks) > n:
-                continue
-            if len(set(ranks)) != n:
-                continue
-
-            valid_scores[judge_id] = judge_scores
-
-        return valid_scores
-
-    def _calculate_majority_counts(
-        self,
-        players: List[str],
-        scores: Dict[str, Dict[str, int]],
-        position: int
-    ) -> Dict[str, int]:
-        """计算获得指定名次及以下票数的选手"""
-        counts = {p: 0 for p in players}
-        for judge in scores:
-            for player in players:
-                if scores[judge].get(player, 999) <= position:
-                    counts[player] += 1
-        return counts
-
-    def _determine_winner(
-        self,
-        remaining: List[str],
-        scores: Dict[str, Dict[str, int]],
-        threshold: int,
-        total_players: int
-    ) -> Optional[str]:
-        """确定当前名次的获胜者"""
-        position = 1
-
-        while position <= total_players:
-            majority = self._calculate_majority_counts(remaining, scores, position)
-            candidates = [p for p in remaining if majority[p] >= threshold]
-
-            if len(candidates) == 1:
-                return candidates[0]
-            elif len(candidates) > 1:
-                best = min(candidates, key=lambda p: scores[list(scores.keys())[0]][p])
-                return best
-
-            position += 1
-
-        return remaining[0] if remaining else None
-
-    def _find_decision_range(
-        self,
-        player: str,
-        scores: Dict[str, Dict[str, int]],
-        threshold: int,
-        total_players: int
-    ) -> Dict[str, Any]:
-        """找出决胜区间"""
-        rank = scores[list(scores.keys())[0]][player]
-        start = max(1, rank - 2)
-        end = min(total_players, rank + 2)
-
-        for pos in range(1, total_players + 1):
-            majority = self._calculate_majority_counts([player], scores, pos)
-            if majority[player] >= threshold:
-                end = pos
-                break
-
-        return {"start": start, "end": end, "rank": rank}
+        return results, {}
 
     def calculate_advancement(
         self,

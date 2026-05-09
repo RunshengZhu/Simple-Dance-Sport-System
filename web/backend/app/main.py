@@ -9,6 +9,8 @@ from app.api.v1.competitors import router as competitors_router
 from app.api.v1.scoring import router as scoring_router
 from app.api.v1.results import router as results_router
 from app.api.v1.ranking import router as ranking_router
+from app.api.v1.import_data import router as import_router
+from app.api.v1.export import router as export_router
 
 app = FastAPI(
     title="体育舞蹈赛事评分系统",
@@ -32,6 +34,8 @@ app.include_router(competitors_router, prefix="/api/v1/competitions", tags=["选
 app.include_router(scoring_router, prefix="/api/v1/events", tags=["评分"])
 app.include_router(results_router, prefix="/api/v1/events", tags=["成绩"])
 app.include_router(ranking_router, prefix="/api/v1", tags=["排名"])
+app.include_router(import_router, prefix="/api/v1/competitions", tags=["导入"])
+app.include_router(export_router, prefix="/api/v1/competitions", tags=["导出"])
 
 @app.on_event("startup")
 async def startup():

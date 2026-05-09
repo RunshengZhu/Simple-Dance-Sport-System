@@ -86,7 +86,17 @@ async def calculate_results(event_id: str, db: AsyncSession = Depends(get_db)):
     if not event:
         raise HTTPException(status_code=404, detail="场次不存在")
 
-    comp_result = await db.execute(select(Competitor).where(Competitor.competition_id == event.competition_id))
+    competitor_numbers_in_event = event.competitor_numbers or []
+    
+    if competitor_numbers_in_event:
+        comp_query = select(Competitor).where(
+            Competitor.competition_id == event.competition_id,
+            Competitor.number.in_(competitor_numbers_in_event)
+        )
+    else:
+        comp_query = select(Competitor).where(Competitor.competition_id == event.competition_id)
+    
+    comp_result = await db.execute(comp_query)
     competitors = [{"id": c.id, "number": c.number, "name": c.name, "unit": c.unit,
                      "is_couple": c.is_couple, "partner_unit": c.partner_unit}
                     for c in comp_result.scalars().all()]
@@ -94,16 +104,17 @@ async def calculate_results(event_id: str, db: AsyncSession = Depends(get_db)):
     scores_result = await db.execute(select(ScoreRecord).where(ScoreRecord.event_id == event_id))
     scores = scores_result.scalars().all()
 
+    event_competitor_numbers = [c["number"] for c in competitors]
+
     if event.scoring_type == "mark":
         scores_by_judge: Dict[str, List[str]] = {}
         for s in scores:
             if s.judge_id not in scores_by_judge:
                 scores_by_judge[s.judge_id] = []
-            if s.mark:
+            if s.mark and s.competitor_number in event_competitor_numbers:
                 scores_by_judge[s.judge_id].append(s.competitor_number)
 
-        competitor_numbers = [c["number"] for c in competitors]
-        results = scoring_service.calculate_mark_results(competitor_numbers, scores_by_judge)
+        results = scoring_service.calculate_mark_results(event_competitor_numbers, scores_by_judge)
 
         competitor_map = {c["number"]: c for c in competitors}
         for r in results:
@@ -116,12 +127,12 @@ async def calculate_results(event_id: str, db: AsyncSession = Depends(get_db)):
         for s in scores:
             if s.judge_id not in scores_by_judge:
                 scores_by_judge[s.judge_id] = {}
-            if s.placement:
+            if s.placement and s.competitor_number in event_competitor_numbers:
                 scores_by_judge[s.judge_id][s.competitor_number] = s.placement
 
-        results, _ = scoring_service.calculate_skating_results(competitors, scores_by_judge)
+        event_competitors = [c for c in competitors if c["number"] in event_competitor_numbers]
+        results, _ = scoring_service.calculate_skating_results(event_competitors, scores_by_judge)
 
-    competition_id = event.competition_id
     await db.execute(delete(Result).where(Result.event_id == event_id))
 
     for r in results:
