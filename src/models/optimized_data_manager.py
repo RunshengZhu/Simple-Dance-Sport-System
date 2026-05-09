@@ -40,8 +40,14 @@ class OptimizedDataManager:
             'events': 'events.json',  # 场次信息
             'scores': 'scores',  # 评分记录目录，每个场次一个文件
             'results': 'results',  # 结果目录，每个场次一个文件
-            'exports': 'exports'  # 导出文件目录
+            'exports': 'exports',  # 导出文件目录
+            'award_configs': 'award_configs.json',  # 奖项得分配置
+            'unit_points': 'unit_points.json'  # 单位总分
         }
+        
+        # 内存缓存
+        self._award_configs_cache: Dict[str, Any] = {}  # 奖项配置缓存
+        self._unit_points_cache: Optional[Any] = None  # 单位总分缓存
     
     def _get_event_dir(self, event_name: str) -> str:
         """获取赛事目录路径"""
@@ -1478,9 +1484,122 @@ class OptimizedDataManager:
             
             self.logger.info(f"成功删除赛事: {event_name}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"删除赛事失败: {e}")
             return False
+
+    def save_award_config(self, config_data: Dict[str, Any]) -> bool:
+        """保存奖项得分配置"""
+        try:
+            if not self.current_event_name:
+                return False
+
+            file_path = self._get_file_path(self.current_event_name, 'award_configs')
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
+
+            self._award_configs_cache = config_data
+            return True
+        except Exception as e:
+            self.logger.error(f"保存奖项配置失败: {e}")
+            return False
+
+    def load_award_configs(self) -> Dict[str, Any]:
+        """加载奖项得分配置"""
+        try:
+            if not self.current_event_name:
+                return {}
+
+            file_path = self._get_file_path(self.current_event_name, 'award_configs')
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    self._award_configs_cache = json.load(f)
+                    return self._award_configs_cache
+            return {}
+        except Exception as e:
+            self.logger.error(f"加载奖项配置失败: {e}")
+            return {}
+
+    def save_unit_points(self, unit_points_data: Dict[str, Any]) -> bool:
+        """保存单位总分"""
+        try:
+            if not self.current_event_name:
+                return False
+
+            file_path = self._get_file_path(self.current_event_name, 'unit_points')
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(unit_points_data, f, ensure_ascii=False, indent=2)
+
+            self._unit_points_cache = unit_points_data
+            return True
+        except Exception as e:
+            self.logger.error(f"保存单位总分失败: {e}")
+            return False
+
+    def load_unit_points(self) -> Dict[str, Any]:
+        """加载单位总分"""
+        try:
+            if not self.current_event_name:
+                return {}
+
+            file_path = self._get_file_path(self.current_event_name, 'unit_points')
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    self._unit_points_cache = json.load(f)
+                    return self._unit_points_cache
+            return {}
+        except Exception as e:
+            self.logger.error(f"加载单位总分失败: {e}")
+            return {}
+
+    def calculate_unit_points(self) -> Optional['CompetitionUnitPoints']:
+        """计算单位总分"""
+        try:
+            from .data_models import CompetitionUnitPoints, AwardPointsConfig
+            from ..algorithms.unit_points import UnitPointsCalculator
+
+            if not self.current_competition:
+                return None
+
+            competition_id = f"{self.current_competition.name}_{self.current_competition.date.replace('-', '')}"
+            unit_points = CompetitionUnitPoints(competition_id=competition_id)
+            calculator = UnitPointsCalculator()
+
+            award_configs = self.load_award_configs()
+
+            for event_id, event in self.current_competition.events.items():
+                results = self.get_results(event_id)
+                if not results:
+                    continue
+
+                config_data = award_configs.get(event_id)
+                if config_data:
+                    award_config = AwardPointsConfig.from_dict(config_data)
+                else:
+                    award_config = AwardPointsConfig(event_id=event_id)
+
+                records = calculator.calculate_unit_points_from_results(
+                    event=event,
+                    results=results,
+                    competitors=self.current_competition.competitors,
+                    award_config=award_config
+                )
+                calculator.add_unit_points(records)
+
+            result = calculator.export_to_competition_unit_points(competition_id)
+            self._unit_points_cache = result.to_dict()
+            self.save_unit_points(self._unit_points_cache)
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"计算单位总分失败: {e}")
+            return None
+
 
 data_manager = OptimizedDataManager()

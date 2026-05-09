@@ -33,6 +33,10 @@ class Competitor:
     name: str  # 姓名
     unit: str  # 学校/单位
     group: str  # 参赛组别
+    partner_number: Optional[str] = None  # 搭档背番号（双人项目）
+    partner_name: Optional[str] = None  # 搭档姓名
+    partner_unit: Optional[str] = None  # 搭档单位（双人项目可能来自不同单位）
+    is_couple: bool = False  # 是否为双人项目选手
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -40,7 +44,11 @@ class Competitor:
             "number": self.number,
             "name": self.name,
             "unit": self.unit,
-            "group": self.group
+            "group": self.group,
+            "partner_number": self.partner_number,
+            "partner_name": self.partner_name,
+            "partner_unit": self.partner_unit,
+            "is_couple": self.is_couple
         }
     
     @classmethod
@@ -50,7 +58,11 @@ class Competitor:
             number=str(data.get("number", "0")),
             name=data.get("name", ""),
             unit=data.get("unit", ""),
-            group=data.get("group", "")
+            group=data.get("group", ""),
+            partner_number=data.get("partner_number"),
+            partner_name=data.get("partner_name"),
+            partner_unit=data.get("partner_unit"),
+            is_couple=data.get("is_couple", False)
         )
 
 
@@ -309,6 +321,175 @@ class CompetitionResult:
             event_id=data.get("event_id", ""),
             calculation_time=calculation_time,
             results_data=data.get("results_data", {})
+        )
+
+
+@dataclass
+class AwardPointsConfig:
+    """奖项得分配置模型"""
+    event_id: str  # 场次ID
+    points: Dict[int, float] = field(default_factory=lambda: {1: 9, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1})  # 名次对应得分，默认前8名
+
+    def get_points(self, rank: int) -> float:
+        """获取指定名次的得分"""
+        return self.points.get(rank, 0.0)
+
+    def set_points(self, rank: int, points: float):
+        """设置指定名次的得分"""
+        self.points[rank] = points
+
+    def get_all_ranks(self) -> List[int]:
+        """获取所有已配置名次"""
+        return sorted(self.points.keys())
+
+    def get_max_rank(self) -> int:
+        """获取最大名次数"""
+        return max(self.points.keys()) if self.points else 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "event_id": self.event_id,
+            "points": self.points
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'AwardPointsConfig':
+        """从字典创建实例"""
+        return cls(
+            event_id=data.get("event_id", ""),
+            points=data.get("points", {1: 9, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1})
+        )
+
+
+@dataclass
+class UnitPointsRecord:
+    """单位得分记录"""
+    unit: str  # 单位名称
+    event_id: str  # 场次ID
+    event_name: str  # 场次名称
+    competitor_number: str  # 选手背番号
+    competitor_name: str  # 选手姓名
+    rank: int  # 名次
+    points: float  # 得分
+    is_split: bool = False  # 是否为分摊得分
+    split_ratio: float = 1.0  # 分摊比例
+    is_couple: bool = False  # 是否双人项目
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "unit": self.unit,
+            "event_id": self.event_id,
+            "event_name": self.event_name,
+            "competitor_number": self.competitor_number,
+            "competitor_name": self.competitor_name,
+            "rank": self.rank,
+            "points": self.points,
+            "is_split": self.is_split,
+            "split_ratio": self.split_ratio,
+            "is_couple": self.is_couple
+        }
+
+
+@dataclass
+class UnitTotalPoints:
+    """单位总分"""
+    unit: str  # 单位名称
+    total_points: float = 0.0  # 总分
+    records: List[UnitPointsRecord] = field(default_factory=list)  # 得分明细
+    rank: int = 0  # 当前排名
+
+    def add_record(self, record: UnitPointsRecord):
+        """添加得分记录"""
+        self.records.append(record)
+        self.total_points += record.points
+
+    def get_record_count(self) -> int:
+        """获取得分记录数量"""
+        return len(self.records)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "unit": self.unit,
+            "total_points": self.total_points,
+            "records": [r.to_dict() for r in self.records],
+            "rank": self.rank
+        }
+
+
+@dataclass
+class CompetitionUnitPoints:
+    """赛事单位总分汇总"""
+    competition_id: str  # 赛事ID
+    unit_points: Dict[str, UnitTotalPoints] = field(default_factory=dict)  # 单位总分字典
+    last_update: datetime = field(default_factory=datetime.now)  # 最后更新时间
+
+    def add_unit_points(self, unit: str, record: UnitPointsRecord):
+        """添加单位得分"""
+        if unit not in self.unit_points:
+            self.unit_points[unit] = UnitTotalPoints(unit=unit)
+        self.unit_points[unit].add_record(record)
+
+    def get_ranking(self) -> List[tuple]:
+        """获取单位排名"""
+        ranking = [(unit, pts.total_points) for unit, pts in self.unit_points.items()]
+        ranking.sort(key=lambda x: x[1], reverse=True)
+        for i, (unit, _) in enumerate(ranking):
+            self.unit_points[unit].rank = i + 1
+        return ranking
+
+    def get_unit_total(self, unit: str) -> float:
+        """获取单位总分"""
+        if unit in self.unit_points:
+            return self.unit_points[unit].total_points
+        return 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "competition_id": self.competition_id,
+            "unit_points": {k: v.to_dict() for k, v in self.unit_points.items()},
+            "last_update": self.last_update.isoformat()
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CompetitionUnitPoints':
+        """从字典创建实例"""
+        last_update = data.get("last_update")
+        if isinstance(last_update, str):
+            last_update = datetime.fromisoformat(last_update)
+        else:
+            last_update = datetime.now()
+
+        unit_points = {}
+        for unit, pts_data in data.get("unit_points", {}).items():
+            records = [UnitPointsRecord(
+                unit=r.get("unit", ""),
+                event_id=r.get("event_id", ""),
+                event_name=r.get("event_name", ""),
+                competitor_number=r.get("competitor_number", ""),
+                competitor_name=r.get("competitor_name", ""),
+                rank=r.get("rank", 0),
+                points=r.get("points", 0.0),
+                is_split=r.get("is_split", False),
+                split_ratio=r.get("split_ratio", 1.0),
+                is_couple=r.get("is_couple", False)
+            ) for r in pts_data.get("records", [])]
+
+            unit_pts = UnitTotalPoints(
+                unit=unit,
+                total_points=pts_data.get("total_points", 0.0),
+                records=records,
+                rank=pts_data.get("rank", 0)
+            )
+            unit_points[unit] = unit_pts
+
+        return cls(
+            competition_id=data.get("competition_id", ""),
+            unit_points=unit_points,
+            last_update=last_update
         )
 
 

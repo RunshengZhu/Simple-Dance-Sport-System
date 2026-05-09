@@ -1282,6 +1282,17 @@ class ScoringWindow:
                 messagebox.showerror("错误", "保存结果失败")
                 return
             
+            # 刷新单位总分
+            try:
+                data_manager.calculate_unit_points()
+                # 刷新打开的单位总分排名窗口
+                from ..ui.main_window import _unit_ranking_windows
+                for window in _unit_ranking_windows:
+                    if hasattr(window, 'refresh'):
+                        window.refresh()
+            except Exception as e:
+                self.logger.warning(f"刷新单位总分时出错: {str(e)}")
+            
             self.logger.info(f"场次 {self.event_id} 的结果已重新计算并保存")
             
             # 更新场次状态为已完成
@@ -1409,6 +1420,16 @@ class ScoringWindow:
             
             # 保存结果数据
             data_manager.save_results(self.event_id, results_data)
+            
+            # 刷新单位总分
+            try:
+                data_manager.calculate_unit_points()
+                from ..ui.main_window import _unit_ranking_windows
+                for window in _unit_ranking_windows:
+                    if hasattr(window, 'refresh'):
+                        window.refresh()
+            except Exception as e:
+                self.logger.warning(f"刷新单位总分时出错: {str(e)}")
             
             # 更新场次状态为已完成
             self.event.status = EventStatus.COMPLETED

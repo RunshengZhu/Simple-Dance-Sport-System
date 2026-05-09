@@ -16,8 +16,12 @@ from .event_management_tab import EventManagementTab
 from .data_import_tab import DataImportTab
 from .schedule_management_tab import ScheduleManagementTab
 from .window_utils import center_window
+from .components.unit_ranking_panel import UnitRankingWindow
 
 logger = get_logger()
+
+# Store references to unit ranking windows
+_unit_ranking_windows = []
 
 
 class MainWindow:
@@ -44,6 +48,9 @@ class MainWindow:
         
         # 创建主框架
         self.create_main_frame()
+        
+        # 创建菜单栏
+        self.create_menu_bar()
         
         # 创建顶部标题区域
         self.create_header()
@@ -154,6 +161,72 @@ class MainWindow:
         self.event_management_tab.refresh()
         self.data_import_tab.refresh()
         self.schedule_management_tab.refresh()
+    
+    def create_menu_bar(self):
+        """创建菜单栏"""
+        self.menubar = tk.Menu(self.root)
+        self.root.config(menu=self.menubar)
+        
+        tools_menu = tk.Menu(self.menubar, tearoff=0)
+        self.menubar.add_cascade(label="工具", menu=tools_menu)
+        
+        tools_menu.add_command(label="设置奖项得分", command=self.open_award_points_dialog)
+        tools_menu.add_command(label="单位总分排名", command=self.open_unit_ranking)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="刷新总分", command=self.refresh_unit_points)
+    
+    def open_award_points_dialog(self):
+        """打开奖项得分设置对话框"""
+        from .components.award_points_dialog import BatchAwardPointsDialog
+        
+        if not data_manager.current_competition:
+            messagebox.showwarning("警告", "请先打开一个赛事")
+            return
+        
+        events = []
+        for event in data_manager.current_competition.events:
+            events.append({"id": event.id, "name": event.name})
+        
+        if not events:
+            messagebox.showinfo("提示", "当前赛事没有场次")
+            return
+        
+        def on_apply(configs):
+            for event_id, config in configs.items():
+                data_manager.save_award_config(event_id, config)
+            messagebox.showinfo("成功", f"已保存 {len(configs)} 个场次的奖项得分配置")
+        
+        dialog = BatchAwardPointsDialog(self.root, events, on_apply=on_apply)
+        dialog.show()
+    
+    def open_unit_ranking(self):
+        """打开单位总分排名窗口"""
+        global _unit_ranking_windows
+        
+        if not data_manager.current_competition:
+            messagebox.showwarning("警告", "请先打开一个赛事")
+            return
+        
+        window = UnitRankingWindow(self.root, data_manager=data_manager)
+        _unit_ranking_windows.append(window)
+        window.protocol("WM_DELETE_WINDOW", lambda: self._close_unit_ranking_window(window))
+    
+    def _close_unit_ranking_window(self, window):
+        """关闭单位总分排名窗口"""
+        global _unit_ranking_windows
+        if window in _unit_ranking_windows:
+            _unit_ranking_windows.remove(window)
+        window.destroy()
+    
+    def refresh_unit_points(self):
+        """刷新单位总分"""
+        for window in _unit_ranking_windows:
+            if hasattr(window, 'refresh'):
+                window.refresh()
+        
+        if not _unit_ranking_windows:
+            data_manager.calculate_unit_points()
+            messagebox.showinfo("成功", "单位总分已刷新")
     
     def on_closing(self):
         """窗口关闭事件处理"""
