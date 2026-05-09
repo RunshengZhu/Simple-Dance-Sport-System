@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import timedelta
+import uuid
 from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
@@ -14,12 +16,24 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db)
 ):
-    from sqlalchemy import select
-    
     result = await db.execute(select(User).where(User.username == form_data.username))
     user = result.scalar_one_or_none()
     
-    if not user or not verify_password(form_data.password, user.password_hash):
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户名或密码错误",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    try:
+        if not verify_password(form_data.password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户名或密码错误",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
@@ -38,9 +52,6 @@ async def register(
     password: str,
     db: AsyncSession = Depends(get_db)
 ):
-    from sqlalchemy import select
-    import uuid
-    
     result = await db.execute(select(User).where(User.username == username))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="用户名已存在")
