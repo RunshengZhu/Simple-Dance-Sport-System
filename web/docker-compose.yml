@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - dancesport-network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./dancesport.db
+      - SECRET_KEY=dancesport-secret-key-change-in-production
+    volumes:
+      - backend-data:/app
+    depends_on:
+      - db-init
+    networks:
+      - dancesport-network
+    restart: unless-stopped
+
+  db-init:
+    image: busybox
+    volumes:
+      - ./data:/data
+    command: echo "Data directory initialized"
+
+networks:
+  dancesport-network:
+    driver: bridge
+
+volumes:
+  backend-data:
