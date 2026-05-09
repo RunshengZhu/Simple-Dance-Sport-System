@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
+
 class CompetitorBase(BaseModel):
     number: str
     name: str
@@ -12,8 +13,10 @@ class CompetitorBase(BaseModel):
     partner_unit: Optional[str] = None
     is_couple: bool = False
 
+
 class CompetitorCreate(CompetitorBase):
-    competition_id: str
+    pass
+
 
 class CompetitorUpdate(BaseModel):
     name: Optional[str] = None
@@ -23,6 +26,7 @@ class CompetitorUpdate(BaseModel):
     partner_number: Optional[str] = None
     partner_unit: Optional[str] = None
     is_couple: Optional[bool] = None
+
 
 class CompetitorResponse(CompetitorBase):
     id: str
