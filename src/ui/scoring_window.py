@@ -12,6 +12,7 @@ from ..models.data_manager import data_manager
 from ..models.data_models import Event, ScoringType, EventStatus, ScoreRecord
 from ..utils.logger import get_logger
 from .window_utils import center_window
+from .components.dialogs import ScoreInputDialog
 
 logger = get_logger()
 
@@ -1131,7 +1132,7 @@ class ScoringWindow:
                         data_manager.delete_score_records(
                             event_id=self.event_id,
                             judge_id=judge_id,
-                            competitor_number=int(player_id),  # 确保转换为整数
+                            competitor_number=player_id,  # 已经是str类型
                             dance_name=dance_name
                         )
             
@@ -1583,104 +1584,3 @@ class ScoringWindow:
         except Exception as e:
             self.logger.error(f"导出结果时出错: {str(e)}")
             messagebox.showerror("错误", f"导出结果失败: {str(e)}")
-
-
-class ScoreInputDialog:
-    """评分输入对话框"""
-    
-    def __init__(self, parent, player_number, player_name, current_score, scoring_type):
-        """初始化评分输入对话框"""
-        self.parent = parent
-        self.player_number = player_number
-        self.player_name = player_name
-        self.current_score = current_score
-        self.scoring_type = scoring_type
-        self.result = None
-        
-        # 创建对话框
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("评分输入")
-        self.dialog.geometry("300x150")
-        self.dialog.resizable(False, False)
-        
-        # 使对话框居中
-        self.dialog.transient(parent)
-        self.dialog.grab_set()
-        center_window(self.dialog, parent)
-        
-        # 创建界面元素
-        self.create_widgets()
-        
-        # 绑定关闭事件
-        self.dialog.protocol("WM_DELETE_WINDOW", self.on_cancel)
-        
-        # 设置焦点到输入框
-        self.score_entry.focus_set()
-    
-    def create_widgets(self):
-        """创建界面元素"""
-        # 主框架
-        main_frame = ttk.Frame(self.dialog, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 选手信息
-        info_frame = ttk.Frame(main_frame)
-        info_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        ttk.Label(info_frame, text=f"选手: {self.player_name} ({self.player_number})").pack(anchor=tk.W)
-        
-        # 评分输入
-        input_frame = ttk.Frame(main_frame)
-        input_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        if self.scoring_type == ScoringType.MARK:
-            ttk.Label(input_frame, text="分数 (5.0-10.0):").pack(anchor=tk.W)
-        else:
-            ttk.Label(input_frame, text="名次:").pack(anchor=tk.W)
-        
-        self.score_var = tk.StringVar(value=str(self.current_score) if self.current_score else "")
-        self.score_entry = ttk.Entry(input_frame, textvariable=self.score_var)
-        self.score_entry.pack(fill=tk.X, pady=(5, 0))
-        
-        # 按钮框架
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X)
-        
-        ttk.Button(button_frame, text="确定", command=self.on_ok).pack(side=tk.RIGHT, padx=(5, 0))
-        ttk.Button(button_frame, text="取消", command=self.on_cancel).pack(side=tk.RIGHT)
-    
-    def on_ok(self):
-        """确定按钮事件处理"""
-        score_str = self.score_var.get().strip()
-        if not score_str:
-            messagebox.showwarning("警告", "请输入评分")
-            return
-        
-        try:
-            if self.scoring_type == ScoringType.MARK:
-                # Mark制评分
-                score = float(score_str)
-                if not (5.0 <= score <= 10.0):
-                    messagebox.showwarning("警告", "分数必须在5.0-10.0之间")
-                    return
-            else:
-                # 顺位法评分
-                score = int(score_str)
-                if score < 1:
-                    messagebox.showwarning("警告", "名次必须大于0")
-                    return
-            
-            self.result = score
-            self.dialog.destroy()
-        
-        except ValueError:
-            messagebox.showwarning("警告", "请输入有效的数字")
-    
-    def on_cancel(self):
-        """取消按钮事件处理"""
-        self.dialog.destroy()
-    
-    def show(self):
-        """显示对话框并返回结果"""
-        self.dialog.wait_window()
-        return self.result

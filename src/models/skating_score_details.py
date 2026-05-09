@@ -15,7 +15,7 @@ class SkatingScoreDetail:
     """滑冰法打分明细数据模型"""
     event_id: str  # 场次ID
     dance_name: str  # 舞种名称
-    competitor_number: int  # 选手背番号
+    competitor_number: str  # 选手背番号
     judge_placements: Dict[str, int] = field(default_factory=dict)  # 各裁判给出的名次 {裁判ID: 名次}
     placement_counts: Dict[int, int] = field(default_factory=dict)  # 各名次获得次数 {名次: 次数}
     cumulative_votes: Dict[int, int] = field(default_factory=dict)  # 累积得票数 {名次: 累积得票数}
@@ -51,7 +51,7 @@ class SkatingScoreDetail:
         return cls(
             event_id=data.get("event_id", ""),
             dance_name=data.get("dance_name", ""),
-            competitor_number=data.get("competitor_number", 0),
+            competitor_number=str(data.get("competitor_number", "0")),
             judge_placements=data.get("judge_placements", {}),
             placement_counts=data.get("placement_counts", {}),
             cumulative_votes=data.get("cumulative_votes", {}),
@@ -67,7 +67,7 @@ class SkatingScoreDetail:
 class SkatingOverallDetail:
     """滑冰法综合打分明细数据模型"""
     event_id: str  # 场次ID
-    competitor_number: int  # 选手背番号
+    competitor_number: str  # 选手背番号
     dance_details: Dict[str, SkatingScoreDetail] = field(default_factory=dict)  # 各舞种明细 {舞种名: 明细}
     total_sum_placement: int = 0  # 总序和（所有舞种序和之和）
     final_rank: int = 0  # 最终排名
@@ -99,7 +99,7 @@ class SkatingOverallDetail:
         
         return cls(
             event_id=data.get("event_id", ""),
-            competitor_number=data.get("competitor_number", 0),
+            competitor_number=str(data.get("competitor_number", "0")),
             dance_details=dance_details,
             total_sum_placement=data.get("total_sum_placement", 0),
             final_rank=data.get("final_rank", 0),

@@ -404,7 +404,7 @@ class AdvancementWindow:
             for item in items:
                 values = list(self.competitors_tree.item(item, "values"))
                 rank = int(values[0])  # 排名
-                competitor_number = int(values[1])  # 背番号
+                competitor_number = str(values[1])  # 背番号
                 
                 # 获取选手分数
                 score = result_map.get(competitor_number, 0)
