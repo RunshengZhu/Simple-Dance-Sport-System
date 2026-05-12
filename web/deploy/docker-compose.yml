@@ -1,0 +1,39 @@
+# 体育舞蹈赛事评分系统 - Docker部署配置
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dancesport-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./dancesport.db
+      - SECRET_KEY=your-secret-key-change-in-production
+      - DEBUG=false
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    networks:
+      - dancesport-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dancesport-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - VITE_API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - dancesport-network
+
+networks:
+  dancesport-network:
+    driver: bridge
