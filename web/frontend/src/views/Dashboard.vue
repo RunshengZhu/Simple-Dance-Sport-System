@@ -120,6 +120,8 @@ onMounted(() => {
 }
 
 .stat-card {
+  margin-bottom: 20px;
+
   .stat-content {
     text-align: center;
     padding: 20px 0;
@@ -133,6 +135,7 @@ onMounted(() => {
     .stat-label {
       margin-top: 8px;
       color: #666;
+      font-size: 14px;
     }
   }
 }
@@ -147,5 +150,39 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+
+  .el-button {
+    flex: 1;
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 768px) {
+  .stat-card {
+    .stat-content {
+      padding: 16px 0;
+
+      .stat-value {
+        font-size: 28px;
+      }
+    }
+  }
+
+  .el-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .comp-date {
+    margin-left: 0;
+  }
+
+  .quick-actions {
+    .el-button {
+      width: 100%;
+      flex: none;
+    }
+  }
 }
 </style>

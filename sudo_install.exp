@@ -1,0 +1,28 @@
+#!/usr/bin/env expect
+# 设置sudo密码超时等待
+set timeout 120
+
+# 读取环境变量中的密码
+set password $env(SUDO_PASSWORD)
+
+# SSH到服务器并执行命令
+spawn ssh sport-coder@59.110.90.21 "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libatk1.0-0 libatk-bridge2.0-0 libxkbcommon0 libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2"
+
+expect {
+    "password for sport-coder:" {
+        send "$password\r"
+        exp_continue
+    }
+    "Do you want to continue?" {
+        send "Y\r"
+        exp_continue
+    }
+    eof {
+        puts "命令执行完成"
+    }
+    timeout {
+        puts "超时"
+    }
+}
+
+expect eof

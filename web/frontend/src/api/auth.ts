@@ -1,18 +1,32 @@
 import request from './request'
 
-// 用户登录API
 export const login = (username: string, password: string) => {
-  const formData = new FormData()
+  const formData = new URLSearchParams()
   formData.append('username', username)
   formData.append('password', password)
-  return request.post('/api/v1/auth/login', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+  return request.post('/auth/login', formData.toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
   })
 }
 
-// 用户注册API
 export const register = (username: string, password: string) => {
-  return request.post('/api/v1/auth/register', null, {
+  return request.post('/auth/register', null, {
     params: { username, password }
+  })
+}
+
+export const getMe = () => {
+  return request.get('/auth/me')
+}
+
+export const logout = () => {
+  return request.post('/auth/logout')
+}
+
+export const changePassword = (oldPassword: string, newPassword: string) => {
+  return request.put('/auth/password', null, {
+    params: { old_password: oldPassword, new_password: newPassword }
   })
 }

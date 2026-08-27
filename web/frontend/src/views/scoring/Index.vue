@@ -47,8 +47,6 @@
             @click="toggleSelect(comp.number)"
           >
             <div class="competitor-number">{{ comp.number }}</div>
-            <div class="competitor-name">{{ comp.name }}</div>
-            <div class="competitor-unit">{{ comp.unit }}</div>
           </el-card>
         </div>
         <el-empty v-if="eventCompetitors.length === 0" description="该场次暂无参赛选手，请先在赛程中配置参赛选手" />
@@ -66,7 +64,7 @@
               <el-option
                 v-for="comp in eventCompetitors"
                 :key="comp.number"
-                :label="`${comp.number} - ${comp.name} (${comp.unit})`"
+                :label="comp.number"
                 :value="comp.number"
               />
             </el-select>
@@ -275,6 +273,7 @@ onMounted(() => {
 
     h2 {
       margin: 0 0 10px 0;
+      font-size: 18px;
     }
   }
 
@@ -289,6 +288,11 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 10px;
+    width: 100%;
+
+    .el-select {
+      flex: 1;
+    }
   }
 }
 
@@ -297,12 +301,13 @@ onMounted(() => {
 
   .mark-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    gap: 12px;
     margin-bottom: 20px;
 
     h3 {
       margin: 0;
+      font-size: 16px;
     }
 
     .mark-stats {
@@ -329,6 +334,7 @@ onMounted(() => {
   text-align: center;
   transition: all 0.2s;
   border: 2px solid transparent;
+  padding: 16px;
 
   &:hover {
     transform: scale(1.03);
@@ -351,21 +357,13 @@ onMounted(() => {
   }
 
   .competitor-number {
-    font-size: 28px;
+    font-size: 36px;
     font-weight: bold;
-    color: inherit;
+    color: #333;
   }
 
-  .competitor-name {
-    margin-top: 8px;
-    font-size: 14px;
-    font-weight: 500;
-  }
-
-  .competitor-unit {
-    font-size: 12px;
-    color: #999;
-    margin-top: 5px;
+  &.selected .competitor-number {
+    color: #fff;
   }
 }
 
@@ -373,13 +371,14 @@ onMounted(() => {
   .ranking-item {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 12px;
     margin-bottom: 12px;
 
     .rank-number {
-      width: 60px;
+      width: auto;
       font-weight: bold;
       text-align: center;
+      flex-shrink: 0;
 
       &.top-rank {
         font-size: 20px;
@@ -389,40 +388,72 @@ onMounted(() => {
     .el-select {
       flex: 1;
     }
+
+    .el-button {
+      flex-shrink: 0;
+    }
   }
 
   .add-rank-btn {
     margin-top: 10px;
+    width: 100%;
   }
 }
 
 .scoring-footer {
   margin-top: 20px;
+  position: sticky;
+  bottom: 0;
+  background: white;
+  padding: 16px 0;
 
   .footer-actions {
     display: flex;
-    justify-content: flex-end;
-    gap: 15px;
+    flex-wrap: wrap;
+    gap: 12px;
 
     .el-button {
-      min-width: 100px;
+      flex: 1;
+      min-width: auto;
     }
   }
 }
 
 @media (max-width: 768px) {
+  .scoring-container {
+    padding: 12px;
+  }
+
+  .scoring-header {
+    .header-content {
+      flex-direction: column;
+    }
+
+    .event-info {
+      width: 100%;
+    }
+
+    .judge-info {
+      width: 100%;
+    }
+  }
+
   .competitor-grid {
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
     gap: 8px;
   }
 
   .competitor-card {
-    .competitor-number {
-      font-size: 22px;
-    }
+    padding: 12px;
 
-    .competitor-name {
-      font-size: 12px;
+    .competitor-number {
+      font-size: 28px;
+    }
+  }
+
+  .scoring-footer {
+    .footer-actions {
+      flex-direction: column;
     }
   }
 }

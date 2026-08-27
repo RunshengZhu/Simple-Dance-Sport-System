@@ -21,7 +21,7 @@ export const updateEvent = (id: string, data: any) => {
 }
 
 // 删除场次
-export const deleteEvent = (id: string) => {
+export const deleteEvent = (competitionId: string, id: string) => {
   return request.delete(`/api/v1/events/${id}`)
 }
 
@@ -33,4 +33,18 @@ export const startEvent = (id: string) => {
 // 完成场次评分
 export const completeEvent = (id: string) => {
   return request.post(`/api/v1/events/${id}/complete`)
+}
+
+// 导入赛程
+export const importSchedule = (competitionId: string, file: FormData) => {
+  return request.post(`/api/v1/competitions/${competitionId}/import-schedule`, file, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+// 导入测试数据
+export const setupFromTestData = (competitionId: string) => {
+  return request.post(`/api/v1/competitions/${competitionId}/setup-from-test-data`)
 }

@@ -20,6 +20,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '首页', icon: 'HomeFilled' }
       },
       {
+        path: 'users',
+        name: 'Users',
+        component: () => import('@/views/users/List.vue'),
+        meta: { title: '用户管理', roles: ['admin'] }
+      },
+      {
+        path: 'logs',
+        name: 'Logs',
+        component: () => import('@/views/logs/List.vue'),
+        meta: { title: '操作日志', roles: ['admin'] }
+      },
+      {
         path: 'competitions',
         name: 'Competitions',
         component: () => import('@/views/competitions/List.vue'),
@@ -64,6 +76,18 @@ const routes: RouteRecordRaw[] = [
     ]
   },
   {
+    path: '/judge/competitions/:id/events/:eventId/scoring',
+    name: 'JudgeScoring',
+    component: () => import('@/views/judge/Scoring.vue'),
+    meta: { title: '裁判评分', requiresAuth: true, roles: ['admin', 'judge'] }
+  },
+  {
+    path: '/public/competitions',
+    name: 'PublicCompetitions',
+    component: () => import('@/views/public/Viewer.vue'),
+    meta: { title: '公众查询', requiresAuth: false }
+  },
+  {
     path: '/display/:type',
     name: 'Display',
     component: () => import('@/views/display/Index.vue'),
@@ -78,11 +102,25 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
-  if (to.path !== '/login' && !userStore.token) {
+  const requiresAuth = to.meta.requiresAuth !== false
+  const allowedRoles = to.meta.roles as string[] | undefined
+
+  if (requiresAuth && !userStore.token) {
     next('/login')
-  } else {
-    next()
+    return
   }
+
+  if (userStore.token && to.path === '/login') {
+    next('/')
+    return
+  }
+
+  if (allowedRoles && userStore.role && !allowedRoles.includes(userStore.role)) {
+    next('/dashboard')
+    return
+  }
+
+  next()
 })
 
 export default router

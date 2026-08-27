@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""
+测试账号初始化脚本 - 用于创建测试用户
+"""
+import asyncio
+import sys
+import os
+
+# 添加当前目录到路径
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.core.database import engine, async_session
+from app.core.security import get_password_hash
+from app.models.unit_points import User
+import uuid
+
+
+async def init_test_users():
+    """初始化测试用户"""
+    async with async_session() as db:
+        print("=" * 60)
+        print("体育舞蹈评分系统 - 测试账号初始化")
+        print("=" * 60)
+        print()
+
+        # 检查现有用户
+        result = await db.execute(select(User))
+        existing_users = result.scalars().all()
+
+        if existing_users:
+            print(f"现有用户 ({len(existing_users)}个):")
+            for user in existing_users:
+                print(f"  - {user.username} ({user.role})")
+            print()
+
+        # 定义测试账号
+        test_accounts = [
+            {
+                "username": "admin",
+                "password": "admin123",
+                "role": "admin",
+                "full_name": "系统管理员"
+            },
+            {
+                "username": "judge1",
+                "password": "judge123",
+                "role": "judge",
+                "full_name": "裁判1号"
+            },
+            {
+                "username": "judge2",
+                "password": "judge123",
+                "role": "judge",
+                "full_name": "裁判2号"
+            },
+            {
+                "username": "judge3",
+                "password": "judge123",
+                "role": "judge",
+                "full_name": "裁判3号"
+            },
+            {
+                "username": "judge4",
+                "password": "judge123",
+                "role": "judge",
+                "full_name": "裁判4号"
+            },
+            {
+                "username": "judge5",
+                "password": "judge123",
+                "role": "judge",
+                "full_name": "裁判5号"
+            },
+            {
+                "username": "viewer",
+                "password": "viewer123",
+                "role": "viewer",
+                "full_name": "观众"
+            }
+        ]
+
+        created_count = 0
+        skipped_count = 0
+
+        for account in test_accounts:
+            # 检查用户是否已存在
+            result = await db.execute(select(User).where(User.username == account["username"]))
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                print(f"用户 '{account['username']}' 已存在，跳过...")
+                skipped_count += 1
+                continue
+
+            # 创建新用户
+            user = User(
+                id=str(uuid.uuid4()),
+                username=account["username"],
+                password_hash=get_password_hash(account["password"]),
+                role=account["role"],
+                full_name=account["full_name"],
+                is_active=True
+            )
+            db.add(user)
+            created_count += 1
+            print(f"✓ 创建用户: {account['username']} ({account['role']})")
+
+        await db.commit()
+
+        print()
+        print("=" * 60)
+        print("初始化完成！")
+        print("=" * 60)
+        print()
+        print(f"已创建: {created_count} 个用户")
+        print(f"已跳过: {skipped_count} 个用户")
+        print()
+        print("测试账号列表:")
+        print("-" * 40)
+        print("| 角色     | 用户名   | 密码      |")
+        print("|----------|---------|----------|")
+        for account in test_accounts:
+            print(f"| {account['role']:8} | {account['username']:8} | {account['password']:8} |")
+        print("-" * 40)
+        print()
+        print("请使用以上账号登录系统进行测试！")
+        print()
+
+
+if __name__ == "__main__":
+    asyncio.run(init_test_users())
+

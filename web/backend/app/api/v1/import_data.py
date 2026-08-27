@@ -164,8 +164,8 @@ async def setup_from_test_data(
     competition_id: str,
     db: AsyncSession = Depends(get_db)
 ):
-    competitors_file = "/workspace/src/test_data/test_competitors.csv"
-    schedule_file = "/workspace/src/test_data/test_schedule.csv"
+    competitors_file = "/app/test_data/test_competitors.csv"
+    schedule_file = "/app/test_data/test_schedule.csv"
 
     try:
         imported_competitors = 0

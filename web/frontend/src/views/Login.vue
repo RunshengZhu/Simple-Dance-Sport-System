@@ -3,45 +3,55 @@
     <div class="login-box">
       <div class="login-header">
         <h1>体育舞蹈赛事评分系统</h1>
-        <p>DanceSport Scoring System</p>
+        <p>Dance Competition Scoring System</p>
       </div>
-
-      <el-form ref="formRef" :model="form" :rules="rules" class="login-form">
+      
+      <el-form
+        ref="loginFormRef"
+        :model="loginForm"
+        :rules="rules"
+        class="login-form"
+        @submit.prevent="handleLogin"
+      >
         <el-form-item prop="username">
           <el-input
-            v-model="form.username"
+            v-model="loginForm.username"
             placeholder="用户名"
-            prefix-icon="User"
             size="large"
+            :prefix-icon="User"
           />
         </el-form-item>
-
+        
         <el-form-item prop="password">
           <el-input
-            v-model="form.password"
+            v-model="loginForm.password"
             type="password"
             placeholder="密码"
-            prefix-icon="Lock"
             size="large"
+            :prefix-icon="Lock"
+            show-password
             @keyup.enter="handleLogin"
           />
         </el-form-item>
-
+        
         <el-form-item>
           <el-button
             type="primary"
             size="large"
             :loading="loading"
+            class="login-button"
             @click="handleLogin"
-            class="login-btn"
           >
-            登 录
+            {{ loading ? '登录中...' : '登 录' }}
           </el-button>
         </el-form-item>
       </el-form>
-
-      <div class="login-footer">
-        <el-link type="primary" @click="handleRegister">注册账号</el-link>
+      
+      <div class="login-tips">
+        <p>测试账号：</p>
+        <p>管理员：admin / admin123</p>
+        <p>裁判：judge1 / judge123</p>
+        <p>观众：viewer / viewer123</p>
       </div>
     </div>
   </div>
@@ -51,49 +61,47 @@
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { User, Lock } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
-import { register } from '@/api/auth'
+import { ElForm } from 'element-plus'
 
 const router = useRouter()
 const userStore = useUserStore()
-const formRef = ref()
+
+const loginFormRef = ref<InstanceType<typeof ElForm>>()
 const loading = ref(false)
 
-const form = reactive({
+const loginForm = reactive({
   username: '',
   password: ''
 })
 
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' }
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' }
+  ]
 }
 
 const handleLogin = async () => {
-  await formRef.value?.validate()
-  loading.value = true
-  try {
-    await userStore.loginAction(form.username, form.password)
-    ElMessage.success('登录成功')
-    router.push('/')
-  } catch (e) {
-    console.error(e)
-  } finally {
-    loading.value = false
-  }
-}
-
-const handleRegister = async () => {
-  if (!form.username || !form.password) {
-    ElMessage.warning('请先输入用户名和密码')
-    return
-  }
-  try {
-    await register(form.username, form.password)
-    ElMessage.success('注册成功，请登录')
-  } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '注册失败')
-  }
+  if (!loginFormRef.value) return
+  
+  await loginFormRef.value.validate(async (valid) => {
+    if (valid) {
+      loading.value = true
+      try {
+        await userStore.login(loginForm.username, loginForm.password)
+        ElMessage.success('登录成功')
+        router.push('/dashboard')
+      } catch (error: any) {
+        ElMessage.error(error.message || '登录失败')
+      } finally {
+        loading.value = false
+      }
+    }
+  })
 }
 </script>
 
@@ -104,47 +112,75 @@ const handleRegister = async () => {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
 }
 
 .login-box {
-  width: 400px;
-  padding: 40px;
+  width: 100%;
+  max-width: 420px;
   background: white;
-  border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border-radius: 16px;
+  padding: 40px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 30px;
-
+  margin-bottom: 32px;
+  
   h1 {
-    font-size: 24px;
-    color: #333;
-    margin-bottom: 8px;
+    font-size: 28px;
+    font-weight: 700;
+    color: #303133;
+    margin: 0 0 8px 0;
   }
-
+  
   p {
     font-size: 14px;
-    color: #999;
+    color: #909399;
+    margin: 0;
+    letter-spacing: 2px;
   }
 }
 
 .login-form {
-  .login-btn {
+  .login-button {
     width: 100%;
+    height: 48px;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    
+    &:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
   }
 }
 
-.login-footer {
-  text-align: center;
-  margin-top: 20px;
+.login-tips {
+  margin-top: 24px;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #909399;
+  
+  p {
+    margin: 4px 0;
+    line-height: 1.6;
+  }
 }
 
 @media (max-width: 480px) {
   .login-box {
-    width: 90%;
-    padding: 30px 20px;
+    padding: 24px;
+  }
+  
+  .login-header h1 {
+    font-size: 22px;
   }
 }
 </style>

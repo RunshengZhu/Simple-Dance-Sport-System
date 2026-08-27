@@ -2,16 +2,16 @@ FROM node:18-alpine as frontend-builder
 
 WORKDIR /app
 
-COPY frontend/package*.json ./
-RUN npm install
+COPY package*.json ./
+RUN npm config set registry https://registry.npmmirror.com && npm ci
 
-COPY frontend/ ./
+COPY . ./
 RUN npm run build
 
 FROM nginx:alpine
 
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

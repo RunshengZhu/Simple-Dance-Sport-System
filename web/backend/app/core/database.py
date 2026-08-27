@@ -30,9 +30,13 @@ def import_all_models():
     from app.models.judge import Judge
     from app.models.score import ScoreRecord
     from app.models.result import Result
-    from app.models.unit_points import AwardConfig, UnitPoints, UnitPointRecord, User
+    from app.models.unit_points import (
+        AwardConfig, UnitPoints, UnitPointRecord, User,
+        Role, Permission, RolePermission, UserSession, OperationLog
+    )
     return [
         Competition, Event, Competitor, Judge,
         ScoreRecord, Result, AwardConfig, UnitPoints,
-        UnitPointRecord, User
+        UnitPointRecord, User, Role, Permission,
+        RolePermission, UserSession, OperationLog
     ]
