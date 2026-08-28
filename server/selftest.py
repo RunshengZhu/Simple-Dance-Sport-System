@@ -180,7 +180,8 @@ check("R-D3 Mark制明细为 null（无明细）", st == 200 and (d.get("data") 
 sse_chunks = []
 def read_sse():
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", 8321, timeout=10)
+        _u = urllib.parse.urlsplit(BASE)
+        conn = http.client.HTTPConnection(_u.hostname or "127.0.0.1", _u.port or 80, timeout=10)
         conn.request("GET", "/api/events/%d/stream" % cid)
         resp = conn.getresponse()
         buf = ""

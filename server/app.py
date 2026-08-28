@@ -182,8 +182,8 @@ async def console_page(request: Request, competition_id: int, ceid: int):
     ev = _event_or_404(ceid)
     all_competitors = db.rows(db.get_db().execute(
         "SELECT DISTINCT number, name, unit FROM competitors WHERE competition_id=? ORDER BY number", (competition_id,)))
-    return templates.TemplateResponse("console.html", {
-        "request": request, "comp": comp, "ev": ev,
+    return templates.TemplateResponse(request, "console.html", {
+        "comp": comp, "ev": ev,
         "dances": dances_of(ev["id"]), "roster": roster(ev["id"]),
         "all_competitors": all_competitors,
         "judges": judges_of(competition_id), "result": load_results(ev["id"]),
@@ -217,8 +217,8 @@ async def judge_home(request: Request):
             ev["dances"] = dances_of(ev["id"])
             ev["my_done"] = _judge_sheet_status(ev["id"], s["judge_code"])
             assignments.append(ev)
-    return templates.TemplateResponse("judge_home.html", {
-        "request": request, "comp": comp, "judge_code": s["judge_code"], "assignments": assignments})
+    return templates.TemplateResponse(request, "judge_home.html", {
+        "comp": comp, "judge_code": s["judge_code"], "assignments": assignments})
 
 
 def _judge_sheet_status(event_id, judge_code):
@@ -247,8 +247,8 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
             (ev["id"], s["judge_code"], dance, num)).fetchone())
     competitors = {c["number"]: c for c in db.rows(db.get_db().execute(
         "SELECT number, name, unit FROM competitors WHERE competition_id=?", (ev["competition_id"],)))}
-    return templates.TemplateResponse("judge_sheet.html", {
-        "request": request, "ev": ev, "comp": comp, "dance": dance,
+    return templates.TemplateResponse(request, "judge_sheet.html", {
+        "ev": ev, "comp": comp, "dance": dance,
         "roster": roster_list, "rows": rows, "competitors": competitors,
         "is_skating": scoring_type_of(ev) == ScoringType.SKATING,
         "is_mark": scoring_type_of(ev) == ScoringType.MARK,
