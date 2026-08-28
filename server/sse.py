@@ -23,7 +23,7 @@ class EventBus:
         data = json.dumps({"type": event_type, "payload": payload or {}}, ensure_ascii=False)
         for q in list(self._subscribers.get(competition_id, ())):
             try:
-                q.put_nowait(data)
+                q.put_nowait((event_type, data))
             except asyncio.QueueFull:
                 pass
 

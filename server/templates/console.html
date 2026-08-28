@@ -36,7 +36,13 @@
     <button class="btn secondary" onclick="unpublish()">撤回发布</button>
     <span id="calc-msg" class="muted"></span>
   </p>
-  <div id="result-box">{% include "_result_tables.html" %}</div>
+  <div id="result-box">
+    {% if result %}
+      {% include "_result_tables.html" %}
+    {% else %}
+      <p class="muted">尚未计算。裁判评分收齐后自动计算，或点击「手动计算/重算」。</p>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}

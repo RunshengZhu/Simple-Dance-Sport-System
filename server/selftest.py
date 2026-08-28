@@ -147,6 +147,71 @@ check("打印 HTML 导出", st == 200 and "<table>" in body)
 st, d, _ = call("POST", "/api/backup", {}, cookie=tok)
 check("备份", st == 200 and d.get("path"))
 
+# ------------------------------------------------------------------ 回归：D-1~D-4
+import http.client
+import threading
+import time as _time
+
+# D-2 控制台未计算态不再 500
+st, html, _ = call("GET", "/events/%d/console/%d" % (cid, m1["id"]), cookie=tok)
+check("R-D2 控制台未计算态 200 且含占位提示", st == 200 and "尚未计算" in html, (st, str(html)[:120]))
+st, html, _ = call("GET", "/events/%d/console/%d" % (cid, e1["id"]), cookie=tok)
+check("R-D2 控制台已计算态 200", st == 200, st)
+
+# D-3 明细落库并可查（顺位法 E1）
+st, d, _ = call("GET", "/api/competition-events/%d/results?type=detail" % e1["id"], cookie=tok)
+sd = (d.get("data") or {}).get("score_details")
+first = next(iter((sd or {}).values())) if sd else {}
+jd = next(iter(first.values()), {}) if first else {}
+check("R-D3 detail 含打分明细（judge_placements）", st == 200 and bool(sd) and bool(jd.get("judge_placements")),
+      {"st": st, "keys": list((d.get("data") or {}).keys())})
+st, d, _ = call("GET", "/api/competition-events/%d/results?type=detail" % m1["id"], cookie=tok)
+if st == 404:
+    # M1 未收齐未计算：补齐 J2/J3 后自动计算，再验证 Mark制无明细
+    _, _, jt2 = call("POST", "/api/login", {"role": "judge", "judge_id": "J2"})
+    _, _, jt3 = call("POST", "/api/login", {"role": "judge", "judge_id": "J3"})
+    call("PUT", "/api/judge/competition-events/%d/dances/%s/sheet" % (m1["id"], "现代舞"),
+         {"values": {"201": True, "202": True, "203": False, "204": False}}, cookie=jt2)
+    st, d, _ = call("PUT", "/api/judge/competition-events/%d/dances/%s/sheet" % (m1["id"], "现代舞"),
+                    {"values": {"201": False, "202": True, "203": True, "204": True}}, cookie=jt3)
+check("R-D3 Mark制明细为 null（无明细）", st == 200 and (d.get("data") or {}).get("score_details") is None, d)
+
+# D-4 SSE 命名事件（event: 行）可达
+sse_chunks = []
+def read_sse():
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", 8321, timeout=10)
+        conn.request("GET", "/api/events/%d/stream" % cid)
+        resp = conn.getresponse()
+        buf = ""
+        deadline = _time.time() + 6
+        while _time.time() < deadline:
+            chunk = resp.read1(512).decode("utf-8", "replace") if hasattr(resp, "read1") else resp.read(512).decode("utf-8", "replace")
+            if not chunk:
+                break
+            buf += chunk
+            sse_chunks.append(chunk)
+            if "event: results_published" in buf:
+                break
+    except Exception:
+        pass
+
+th = threading.Thread(target=read_sse)
+th.start()
+_time.sleep(0.8)
+call("POST", "/api/competition-events/%d/unpublish" % e1["id"], {}, cookie=tok)
+call("POST", "/api/competition-events/%d/publish" % e1["id"], {}, cookie=tok)
+th.join(timeout=10)
+sse_text = "".join(sse_chunks)
+check("R-D4 SSE 命名事件（event: results_published）可达前端",
+      "event: results_published" in sse_text and '"type":"results_published"' in sse_text.replace(" ", ""),
+      sse_text[:300])
+
+# D-1 页面结构回归（JS 行为由 reviewer playwright 覆盖）
+st, html, _ = call("GET", "/events", cookie=tok)
+check("R-D1 创建按钮为 id 绑定（无内联 onclick=createEvent）",
+      st == 200 and 'id="create-btn"' in html and 'onclick="createEvent()' not in html)
+
 print("\n=== PASS %d / FAIL %d ===" % (len(PASS), len(FAIL)))
 for f in FAIL:
     print("FAILED:", f)

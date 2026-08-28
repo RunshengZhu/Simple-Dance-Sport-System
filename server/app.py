@@ -739,8 +739,8 @@ async def api_stream(competition_id: int, request: Request = None):
                 if await request.is_disconnected():
                     break
                 try:
-                    data = await asyncio.wait_for(q.get(), timeout=15)
-                    yield "data: {0}\n\n".format(data)
+                    event_type, data = await asyncio.wait_for(q.get(), timeout=15)
+                    yield "event: {0}\ndata: {1}\n\n".format(event_type, data)
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
         finally:

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}赛事管理{% endblock %}
-{% block nav %}<a href="/events">赛事</a><a href="#" onclick="api('POST','/api/logout').then(()=>location='/login')">退出</a>{% endblock %}
+{% block nav %}<a href="/events">赛事</a><a href="#" id="logout-link">退出</a>{% endblock %}
 {% block content %}
 <h1>赛事管理</h1>
 <div class="card">
@@ -9,8 +9,8 @@
     <input id="name" placeholder="赛事名称（必填）">
     <input id="date" placeholder="日期 YYYY-MM-DD">
     <input id="location" placeholder="地点">
-    <button class="btn" onclick="createEvent()">创建</button>
-    <span id="msg" class="err"></span>
+    <button class="btn" id="create-btn" type="button">创建</button>
+    <span id="create-msg" class="err"></span>
   </div>
 </div>
 <div class="card">
@@ -20,6 +20,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
+function inputVal(id) { return document.getElementById(id).value; }
+function showMsg(text, ok) {
+  var el = document.getElementById('create-msg');
+  el.textContent = text;
+  el.className = ok ? 'ok' : 'err';
+}
 async function refresh() {
   var data = await api('GET', '/api/events');
   var t = document.getElementById('tbl');
@@ -31,20 +37,37 @@ async function refresh() {
       + '<a class="btn secondary" href="/events/' + c.id + '/import">导入</a> '
       + '<a class="btn secondary" href="/events/' + c.id + '/schedule">赛程</a> '
       + '<a class="btn secondary" href="/events/' + c.id + '/results">结果</a> '
-      + (c.active ? '' : '<button class="btn" onclick="activate(' + c.id + ')">激活</button>')
-      + ' <button class="btn danger" onclick="del(' + c.id + ')">删除</button></td>';
+      + (c.active ? '' : '<button class="btn act-btn" data-id="' + c.id + '">激活</button>')
+      + ' <button class="btn danger del-btn" data-id="' + c.id + '">删除</button></td>';
   });
 }
-async function createEvent() {
+document.getElementById('tbl').addEventListener('click', async function (ev) {
+  var target = ev.target;
+  var id = target.dataset ? target.dataset.id : null;
+  if (!id) return;
+  if (target.classList.contains('act-btn')) {
+    await api('POST', '/api/events/' + id + '/activate');
+    refresh();
+  } else if (target.classList.contains('del-btn')) {
+    if (confirm('确认删除该赛事及全部数据？')) { await api('DELETE', '/api/events/' + id); refresh(); }
+  }
+});
+document.getElementById('create-btn').addEventListener('click', async function () {
   try {
-    await api('POST', '/api/events', {name: v('name'), date: v('date'), location: v('location')});
-    msg(''); refresh();
-  } catch (e) { msg(e.message); }
+    await api('POST', '/api/events', {name: inputVal('name'), date: inputVal('date'), location: inputVal('location')});
+    showMsg('创建成功', true);
+    inputVal2reset();
+    refresh();
+  } catch (e) { showMsg(e.message, false); }
+});
+function inputVal2reset() {
+  ['name', 'date', 'location'].forEach(function (id) { document.getElementById(id).value = ''; });
 }
-async function activate(id) { await api('POST', '/api/events/' + id + '/activate'); refresh(); }
-async function del(id) { if (confirm('确认删除该赛事及全部数据？')) { await api('DELETE', '/api/events/' + id); refresh(); } }
-function v(id) { return document.getElementById(id).value; }
-function msg(t) { document.getElementById('msg').textContent = t; }
+document.getElementById('logout-link').addEventListener('click', async function (e) {
+  e.preventDefault();
+  await api('POST', '/api/logout');
+  location.href = '/login';
+});
 refresh();
 </script>
 {% endblock %}

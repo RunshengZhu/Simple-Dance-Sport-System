@@ -49,6 +49,9 @@ def calculate_event(event):
     data = {
         "dance_results": {k: [r.to_dict() for r in v] for k, v in results["dance_results"].items()},
         "overall_results": [r.to_dict() for r in results["overall_results"]],
+        # FR-E1/E4：打分明细（仅管理端可查）；顺位法为 SkatingScoreDetail 字典，Mark制为 null
+        "score_details": _serialize_details(details),
+        "overall_score_details": _serialize_overall_details(overall_details),
     }
     conn = db.get_db()
     conn.execute(
@@ -64,6 +67,21 @@ def load_results(event_id):
     row = db.rowdict(db.get_db().execute(
         "SELECT results_data FROM results WHERE event_id=?", (event_id,)).fetchone())
     return db.load_results(row["results_data"]) if row else None
+
+
+def _serialize_details(details):
+    """{舞种: {选手: SkatingScoreDetail}} → JSON 安全字典"""
+    if not details:
+        return None
+    return {dance: {str(num): d.to_dict() for num, d in comp_map.items()}
+            for dance, comp_map in details.items()}
+
+
+def _serialize_overall_details(overall_details):
+    """{选手: SkatingOverallDetail} → JSON 安全字典"""
+    if not overall_details:
+        return None
+    return {str(num): d.to_dict() for num, d in overall_details.items()}
 
 
 def roster(event_id):
