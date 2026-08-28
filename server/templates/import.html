@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}数据导入 · {{ comp.name }}{% endblock %}
+{% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/schedule">赛程</a>{% endblock %}
+{% block content %}
+<h1>数据导入 · {{ comp.name }}</h1>
+<p class="muted">支持 UTF-8 CSV。列格式见 README（选手：背番号,项目编号,姓名,学校/单位；赛程：场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手；裁判：裁判ID,姓名）。</p>
+{% for kind, label in [("competitors","选手"),("judges","裁判"),("schedule","赛程")] %}
+<div class="card">
+  <h2>{{ label }}导入</h2>
+  <div class="row">
+    <input type="file" id="f-{{ kind }}" accept=".csv">
+    <button class="btn" onclick="doImport('{{ kind }}')">上传导入</button>
+    <span id="msg-{{ kind }}" class="muted"></span>
+  </div>
+</div>
+{% endfor %}
+<div class="card"><a class="btn" href="/events/{{ comp.id }}/schedule">下一步：赛程管理 →</a></div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function doImport(kind) {
+  var f = document.getElementById('f-' + kind).files[0];
+  var el = document.getElementById('msg-' + kind);
+  if (!f) { el.textContent = '请选择 CSV 文件'; return; }
+  var text = await f.text();
+  var r = await fetch('/api/events/{{ comp.id }}/imports/' + kind, {
+    method: 'POST', headers: {'Content-Type': 'text/csv; charset=utf-8'}, body: text});
+  var data = await r.json();
+  el.textContent = r.ok ? ('导入成功：' + data.imported + ' 条') : ('失败：' + data.detail);
+  el.className = r.ok ? 'ok' : 'err';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}结果中心 · {{ comp.name }}{% endblock %}
+{% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/schedule">赛程</a>
+<button class="btn secondary" onclick="window.print()">打印/另存为 PDF</button>
+<a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=markdown">导出 Markdown</a>{% endblock %}
+{% block content %}
+<h1>结果中心 · {{ comp.name }} <span class="muted">（已发布场次）</span></h1>
+{% for p in payload %}
+<div class="card">
+  <h2>{{ p.ev.name }}（{{ p.ev.project_code }} 第{{ p.ev.round }}轮）{% if p.ev.published %}<span class="ok">已发布</span>{% endif %}</h2>
+  {% with result = p.results %}{% include "_result_tables.html" %}{% endwith %}
+</div>
+{% endfor %}
+{% if not payload %}<p class="muted">暂无已计算/发布场次。</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}裁判工作台{% endblock %}
+{% block bodyclass %}{% endblock %}
+{% block nav %}<span>{{ judge_code }}</span><a href="#" onclick="api('POST','/api/logout').then(()=>location='/login')">退出</a>{% endblock %}
+{% block content %}
+<h1>裁判工作台{% if comp %} · {{ comp.name }}{% endif %}</h1>
+{% if not assignments %}<p class="muted">当前没有进行中的评分场次，请等待管理员开场。</p>{% endif %}
+{% for a in assignments %}
+<div class="card">
+  <h2>{{ a.name }} <span class="muted">{{ a.code }} / 第{{ a.round }}轮</span></h2>
+  <p>舞种：
+  {% for d in a.dances %}
+    <a class="btn" href="/judge/competition-events/{{ a.id }}/dances/{{ d }}">{{ d }}
+      {% for st in a.my_done %}{% if st.dance == d and st.submitted %}✓{% endif %}{% endfor %}</a>
+  {% endfor %}
+  </p>
+</div>
+{% endfor %}
+{% endblock %}
+{% block scripts %}
+<script>
+var CID = {{ comp.id if comp else 0 }};
+if (CID) connectSSE('/api/events/' + CID + '/stream', {
+  competition_event_opened: function () { location.reload(); },
+  competition_event_closed: function () { location.reload(); },
+  roster_changed: function () { location.reload(); },
+  score_submitted: function () { location.reload(); },
+  score_returned: function () { location.reload(); }
+}, function () { location.reload(); }, 2000);
+</script>
+{% endblock %}

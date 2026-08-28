@@ -1,0 +1,19 @@
+<table>
+  <tr><th>名次</th><th>背番号</th><th>得分</th><th>总分</th><th>晋级</th><th>并列</th></tr>
+  {% for r in result["overall_results"] %}
+  <tr>
+    <td>{{ r["rank"] }}</td><td>{{ r["competitor_number"] }}</td>
+    <td>{{ r["score"] }}</td><td>{{ r["total_score"] }}</td>
+    <td>{% if r["advancement_status"] %}<span class="ok">晋级</span>{% else %}—{% endif %}</td>
+    <td>{{ r["tied_with"]|join("、") }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<h2>分舞种</h2>
+{% for dance, lst in result["dance_results"].items() %}
+<h3>{{ dance }}</h3>
+<table>
+  <tr><th>名次</th><th>背番号</th><th>得分</th></tr>
+  {% for r in lst %}<tr><td>{{ r["rank"] }}</td><td>{{ r["competitor_number"] }}</td><td>{{ r["total_score"] }}</td></tr>{% endfor %}
+</table>
+{% endfor %}

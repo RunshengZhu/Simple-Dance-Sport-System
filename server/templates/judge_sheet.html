@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}评分 · {{ ev.name }} · {{ dance }}{% endblock %}
+{% block nav %}<a href="/judge">← 待评场次</a><span>{{ ev.name }}</span>{% endblock %}
+{% block content %}
+<div class="judge-sheet">
+<h1>{{ dance }} <span class="muted">{{ ev.name }} / {{ ev.scoring_type }}</span></h1>
+<p id="roster-note" class="muted">上场 {{ n }} 名选手</p>
+{% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
+<table>
+  <tr><th>背番号</th><th>姓名</th><th>单位</th><th>{% if is_skating %}名次（1~{{ n }} 唯一）{% else %}标记（通过=✓）{% endif %}</th></tr>
+  {% for num in roster %}
+  <tr>
+    <td>{{ num }}</td>
+    <td>{{ (competitors.get(num) or {}).get("name", "") }}</td>
+    <td class="muted">{{ (competitors.get(num) or {}).get("unit", "") }}</td>
+    <td>
+      {% if is_skating %}
+      <select class="val" data-num="{{ num }}">
+        <option value="">--</option>
+        {% for i in range(1, n + 1) %}<option value="{{ i }}" {% if rows.get(num) and rows[num]["placement"] == i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+      </select>
+      {% else %}
+      <input type="checkbox" class="val" data-num="{{ num }}"
+        {% if rows.get(num) and rows[num]["mark"] is not none %}{{ "checked" if rows[num]["mark"] else "" }}{% endif %}>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+<p><button class="btn" id="submit" onclick="submitSheet()">提交{{ "名次表" if is_skating else "标记表" }}</button>
+<span id="msg"></span> <span class="muted">提交后如场次未关闭可再次修改提交。</span></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var CEID = {{ ev.id }}, DANCE = {{ dance|tojson }}, SKATING = {{ is_skating|tojson }};
+function collect() {
+  var values = {};
+  document.querySelectorAll('.val').forEach(function (el) {
+    var num = el.dataset.num;
+    if (SKATING) { if (el.value !== '') values[num] = parseInt(el.value, 10); }
+    else values[num] = el.checked;
+  });
+  return values;
+}
+async function submitSheet() {
+  var el = document.getElementById('msg');
+  try {
+    var r = await api('PUT', '/api/judge/competition-events/' + CEID + '/dances/' + encodeURIComponent(DANCE) + '/sheet', {values: collect()});
+    el.className = 'ok';
+    el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判');
+  } catch (e) { el.className = 'err'; el.textContent = e.message; }
+}
+var CID = {{ ev.competition_id }};
+connectSSE('/api/events/' + CID + '/stream', {
+  competition_event_opened: function () { location.reload(); },
+  roster_changed: function () { location.reload(); },
+  score_returned: function () { location.reload(); }
+}, function () { location.reload(); }, 2000);
+</script>
+{% endblock %}

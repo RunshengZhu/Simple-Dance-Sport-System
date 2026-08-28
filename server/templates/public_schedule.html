@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}赛程{% endblock %}
+{% block nav %}<a href="/public/results">成绩</a><a href="/screen">大屏</a>{% endblock %}
+{% block content %}
+<h1>{% if comp %}{{ comp.name }}{% endif %} · 赛程</h1>
+<table>
+  <tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
+  {% for ev in events %}
+  <tr><td>{{ ev.code }}</td><td>{{ ev.name }}</td><td>{{ ev.project_code }}</td><td>{{ ev.round }}</td>
+  <td>{% if ev.status == "scoring" %}<span class="ok">评分中</span>{% elif ev.status == "published" %}已发布{% elif ev.status == "calculated" %}已计算{% else %}待赛{% endif %}</td></tr>
+  {% endfor %}
+  {% if not events %}<tr><td colspan="5" class="muted">暂无赛程</td></tr>{% endif %}
+</table>
+{% endblock %}
+{% block scripts %}
+<script>
+var CID = {{ comp.id if comp else 0 }};
+if (CID) connectSSE('/api/events/' + CID + '/stream', {
+  schedule_changed: function () { location.reload(); },
+  competition_event_opened: function () { location.reload(); }
+}, function () { location.reload(); }, 5000);
+</script>
+{% endblock %}

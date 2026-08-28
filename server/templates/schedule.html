@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}赛程管理 · {{ comp.name }}{% endblock %}
+{% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/import">导入</a><a href="/events/{{ comp.id }}/results">结果</a>{% endblock %}
+{% block content %}
+<h1>赛程管理 · {{ comp.name }}</h1>
+<table>
+  <tr><th>场次编号</th><th>名称</th><th>项目</th><th>轮次</th><th>舞种</th><th>评分类型</th><th>晋级人数</th><th>状态</th><th>选手数</th><th>操作</th></tr>
+  {% for ev in events %}
+  <tr>
+    <td>{{ ev.code }}</td><td>{{ ev.name }}</td><td>{{ ev.project_code }}</td><td>{{ ev.round }}</td>
+    <td>{{ ev.dances|join("、") }}</td><td>{{ ev.scoring_type }}</td><td>{{ ev.advancement_count }}</td>
+    <td>{{ ev.status }}</td><td>{{ ev.roster|length }}</td>
+    <td><a class="btn secondary" href="/events/{{ comp.id }}/console/{{ ev.id }}">控制台</a></td>
+  </tr>
+  {% endfor %}
+  {% if not events %}<tr><td colspan="10" class="muted">暂无场次，请先在“导入”页上传赛程 CSV</td></tr>{% endif %}
+</table>
+
+<div class="card">
+  <h2>晋级确认</h2>
+  <p class="muted">选择项目与轮次（本轮全部场次计算完成后），生成合并晋级预案（可编辑），确认后蛇形分配回填下一轮。</p>
+  <div class="row">
+    <input id="adv-project" placeholder="项目编号，如 W1">
+    <input id="adv-round" type="number" value="1" min="1" style="width:80px">
+    <button class="btn" onclick="loadProposal()">生成预案</button>
+  </div>
+  <div id="proposal-box" style="display:none">
+    <p class="muted">每行一个背番号（按成绩从高到低），可手动调整：</p>
+    <textarea id="adv-list" rows="6" style="width:100%"></textarea>
+    <p><button class="btn" onclick="confirmAdv()">确认晋级并回填下一轮</button> <span id="adv-msg"></span></p>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadProposal() {
+  var p = document.getElementById('adv-project').value.trim();
+  var r = parseInt(document.getElementById('adv-round').value, 10);
+  try {
+    var data = await api('GET', '/api/projects/' + encodeURIComponent(p) + '/rounds/' + r + '/advancement-proposal');
+    var nums = data.proposal.map(function (x) { return x.competitor_number; });
+    document.getElementById('adv-list').value = nums.join('\n');
+    document.getElementById('proposal-box').style.display = '';
+    document.getElementById('adv-msg').textContent = '预案 ' + nums.length + ' 人（含各场次并列晋级）';
+  } catch (e) { document.getElementById('adv-msg').textContent = e.message; }
+}
+async function confirmAdv() {
+  var p = document.getElementById('adv-project').value.trim();
+  var r = parseInt(document.getElementById('adv-round').value, 10);
+  var nums = document.getElementById('adv-list').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+  try {
+    var data = await api('POST', '/api/projects/' + encodeURIComponent(p) + '/rounds/' + r + '/advancement-confirm', {advancing: nums});
+    document.getElementById('adv-msg').textContent = '已回填：' + JSON.stringify(data.filled);
+    setTimeout(function () { location.reload(); }, 1500);
+  } catch (e) { document.getElementById('adv-msg').textContent = e.message; }
+}
+</script>
+{% endblock %}

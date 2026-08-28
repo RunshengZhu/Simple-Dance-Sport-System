@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}赛事管理{% endblock %}
+{% block nav %}<a href="/events">赛事</a><a href="#" onclick="api('POST','/api/logout').then(()=>location='/login')">退出</a>{% endblock %}
+{% block content %}
+<h1>赛事管理</h1>
+<div class="card">
+  <h2>创建赛事</h2>
+  <div class="row">
+    <input id="name" placeholder="赛事名称（必填）">
+    <input id="date" placeholder="日期 YYYY-MM-DD">
+    <input id="location" placeholder="地点">
+    <button class="btn" onclick="createEvent()">创建</button>
+    <span id="msg" class="err"></span>
+  </div>
+</div>
+<div class="card">
+  <h2>赛事列表</h2>
+  <table id="tbl"><tr><th>ID</th><th>名称</th><th>日期</th><th>地点</th><th>状态</th><th>操作</th></tr></table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function refresh() {
+  var data = await api('GET', '/api/events');
+  var t = document.getElementById('tbl');
+  t.innerHTML = '<tr><th>ID</th><th>名称</th><th>日期</th><th>地点</th><th>状态</th><th>操作</th></tr>';
+  data.events.forEach(function (c) {
+    var tr = t.insertRow();
+    tr.innerHTML = '<td>' + c.id + '</td><td>' + c.name + '</td><td>' + c.date + '</td><td>' + c.location + '</td>'
+      + '<td>' + (c.active ? '<span class="ok">激活中</span>' : '未激活') + '</td><td>'
+      + '<a class="btn secondary" href="/events/' + c.id + '/import">导入</a> '
+      + '<a class="btn secondary" href="/events/' + c.id + '/schedule">赛程</a> '
+      + '<a class="btn secondary" href="/events/' + c.id + '/results">结果</a> '
+      + (c.active ? '' : '<button class="btn" onclick="activate(' + c.id + ')">激活</button>')
+      + ' <button class="btn danger" onclick="del(' + c.id + ')">删除</button></td>';
+  });
+}
+async function createEvent() {
+  try {
+    await api('POST', '/api/events', {name: v('name'), date: v('date'), location: v('location')});
+    msg(''); refresh();
+  } catch (e) { msg(e.message); }
+}
+async function activate(id) { await api('POST', '/api/events/' + id + '/activate'); refresh(); }
+async function del(id) { if (confirm('确认删除该赛事及全部数据？')) { await api('DELETE', '/api/events/' + id); refresh(); } }
+function v(id) { return document.getElementById(id).value; }
+function msg(t) { document.getElementById('msg').textContent = t; }
+refresh();
+</script>
+{% endblock %}

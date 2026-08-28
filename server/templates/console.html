@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}场次控制台 · {{ ev.name }}{% endblock %}
+{% block nav %}<a href="/events/{{ comp.id }}/schedule">← 赛程</a>{% endblock %}
+{% block content %}
+<h1>场次控制台 · {{ ev.name }} <span class="muted">{{ ev.code }} / {{ ev.project_code }} 第{{ ev.round }}轮 / {{ ev.scoring_type }}</span></h1>
+<p>状态：<b id="status">{{ ev.status }}</b>{% if ev.published %} <span class="ok">已发布</span>{% endif %}
+ 　舞种：{{ dances|join("、") }}</p>
+
+<div class="card">
+  <h2>上场选手管理</h2>
+  <p class="muted">从选手库勾选本场上场选手；评分中调整将清空已有评分（需确认）。</p>
+  <div class="row" id="roster-box">
+    {% for c in all_competitors %}
+    <label style="margin-right:12px"><input type="checkbox" class="cand" value="{{ c.number }}"
+      {% if c.number|string in roster %}checked{% endif %}> {{ c.number }} {{ c.name }} <span class="muted">{{ c.unit }}</span></label>
+    {% endfor %}
+    {% if not all_competitors %}<span class="muted">选手库为空，请先导入选手</span>{% endif %}
+  </div>
+  <p>
+    <button class="btn" onclick="openEvent(false)">开启评分</button>
+    <button class="btn secondary" onclick="openEvent(true)">重开（清空评分）</button>
+    <button class="btn secondary" onclick="closeEvent()">关闭评分</button>
+  </p>
+</div>
+
+<div class="card">
+  <h2>裁判提交进度 <span class="muted" id="complete-tag"></span></h2>
+  <table id="matrix"><tr><th>裁判</th>{% for d in dances %}<th>{{ d }}</th>{% endfor %}</tr></table>
+</div>
+
+<div class="card">
+  <h2>结果</h2>
+  <p>
+    <button class="btn" onclick="calc()">手动计算/重算</button>
+    <button class="btn" onclick="publish()">发布（进大屏）</button>
+    <button class="btn secondary" onclick="unpublish()">撤回发布</button>
+    <span id="calc-msg" class="muted"></span>
+  </p>
+  <div id="result-box">{% include "_result_tables.html" %}</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var CID = {{ comp.id }}, CEID = {{ ev.id }};
+var DANCES = {{ dances|tojson }}, JUDGES = {{ judges|tojson }};
+
+function selectedRoster() {
+  return Array.from(document.querySelectorAll('.cand:checked')).map(function (c) { return c.value; });
+}
+async function openEvent(reset) {
+  var roster = selectedRoster();
+  if (!roster.length) { alert('请至少勾选一名上场选手'); return; }
+  if (reset && !confirm('重开将清空本场次全部评分与结果，确认？')) return;
+  try {
+    var r = await api('POST', '/api/competition-events/' + CEID + '/open', {roster: roster, reset: reset});
+    if (r.reset_scores) alert('已清空本场次已有评分数据');
+    location.reload();
+  } catch (e) { alert(e.message); }
+}
+async function closeEvent() { await api('POST', '/api/competition-events/' + CEID + '/close'); location.reload(); }
+async function calc() {
+  try { await api('POST', '/api/competition-events/' + CEID + '/calculate'); location.reload(); }
+  catch (e) { document.getElementById('calc-msg').textContent = e.message; }
+}
+async function publish() { await api('POST', '/api/competition-events/' + CEID + '/publish'); location.reload(); }
+async function unpublish() { await api('POST', '/api/competition-events/' + CEID + '/unpublish'); location.reload(); }
+
+async function refreshProgress() {
+  var p = await api('GET', '/api/competition-events/' + CEID + '/progress');
+  document.getElementById('status').textContent = p.status;
+  var t = document.getElementById('matrix');
+  t.innerHTML = '<tr><th>裁判</th>' + DANCES.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '</tr>';
+  JUDGES.forEach(function (j) {
+    var tr = '<tr><td>' + j + '</td>';
+    DANCES.forEach(function (d) {
+      var got = (p.matrix[j] && p.matrix[j][d]) || [];
+      tr += '<td>' + got.length + '/' + p.roster.length + (got.length >= p.roster.length && p.roster.length ? ' ✓' : '') + '</td>';
+    });
+    t.innerHTML += tr + '</tr>';
+  });
+  document.getElementById('complete-tag').textContent = p.complete ? '已收齐（自动计算）' : '未收齐';
+}
+refreshProgress();
+connectSSE('/api/events/' + CID + '/stream', {
+  score_submitted: refreshProgress,
+  calculation_done: function () { location.reload(); },
+  results_published: function () { location.reload(); },
+  schedule_changed: function () { location.reload(); }
+}, refreshProgress, 3000);
+</script>
+{% endblock %}

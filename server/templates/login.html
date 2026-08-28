@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}登录{% endblock %}
+{% block content %}
+<div class="card" style="max-width:420px;margin:6vh auto">
+  <h1>登录</h1>
+  <label>角色</label>
+  <select id="role">
+    <option value="admin">管理员</option>
+    <option value="judge">裁判</option>
+  </select>
+  <div id="pw-box"><label>管理员口令</label><input type="password" id="password"></div>
+  <div id="judge-box" style="display:none"><label>裁判 ID</label><input id="judge_id" placeholder="如 J1"></div>
+  <p><button class="btn" id="btn">登录</button> <span id="msg" class="err"></span></p>
+  <p class="muted">观众无需登录：查看 <a href="/public/schedule">赛程</a> · <a href="/public/results">成绩</a> · <a href="/screen">大屏</a></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('role').onchange = function () {
+  var admin = this.value === 'admin';
+  document.getElementById('pw-box').style.display = admin ? '' : 'none';
+  document.getElementById('judge-box').style.display = admin ? 'none' : '';
+};
+document.getElementById('btn').onclick = async function () {
+  var role = document.getElementById('role').value;
+  var body = {role: role};
+  if (role === 'admin') body.password = document.getElementById('password').value;
+  else body.judge_id = document.getElementById('judge_id').value.trim();
+  try {
+    await api('POST', '/api/login', body);
+    location.href = role === 'admin' ? '/events' : '/judge';
+  } catch (e) { document.getElementById('msg').textContent = e.message; }
+};
+</script>
+{% endblock %}
