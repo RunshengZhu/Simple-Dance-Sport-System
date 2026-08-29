@@ -20,6 +20,9 @@ UNITS = ["北京大学","清华大学","复旦大学","南京大学","浙江大�
 lock = threading.Lock()
 stats = {"codes": {}, "err5xx": [], "errors": []}
 
+def invariant(name, cond, detail=""):
+    report["invariants"].append((name, bool(cond), detail))
+
 def req(method, path, jar=None, body=None, raw=None, ctype="application/json", timeout=15):
     full = BASE + path
     data = raw.encode() if raw is not None else (json.dumps(body).encode() if body is not None else None)
@@ -59,22 +62,26 @@ def gen_competitors():
     rows = ["背番号,项目编号,姓名,学校/单位"]
     CROSS = {103:(0,1), 107:(2,3), 111:(4,5), 115:(6,7)}   # 双人跨单位 4 对
     CROSS_L = {202:(3,6), 205:(5,7), 210:(1,4)}            # 拉丁跨单位 3 对
-    for i in range(16):
+    for i in range(48):
         num = 101 + i
+        mi, fi = M[i % 16], F[i % 16]
+        tag = "" if i < 16 else f"-{chr(0x4E00 + i)}"
         if num in CROSS:
-            ui, uj = CROSS[num]; unit, label = UNITS[ui], f"{M[i]}({UNITS[ui]})/{F[i]}({UNITS[uj]})"
+            ui, uj = CROSS[num]; unit, label = UNITS[ui], f"{mi}{tag}({UNITS[ui]})/{fi}{tag}({UNITS[uj]})"
         else:
-            unit, label = UNITS[i % 8], f"{M[i]}/{F[i]}"
+            unit, label = UNITS[i % 8], f"{mi}{tag}/{fi}{tag}"
         rows.append(f"{num},STD,{label},{unit}")
-    for i in range(12):
+    for i in range(24):
         num = 201 + i
+        mi, fi = M[(i+3) % 16], F[(i+7) % 16]
+        tag = "" if i < 12 else f"-{chr(0x4E00 + i)}"
         if num in CROSS_L:
-            ui, uj = CROSS_L[num]; unit, label = UNITS[ui], f"{M[(i+3)%16]}({UNITS[ui]})/{F[(i+7)%16]}({UNITS[uj]})"
+            ui, uj = CROSS_L[num]; unit, label = UNITS[ui], f"{mi}{tag}({UNITS[ui]})/{fi}{tag}({UNITS[uj]})"
         else:
-            unit, label = UNITS[(i+2) % 8], f"{M[(i+3)%16]}/{F[(i+7)%16]}"
+            unit, label = UNITS[(i+2) % 8], f"{mi}{tag}/{fi}{tag}"
         rows.append(f"{num},LAT,{label},{unit}")
-    TN = ["燕园舞蹈团","紫荆舞蹈团","旦复旦舞蹈团","金陵舞蹈团","求是舞蹈团","思源舞蹈团"]
-    for k in range(6):
+    TN = ["燕园舞蹈团","紫荆舞蹈团","旦复旦舞蹈团","金陵舞蹈团","求是舞蹈团","思源舞蹈团","珞珈舞蹈团","樱顶舞蹈团"]
+    for k in range(8):
         rows.append(f"T0{k+1},FRM,{TN[k]},{UNITS[k]}")
     return "\n".join(rows) + "\n"
 
@@ -95,6 +102,17 @@ def gen_schedule():
     m12 = ",".join(str(101+i) for i in range(12))
     teams6 = ",".join(f"T0{k+1}" for k in range(6))
     teams4 = ",".join(f"T0{k+1}" for k in range(4))
+    teams8 = ",".join(f"T0{k+1}" for k in range(8))
+    std48 = ",".join(str(101+i) for i in range(48))
+    std48a = ",".join(str(101+i) for i in range(0,16))
+    std48b = ",".join(str(101+i) for i in range(16,32))
+    std48c = ",".join(str(101+i) for i in range(32,48))
+    std12 = ",".join(str(101+i) for i in range(12))
+    std6 = ",".join(str(101+i) for i in range(6))
+    lat40 = ",".join(str(201+i) for i in range(40))
+    lat40a = ",".join(str(201+i) for i in range(0,20))
+    lat40b = ",".join(str(201+i) for i in range(20,40))
+    lat10 = ",".join(str(201+i) for i in range(10))
     E = []  # (场次编号, 名称, 项目, 轮, 舞种, 类型, 晋级, roster)
     def add(code, name, proj, rnd, dance, typ, adv, roster):
         E.append((code, name, proj, rnd, dance, typ, adv, roster))
@@ -120,6 +138,23 @@ def gen_schedule():
     add("L6R1","L6第1轮","L6",1,"伦巴","SKATING",6,lat); add("L6F","L6决赛","L6",2,"伦巴","SKATING",0,lat6)
     add("M4","M4直出","M4",1,"现代舞","MARK",0,m8)
     add("F5","F5直出","F5",1,"集体舞","SCORE",0,teams6)
+    # --- 大项目：>40 对，同项目分组（同轮多场次 → 合并晋级） ---
+    add("S10R1A","S10第1轮A组","S10",1,"华尔兹","SKATING",4,std48a)
+    add("S10R1B","S10第1轮B组","S10",1,"华尔兹","SKATING",4,std48b)
+    add("S10R1C","S10第1轮C组","S10",1,"华尔兹","SKATING",4,std48c)
+    add("S10R2","S10第2轮","S10",2,"华尔兹","SKATING",6,std12)
+    add("S10F","S10决赛","S10",3,"华尔兹","SKATING",0,std6)
+    add("L10R1A","L10第1轮A组","L10",1,"恰恰恰","SKATING",5,lat40a)
+    add("L10R1B","L10第1轮B组","L10",1,"恰恰恰","SKATING",5,lat40b)
+    add("L10F","L10决赛","L10",2,"恰恰恰","SKATING",0,lat10)
+    add("F10R1","F10第1轮","F10",1,"集体舞","SCORE",0,teams8)
+    add("F10F","F10决赛","F10",2,"集体舞","SCORE",0,teams8)
+    add("S8R1","S8第1轮","S8",1,"维也纳华尔兹","SKATING",8,std48a)
+    add("S8F","S8决赛","S8",2,"维也纳华尔兹","SKATING",0,std8)
+    add("L7R1","L7第1轮","L7",1,"伦巴","SKATING",6,lat40a)
+    add("L7F","L7决赛","L7",2,"伦巴","SKATING",0,lat6)
+    add("M5","M5直出","M5",1,"现代舞","MARK",0,m12)
+    add("F6","F6直出","F6",1,"集体舞","SCORE",0,teams8)
     lines = ["场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手"]
     for code,name,proj,rnd,dance,typ,adv,roster in E:
         lines.append(f"{code},{name},{proj},{rnd},{dance},{typ},{adv},\"{roster}\"" if roster else f"{code},{name},{proj},{rnd},{dance},{typ},{adv},")
@@ -217,24 +252,35 @@ by_project = defaultdict(list)
 for e in E: by_project[e[2]].append(e)
 def rounds_of(proj): return sorted(by_project[proj], key=lambda e: e[3])
 
-full_projects = ["S1", "S2", "L1", "F1", "M1"]   # 跑完整晋级链并发布最末轮
+full_projects = ["S1", "S2", "L1", "F1", "M1", "S10", "L10", "F10"]   # 完整晋级链（含分组大项目）
 for proj in full_projects:
     chain = rounds_of(proj)
-    advancing = None
-    for e in chain:
-        code = e[0]
-        target = "published" if code in published_set else ("calculated" if code in calculated_set else "scoring")
-        # 晋级链：中间轮必须走完整（算+晋级），最末轮按状态
-        logs = drive_event(code, "published" if e[3] < chain[-1][3] else target)
-        report["admin"] += [f"{c} {t}" for c, t in logs]
-        if e[3] < chain[-1][3]:
-            # 生成预案并确认（取 advancement_count 个）
-            adv = next(x[6] for x in E if x[0] == code)
-            c, prop = jreq("GET", f"/api/projects/{e[2]}/rounds/{e[3]}/advancement-proposal", admin)
+    rounds = defaultdict(list)
+    for e in chain: rounds[e[3]].append(e)
+    max_r = max(rounds)
+    for rnd in sorted(rounds):
+        group = rounds[rnd]
+        is_last = (rnd == max_r)
+        # 同轮多场（分组）：全部先驱动完
+        for e in group:
+            code = e[0]
+            if not is_last:
+                target = "calculated"   # 中间轮：算完即可（验证晋级链不依赖发布）
+            else:
+                target = ("published" if code in published_set else
+                          "calculated" if code in calculated_set else
+                          "scoring" if code in scoring_set else "pending")
+            logs = drive_event(code, target)
+            report["admin"] += [f"{c} {t}" for c, t in logs]
+        if not is_last:
+            # 合并晋级：同轮所有场次算完后一次 proposal（服务端合并同项目同轮）→ confirm
+            adv = group[0][6]
+            c, prop = jreq("GET", f"/api/projects/{proj}/rounds/{rnd}/advancement-proposal", admin)
             names = [p["competitor_number"] for p in (prop.get("proposal") or [])][:adv] if prop else []
+            invariant(f"{proj} R{rnd} 合并晋级数={adv}", len(names) == adv, f"got {len(names)}")
             if names:
-                c, _ = jreq("POST", f"/api/projects/{e[2]}/rounds/{e[3]}/advancement-confirm", admin, {"advancing": names})
-                report["admin"].append(f"confirm {code} -> {c}")
+                c, r2 = jreq("POST", f"/api/projects/{proj}/rounds/{rnd}/advancement-confirm", admin, {"advancing": names})
+                report["admin"].append(f"confirm {proj} R{rnd} ({len(names)}人) -> {c}")
 
 # 单轮/直出项目混排驱动
 for e in E:
@@ -248,10 +294,6 @@ for e in E:
     report["admin"] += [f"{c} {t}" for c, t in logs]
 
 # ---- 异常注入面 ----
-def invariant(name, cond, detail=""):
-    report["invariants"].append((name, bool(cond), detail))
-    with lock: stats["codes"].setdefault("INV", 0)
-
 first_pending = pending_set and sorted(pending_set)[0]
 ceid_p = ceid_by_code.get(sorted(pending_set)[0]) if pending_set else None
 c, _ = jreq("POST", f"/api/competition-events/{ceid_p}/open", admin, {"roster": [], "reset": False})
