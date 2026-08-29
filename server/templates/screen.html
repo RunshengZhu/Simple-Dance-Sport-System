@@ -11,6 +11,10 @@
   <h1>成绩公告</h1>
   <div id="results-list"></div>
 </div>
+<div class="screen-section" id="sec-standings">
+  <h1>团体总分榜</h1>
+  <div id="standings-list" class="muted">暂无团体总分</div>
+</div>
 <div class="screen-section active" id="sec-welcome">
   <h1>{% if comp %}{{ comp.name }}{% else %}体育舞蹈赛事{% endif %}</h1>
   <p style="font-size:2.4vw" class="muted">欢迎观赛 · 成绩实时更新</p>
@@ -19,13 +23,14 @@
 {% block scripts %}
 <script>
 var CID = {{ comp.id if comp else 0 }};
-var sections = ['sec-scoring', 'sec-results', 'sec-welcome'];
-var idx = 0, hasScoring = false, hasResults = false;
+var sections = ['sec-scoring', 'sec-results', 'sec-standings', 'sec-welcome'];
+var idx = 0, hasScoring = false, hasResults = false, hasStandings = false;
 function showNext() {
   // 只轮播有内容的节；都无内容则停留在欢迎页
   var avail = [];
   if (hasScoring) avail.push('sec-scoring');
   if (hasResults) avail.push('sec-results');
+  if (hasStandings) avail.push('sec-standings');
   avail.push('sec-welcome');
   sections.forEach(function (id) { document.getElementById(id).classList.remove('active'); });
   document.getElementById(avail[idx % avail.length]).classList.add('active');
@@ -45,6 +50,15 @@ async function refresh() {
         return '<tr><td>' + esc(e.code) + '</td><td>' + esc(e.name) + '</td><td>' + esc(e.project_code) + '</td><td>第' + esc(e.round) + '轮</td></tr>';
       }).join('') + '</table>'
     : '暂无进行中场次';
+  var ts = data.team_standings || {};
+  hasStandings = (ts.standings || []).length > 0;
+  document.getElementById('standings-list').innerHTML = hasStandings
+    ? '<table><tr><th>名次</th><th>单位</th><th>总分</th><th>各项目</th></tr>' +
+      ts.standings.slice(0, 8).map(function (s, i) {
+        var per = Object.keys(s.per_project || {}).map(function (k) { return esc(k) + '=' + esc(s.per_project[k]); }).join(' ');
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.unit) + '</td><td>' + esc(s.total) + '</td><td style=\'font-size:1.4vw\'>' + per + '</td></tr>';
+      }).join('') + '</table>'
+    : '暂无团体总分';
   document.getElementById('results-list').innerHTML = (data.published_results || []).map(function (p) {
     var rows = (p.results || []).slice(0, 8).map(function (r) {
       return '<tr><td>' + esc(r.rank) + '</td><td>' + esc(r.competitor_number) + '</td><td>' + esc(r.total_score) + '</td></tr>';

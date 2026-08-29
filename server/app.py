@@ -25,7 +25,7 @@ from core.data_models import ScoringType as ST
 from server import db, sse
 from server.scoring_service import (
     calculate_event, load_results, roster, dances_of, judges_of, is_complete,
-    advancement_proposal, confirm_advancement, scoring_type_of,
+    advancement_proposal, confirm_advancement, scoring_type_of, scoring_kind,
 )
 
 ADMIN_PASSWORD = os.environ.get("DSPORT_ADMIN_PASSWORD", "admin123")
@@ -251,7 +251,8 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         "ev": ev, "comp": comp, "dance": dance,
         "roster": roster_list, "rows": rows, "competitors": competitors,
         "is_skating": scoring_type_of(ev) == ScoringType.SKATING,
-        "is_mark": scoring_type_of(ev) == ScoringType.MARK,
+        "is_mark": scoring_kind(ev) == "mark",
+        "is_score": scoring_kind(ev) == "score",
         "n": len(roster_list),
     })
 
@@ -278,7 +279,8 @@ async def public_results(request: Request):
             res = load_results(ev["id"])
             if res:
                 payload.append({"ev": ev, "results": res})
-    return templates.TemplateResponse(request, "public_results.html", {"request": request, "comp": comp, "payload": payload})
+    standings = _team_standings(comp["id"], published_only=True) if comp else {"standings": []}
+    return templates.TemplateResponse(request, "public_results.html", {"request": request, "comp": comp, "payload": payload, "standings": standings})
 
 
 @app.get("/screen", response_class=HTMLResponse)
@@ -405,7 +407,7 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
                 continue
             rnd = int(r[i_round].strip() or 1)
             styp = (r[i_type].strip() if i_type is not None and i_type < len(r) else "SKATING").upper()
-            styp = "顺位法" if styp == "SKATING" else "Mark制"
+            styp = {"SKATING": "顺位法", "MARK": "Mark制", "SCORE": "评分制"}.get(styp, "Mark制")
             proj = r[i_proj].strip() if i_proj is not None and i_proj < len(r) else ""
             conn.execute("INSERT OR IGNORE INTO projects(competition_id, code, name) VALUES(?,?,?)",
                          (competition_id, proj, proj))
@@ -595,6 +597,19 @@ async def api_sheet(ceid: int, dance: str, request: Request = None):
     return {"dance": dance, "roster": roster_list, "skating": skating, "values": marks}
 
 
+
+def _sheet_mark_value(kind, v):
+    if kind == "mark":
+        return 1 if v else 0
+    if kind == "score":
+        return float(v)
+    return None
+
+
+def _sheet_placement_value(kind, v):
+    return int(v) if kind == "skating" else None
+
+
 @app.put("/api/judge/competition-events/{ceid}/dances/{dance}/sheet")
 async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
     s = require_judge(request)
@@ -604,10 +619,21 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
     body = await request.json()
     roster_list = set(roster(ceid))
     values = body.get("values") or {}
-    skating = scoring_type_of(ev) == ScoringType.SKATING
+    kind = scoring_kind(ev)
+    skating = kind == "skating"
 
     # 服务端复验（不信任客户端）
-    if skating:
+    if kind == "score":
+        if set(values.keys()) != roster_list:
+            raise HTTPException(status_code=400, detail="必须为全部上场队伍提交评分")
+        for v in values.values():
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="评分必须为 0~10 的数值")
+            if not (0 <= fv <= 10) or round(fv, 1) != fv:
+                raise HTTPException(status_code=400, detail="评分须为 0~10 且最多一位小数")
+    elif skating:
         if set(values.keys()) != roster_list:
             raise HTTPException(status_code=400, detail="必须为全部上场选手提交名次")
         placements = []
@@ -635,8 +661,8 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
             "VALUES(?,?,?,?,?,?) ON CONFLICT(event_id, dance_name, judge_code, competitor_number) "
             "DO UPDATE SET mark=excluded.mark, placement=excluded.placement, timestamp=datetime('now','localtime')",
             (ceid, s["judge_code"], str(num), dance,
-             (1 if v else 0) if not skating else None,
-             int(v) if skating else None))
+             _sheet_mark_value(kind, v),
+             _sheet_placement_value(kind, v)))
     conn.commit()
     sse.bus.publish(comp["id"], "score_submitted",
                     {"event_id": ceid, "dance": dance, "judge": s["judge_code"]})
@@ -670,6 +696,37 @@ async def api_confirm(project_code: str, round_no: int, request: Request = None)
     return {"ok": True, "filled": filled}
 
 
+# ------------------------------------------------- team standings (M6/D12/D13)
+def _team_standings(competition_id, published_only):
+    """按单位聚合团体总分：双人=主报单位（D13），集体=队伍单位（competitors.unit）。
+    published_only=True 仅统计已发布场次（公开口径）；False 统计全部已计算（管理预览）。"""
+    conn = db.get_db()
+    _comp_or_404(competition_id)
+    q = "SELECT * FROM events WHERE competition_id=? AND status IN ('calculated','published')"
+    if published_only:
+        q += " AND published=1"
+    events = db.rows(conn.execute(q + " ORDER BY project_code, round, code", (competition_id,)))
+    unit_by_number = {c["number"]: (c["unit"] or "") for c in db.rows(conn.execute(
+        "SELECT number, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+    entries = []
+    for ev in events:
+        data = load_results(ev["id"])
+        if not data:
+            continue
+        for r in data.get("overall_results") or []:
+            num = str(r["competitor_number"])
+            entries.append({"project": ev["project_code"], "number": num,
+                            "unit": unit_by_number.get(num, ""), "rank": r["rank"]})
+    from core.team_standing import compute_team_standings
+    return compute_team_standings(entries)
+
+
+@app.get("/api/events/{competition_id}/team-standings")
+async def api_team_standings_admin(competition_id: int, request: Request = None):
+    require_admin(request)
+    return _team_standings(competition_id, published_only=False)
+
+
 # ------------------------------------------------------------------ public API
 def _public_payload():
     comp = _active_competition()
@@ -686,7 +743,8 @@ def _public_payload():
                 published.append({"code": ev["code"], "name": ev["name"], "project": ev["project_code"],
                                   "round": ev["round"], "results": res["overall_results"]})
     return {"competition": {k: comp[k] for k in ("id", "name", "date", "location")},
-            "events": events, "published_results": published}
+            "events": events, "published_results": published,
+            "team_standings": _team_standings(comp["id"], published_only=True)}
 
 
 @app.get("/api/public/events/{competition_id}/schedule")
@@ -714,6 +772,12 @@ async def api_public_results(competition_id: int, request: Request = None, scope
     return {"results": out}
 
 
+@app.get("/api/public/events/{competition_id}/team-standings")
+async def api_team_standings_public(competition_id: int):
+    _comp_or_404(competition_id)
+    return _team_standings(competition_id, published_only=True)
+
+
 @app.get("/api/public/events/{competition_id}/screen-state")
 async def api_screen_state(competition_id: int):
     comp = _comp_or_404(competition_id)
@@ -723,7 +787,9 @@ async def api_screen_state(competition_id: int):
         (competition_id,)))
     payload = _public_payload() or {"published_results": [], "events": []}
     return {"competition": payload["competition"], "scoring_now": scoring,
-            "published_results": payload["published_results"], "updated_at": int(time.time())}
+            "published_results": payload["published_results"],
+            "team_standings": _team_standings(comp["id"], published_only=True),
+            "updated_at": int(time.time())}
 
 
 # ------------------------------------------------------------------ SSE

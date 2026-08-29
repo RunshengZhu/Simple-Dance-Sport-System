@@ -19,6 +19,16 @@ _TYPE_MAP = {
 }
 
 
+def scoring_kind(event):
+    """返回 'skating' | 'mark' | 'score'（评分制，M6 集体项目：裁判打分值，汇总排名）。"""
+    raw = str(event["scoring_type"]).strip().upper()
+    if raw.startswith("MARK"):
+        return "mark"
+    if raw.startswith("SCORE") or "评分" in str(event["scoring_type"]):
+        return "score"
+    return "skating"
+
+
 def scoring_type_of(event):
     key = str(event["scoring_type"]).strip().upper()
     return ScoringType.MARK if key.startswith("MARK") else ScoringType.SKATING
@@ -37,6 +47,16 @@ def load_score_records(event_id):
 
 def calculate_event(event):
     """计算单场次结果，写入 results 表（幂等覆盖）。返回 results_dict。"""
+    if scoring_kind(event) == "score":
+        data = _calculate_score_event(event)
+        conn = db.get_db()
+        conn.execute(
+            "INSERT INTO results(event_id, calculation_time, results_data) VALUES(?,datetime('now','localtime'),?) "
+            "ON CONFLICT(event_id) DO UPDATE SET calculation_time=datetime('now','localtime'), results_data=excluded.results_data",
+            (event["id"], db.dump_results(data)))
+        conn.execute("UPDATE events SET status='calculated' WHERE id=?", (event["id"],))
+        conn.commit()
+        return data
     records = load_score_records(event["id"])
     alg = ScoringAlgorithm()
     ok, results, errors, details, overall_details = alg.calculate_results(
@@ -67,6 +87,64 @@ def load_results(event_id):
     row = db.rowdict(db.get_db().execute(
         "SELECT results_data FROM results WHERE event_id=?", (event_id,)).fetchone())
     return db.load_results(row["results_data"]) if row else None
+
+
+def _rank_desc(sums):
+    """{num: score} → [(num, rank, score)]：总分降序，标准竞赛排名（同分并列 1,1,3）。"""
+    order = sorted(sums.items(), key=lambda kv: (-kv[1], str(kv[0])))
+    out = []
+    prev_score = None
+    prev_rank = 0
+    for i, (num, sc) in enumerate(order, start=1):
+        rk = prev_rank if (prev_score is not None and abs(sc - prev_score) < 1e-9) else i
+        out.append((str(num), rk, round(float(sc), 2)))
+        prev_score, prev_rank = sc, rk
+    return out
+
+
+def _calculate_score_event(event):
+    """评分制（M6 集体项目）：每裁判每队伍给 0~10 分值。
+    分舞种/总分 = 全部裁判分数求和；名次 = 降序标准竞赛排名（同分并列 1,1,3）；
+    晋级 = 名次 ≤ advancement_count（>0 时）。结果形态与 core 路径完全一致。"""
+    conn = db.get_db()
+    rows = db.rows(conn.execute(
+        "SELECT judge_code, competitor_number, dance_name, mark FROM score_records WHERE event_id=? ORDER BY id",
+        (event["id"],)))
+    dances = dances_of(event["id"])
+    per = {d: {} for d in dances}
+    for r in rows:
+        v = r["mark"]
+        if v is None:
+            continue
+        per.setdefault(r["dance_name"], {}).setdefault(str(r["competitor_number"]), {})[r["judge_code"]] = float(v)
+
+    dance_results = {}
+    for d in dances:
+        sums = {num: sum(jm.values()) for num, jm in per.get(d, {}).items()}
+        dance_results[d] = [
+            {"event_id": str(event["id"]), "competitor_number": num, "rank": rk,
+             "dance_name": d, "score": sc, "total_score": sc, "details": {},
+             "advancement_status": False, "tied_with": []}
+            for num, rk, sc in _rank_desc(sums)]
+
+    totals = {}
+    for d in dances:
+        for num, jm in per.get(d, {}).items():
+            totals[num] = totals.get(num, 0.0) + sum(jm.values())
+    adv_n = event["advancement_count"] or 0
+    overall = []
+    for num, rk, sc in _rank_desc(totals):
+        overall.append({"event_id": str(event["id"]), "competitor_number": num, "rank": rk,
+                        "dance_name": "综合", "score": sc, "total_score": sc, "details": {},
+                        "advancement_status": bool(adv_n and rk <= adv_n), "tied_with": []})
+
+    details = {d: {num: dict(jm) for num, jm in per.get(d, {}).items()} for d in dances}
+    return {
+        "dance_results": dance_results,
+        "overall_results": overall,
+        "score_details": details,
+        "overall_score_details": None,
+    }
 
 
 def _serialize_details(details):
