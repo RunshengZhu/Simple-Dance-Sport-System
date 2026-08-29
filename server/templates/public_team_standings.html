@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}团体总分{% endblock %}
+{% block nav %}<a href="/public/schedule">赛程</a><a href="/public/results">成绩</a><a href="/screen">大屏</a>{% endblock %}
+{% block content %}
+<h1>{% if comp %}{{ comp.name }}{% endif %} · 团体总分榜</h1>
+<div class="card">
+  <table>
+    <tr><th>名次</th><th>单位</th><th class="num">总分</th><th>各项目得分</th></tr>
+    {% for s in standings["standings"] %}
+    <tr class="{{ 'rank-1' if loop.index == 1 }}">
+      <td>{{ loop.index }}</td><td>{{ s.unit }}</td><td class="num">{{ s.total }}</td>
+      <td class="muted">{% for p, v in s.per_project.items() %}{{ p }}={{ v }} {% endfor %}</td>
+    </tr>
+    {% endfor %}
+    {% if not standings["standings"] %}<tr><td colspan="4" class="muted">暂无已发布成绩，发布后此处实时更新</td></tr>{% endif %}
+  </table>
+  <p class="muted">口径：名次赋分（第1~8名 9-7-6-5-4-3-2-1），仅计各项目最末轮；双人跨单位归主报单位。</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var CID = {{ comp.id if comp else 0 }};
+if (CID) connectSSE('/api/events/' + CID + '/stream', {
+  results_published: function () { location.reload(); }
+}, function () { location.reload(); }, 5000);
+</script>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}晋级确认 · {{ comp.name }}{% endblock %}
+{% block nav %}<a href="/events/{{ comp.id }}/schedule">← 赛程</a><span>{{ comp.name }}</span>{% endblock %}
+{% block content %}
+<h1>晋级确认</h1>
+<div class="card">
+  <label>项目</label>
+  <select id="proj">
+    {% for p in projects %}<option value="{{ p }}" {% if p == project %}selected{% endif %}>{{ p }}</option>{% endfor %}
+  </select>
+  <label>轮次</label>
+  <select id="rnd">
+    {% for r in rounds %}<option value="{{ r }}" {% if r == round %}selected{% endif %}>第 {{ r }} 轮</option>{% endfor %}
+  </select>
+  <button class="btn secondary" onclick="location.href='?project='+document.getElementById('proj').value+'&round='+document.getElementById('rnd').value">生成预案</button>
+  <span class="muted">晋级名额（本类场次最大值）：{{ adv or 0 }} ·
+    {% if next_exists %}下一轮已配置{% else %}<span class="tag warn">赛程中无下一轮（决赛轮）</span>{% endif %}</span>
+</div>
+{% if proposal %}
+<div class="card">
+  <h2>合并预案（按总分排序，勾选即晋级名单）</h2>
+  <table>
+    <tr><th></th><th>顺序</th><th>背番号</th><th class="num">总分</th></tr>
+    {% for p in proposal %}
+    <tr>
+      <td><input type="checkbox" class="adv-check" data-num="{{ p.competitor_number }}"
+           {% if loop.index <= (adv or 0) %}checked{% endif %}></td>
+      <td>{{ loop.index }}</td><td>{{ p.competitor_number }}</td><td class="num">{{ p.total_score }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p><button class="btn" id="confirm-btn">确认并蛇形回填下一轮</button> <span id="msg"></span></p>
+  <p class="muted">说明：名单将按名次蛇形分配到下一轮各场次（FR-D6）；确认后下一轮上场名单被覆盖。</p>
+</div>
+{% else %}
+<div class="card"><p class="muted">该项目该轮暂无可用的计算结果（需至少一场已计算/已发布）。</p></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+var CID = {{ comp.id }}, PROJECT = {{ project|tojson }}, ROUND = {{ round }};
+document.getElementById('confirm-btn')?.addEventListener('click', async function () {
+  var names = [];
+  document.querySelectorAll('.adv-check:checked').forEach(function (el) { names.push(el.dataset.num); });
+  if (!names.length) { document.getElementById('msg').textContent = '请先勾选晋级名单'; return; }
+  if (!confirm('确认晋级 ' + names.length + ' 组（对）并回填下一轮？')) return;
+  try {
+    var r = await api('POST', '/api/projects/' + PROJECT + '/rounds/' + ROUND + '/advancement-confirm', {advancing: names});
+    document.getElementById('msg').className = 'ok-text';
+    document.getElementById('msg').textContent = '已回填：' + JSON.stringify(r.filled);
+  } catch (e) { document.getElementById('msg').className = 'err'; document.getElementById('msg').textContent = e.message; }
+});
+</script>
+{% endblock %}

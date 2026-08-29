@@ -29,6 +29,7 @@ from server.scoring_service import (
 )
 
 ADMIN_PASSWORD = os.environ.get("DSPORT_ADMIN_PASSWORD", "admin123")
+SCREEN_CONTROL = {"mode": "auto", "comp_id": None}   # 大屏强制模式（v1 内存态，重启归 auto）
 PORT = int(os.environ.get("DSPORT_PORT", "8321"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -737,6 +738,138 @@ async def api_team_standings_admin(competition_id: int, request: Request = None)
     return _team_standings(competition_id, published_only=False)
 
 
+# ------------------------------------------------------------------ webui v1 pages
+@app.get("/events/{competition_id}/advancement", response_class=HTMLResponse)
+async def advancement_page(request: Request, competition_id: int):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    projects = [r["project_code"] for r in db.rows(conn.execute(
+        "SELECT DISTINCT project_code FROM events WHERE competition_id=? ORDER BY project_code", (competition_id,)))]
+    project = request.query_params.get("project") or (projects[0] if projects else "")
+    rounds = [r["round"] for r in db.rows(conn.execute(
+        "SELECT DISTINCT round FROM events WHERE competition_id=? AND project_code=? ORDER BY round", (competition_id, project)))]
+    try: rnd = int(request.query_params.get("round") or (rounds[-1] if rounds else 1))
+    except ValueError: rnd = rounds[-1] if rounds else 1
+    proposal = []
+    status = ""
+    try:
+        proposal = advancement_proposal(competition_id, project, rnd)
+    except Exception:
+        pass
+    next_exists = bool(conn.execute(
+        "SELECT 1 FROM events WHERE competition_id=? AND project_code=? AND round=? LIMIT 1",
+        (competition_id, project, rnd + 1)).fetchone())
+    return templates.TemplateResponse(request, "advancement.html", {
+        "request": request, "comp": comp, "projects": projects, "project": project,
+        "rounds": rounds, "round": rnd, "proposal": proposal,
+        "adv": conn.execute("SELECT COALESCE(MAX(advancement_count),0) a FROM events WHERE competition_id=? AND project_code=? AND round=?",
+                            (competition_id, project, rnd)).fetchone()["a"],
+        "next_exists": next_exists,
+    })
+
+
+@app.get("/events/{competition_id}/teams", response_class=HTMLResponse)
+async def teams_page(request: Request, competition_id: int):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    teams = db.rows(conn.execute(
+        "SELECT number, name, unit, project_code FROM competitors WHERE competition_id=? AND number LIKE 'T%' ORDER BY number",
+        (competition_id,)))
+    unit_stats = db.rows(conn.execute(
+        "SELECT unit, COUNT(*) AS pairs FROM competitors WHERE competition_id=? AND number NOT LIKE 'T%' AND unit<>'' GROUP BY unit ORDER BY pairs DESC",
+        (competition_id,)))
+    return templates.TemplateResponse(request, "teams.html", {
+        "request": request, "comp": comp, "teams": teams, "unit_stats": unit_stats})
+
+
+@app.get("/events/{competition_id}/screen-control", response_class=HTMLResponse)
+async def screen_control_page(request: Request, competition_id: int):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    return templates.TemplateResponse(request, "screen_control.html", {
+        "request": request, "comp": comp, "mode": SCREEN_CONTROL.get("mode", "auto")})
+
+
+@app.get("/events/{competition_id}/team-standings", response_class=HTMLResponse)
+async def team_standings_admin_page(request: Request, competition_id: int, best: str = ""):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    best_n = int(best) if best.isdigit() and int(best) > 0 else None
+    conn = db.get_db()
+    from core.team_standing import compute_team_standings
+    events = db.rows(conn.execute(
+        "SELECT * FROM events WHERE competition_id=? AND status IN ('calculated','published') ORDER BY project_code, round, code",
+        (competition_id,)))
+    unit_by_number = {c["number"]: (c["unit"] or "") for c in db.rows(conn.execute(
+        "SELECT number, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+    entries = []
+    last_round = {}
+    with_results = []
+    for ev in events:
+        data = load_results(ev["id"])
+        if data and data.get("overall_results"):
+            with_results.append((ev, data))
+            if ev["project_code"] not in last_round or ev["round"] > last_round[ev["project_code"]]:
+                last_round[ev["project_code"]] = ev["round"]
+    for ev, data in with_results:
+        if ev["round"] != last_round[ev["project_code"]]:
+            continue
+        for r in data["overall_results"]:
+            num = str(r["competitor_number"])
+            entries.append({"project": ev["project_code"], "number": num,
+                            "unit": unit_by_number.get(num, ""), "rank": r["rank"]})
+    standings = compute_team_standings(entries, best_n=best_n)
+    return templates.TemplateResponse(request, "team_standings.html", {
+        "request": request, "comp": comp, "standings": standings, "best_n": best_n})
+
+
+@app.get("/public/team-standings", response_class=HTMLResponse)
+async def team_standings_public_page(request: Request):
+    comp = _active_competition()
+    if not comp:
+        return templates.TemplateResponse(request, "public_team_standings.html",
+                                          {"request": request, "comp": None, "standings": {"standings": []}})
+    return templates.TemplateResponse(request, "public_team_standings.html", {
+        "request": request, "comp": comp,
+        "standings": _team_standings(comp["id"], published_only=True)})
+
+
+@app.get("/api/screen-control")
+async def api_screen_control_get(request: Request = None):
+    return {"mode": SCREEN_CONTROL.get("mode", "auto")}
+
+
+@app.post("/api/screen-control")
+async def api_screen_control_set(request: Request = None):
+    require_admin(request)
+    body = await request.json()
+    mode = body.get("mode")
+    if mode not in ("auto", "scoring", "results", "standings", "welcome"):
+        raise HTTPException(status_code=400, detail="未知大屏模式")
+    SCREEN_CONTROL["mode"] = mode
+    if SCREEN_CONTROL.get("comp_id"):
+        sse.bus.publish(SCREEN_CONTROL["comp_id"], "screen_state_changed", {"mode": mode})
+    return {"ok": True, "mode": mode}
+
+
+@app.get("/api/competition-events/{ceid}/detail-scores")
+async def api_detail_scores(ceid: int, request: Request = None):
+    """FR-E4 评分明细：仅管理端。返回每裁判×每选手原始打分。"""
+    require_admin(request)
+    ev = _event_or_404(ceid)
+    rows = db.rows(db.get_db().execute(
+        "SELECT judge_code, competitor_number, dance_name, mark, placement FROM score_records WHERE event_id=? ORDER BY dance_name, competitor_number, judge_code",
+        (ceid,)))
+    names = {c["number"]: c["name"] for c in db.rows(db.get_db().execute(
+        "SELECT number, name FROM competitors WHERE competition_id=?", (ev["competition_id"],)))}
+    return {"event": ev["code"], "records": [
+        {"judge": r["judge_code"], "number": r["competitor_number"],
+         "name": names.get(r["competitor_number"], ""), "dance": r["dance_name"],
+         "mark": r["mark"], "placement": r["placement"]} for r in rows]}
+
+
 # ------------------------------------------------------------------ public API
 def _public_payload():
     comp = _active_competition()
@@ -796,9 +929,12 @@ async def api_screen_state(competition_id: int):
         "SELECT code,name,project_code,round FROM events WHERE competition_id=? AND status='scoring'",
         (competition_id,)))
     payload = _public_payload() or {"published_results": [], "events": []}
+    if payload.get("competition"):
+        SCREEN_CONTROL["comp_id"] = payload["competition"]["id"]
     return {"competition": payload["competition"], "scoring_now": scoring,
             "published_results": payload["published_results"],
             "team_standings": _team_standings(comp["id"], published_only=True),
+            "forced_mode": SCREEN_CONTROL.get("mode", "auto"),
             "updated_at": int(time.time())}
 
 

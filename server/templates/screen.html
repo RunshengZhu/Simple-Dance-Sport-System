@@ -50,6 +50,7 @@ async function refresh() {
         return '<tr><td>' + esc(e.code) + '</td><td>' + esc(e.name) + '</td><td>' + esc(e.project_code) + '</td><td>第' + esc(e.round) + '轮</td></tr>';
       }).join('') + '</table>'
     : '暂无进行中场次';
+  var forced = data.forced_mode || 'auto';
   var ts = data.team_standings || {};
   hasStandings = (ts.standings || []).length > 0;
   document.getElementById('standings-list').innerHTML = hasStandings
@@ -65,6 +66,13 @@ async function refresh() {
     }).join('');
     return '<h2>' + esc(p.name) + '</h2><table><tr><th>名次</th><th>背番号</th><th>总分</th></tr>' + rows + '</table>';
   }).join('') || '<p class="muted" style="font-size:2vw">暂无已发布成绩</p>';
+  // 强制模式（FR-G9）：指定单一画面，不做轮播
+  var forcedMap = {scoring: 'sec-scoring', results: 'sec-results', standings: 'sec-standings', welcome: 'sec-welcome'};
+  if (forcedMap[forced]) {
+    sections.forEach(function (id) { document.getElementById(id).classList.remove('active'); });
+    document.getElementById(forcedMap[forced]).classList.add('active');
+    return;
+  }
   showNext();
 }
 if (CID) {

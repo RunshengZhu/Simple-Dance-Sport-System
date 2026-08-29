@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}单位与队伍 · {{ comp.name }}{% endblock %}
+{% block nav %}<a href="/events/{{ comp.id }}/schedule">← 赛程</a><span>{{ comp.name }}</span>{% endblock %}
+{% block content %}
+<h1>单位与队伍管理</h1>
+<div class="grid c2">
+  <div class="card">
+    <h2>单位参赛统计</h2>
+    <table>
+      <tr><th>单位</th><th class="num">参赛对/人数</th></tr>
+      {% for u in unit_stats %}
+      <tr><td>{{ u.unit }}</td><td class="num">{{ u.pairs }}</td></tr>
+      {% endfor %}
+      {% if not unit_stats %}<tr><td class="muted">暂无数据</td></tr>{% endif %}
+    </table>
+  </div>
+  <div class="card">
+    <h2>集体队伍（FR-I1~I4）</h2>
+    <table>
+      <tr><th>编号</th><th>队伍</th><th>单位</th><th>项目</th></tr>
+      {% for t in teams %}
+      <tr><td>{{ t.number }}</td><td>{{ t.name }}</td><td>{{ t.unit }}</td><td>{{ t.project_code }}</td></tr>
+      {% endfor %}
+      {% if not teams %}<tr><td colspan="4" class="muted">暂无集体队伍（T 编号选手即集体队伍）</td></tr>{% endif %}
+    </table>
+    <p class="muted">队伍通过「选手导入」以 T 编号建立（编号,项目,队名,单位）；同单位校验在导入校验报告中体现（FR-I4）。队员级组队编辑在后续版本提供。</p>
+  </div>
+</div>
+{% endblock %}

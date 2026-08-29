@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}大屏控制{% endblock %}
+{% block nav %}
+<a href="/events/{{ comp.id }}/schedule">← 赛程</a>
+<a href="/events/{{ comp.id }}/results">结果中心</a>
+<span>{{ comp.name }}</span>
+{% endblock %}
+{% block content %}
+<h1>大屏控制（FR-G9 / D4）</h1>
+<div class="card">
+  <p class="muted">强制指定大屏显示内容；「自动轮播」恢复按赛程自动切换。观众端大屏即时生效（SSE 推送）。</p>
+  <p>
+    {% for m, label in [("auto", "自动轮播"), ("scoring", "评分进行中"), ("results", "成绩公告"), ("standings", "团体总分榜"), ("welcome", "欢迎页")] %}
+    <button class="btn {% if mode == m %}secondary{% endif %}" data-mode="{{ m }}">{{ label }}</button>
+    {% endfor %}
+  </p>
+  <p id="msg"></p>
+  <p class="muted">当前强制模式：<span id="cur">{{ mode }}</span>（v1 为内存态，服务重启后回到自动轮播）。</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var CID = {{ comp.id }};
+document.querySelectorAll('button[data-mode]').forEach(function (b) {
+  b.addEventListener('click', async function () {
+    try {
+      var r = await api('POST', '/api/screen-control', {mode: b.dataset.mode});
+      document.getElementById('cur').textContent = r.mode;
+      document.getElementById('msg').textContent = '已切换：' + r.mode;
+    } catch (e) { document.getElementById('msg').textContent = e.message; }
+  });
+});
+</script>
+{% endblock %}

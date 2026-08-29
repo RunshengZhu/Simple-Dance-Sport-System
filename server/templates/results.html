@@ -1,15 +1,76 @@
 {% extends "base.html" %}
 {% block title %}结果中心 · {{ comp.name }}{% endblock %}
-{% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/schedule">赛程</a>
-<button class="btn secondary" onclick="window.print()">打印/另存为 PDF</button>
-<a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=markdown">导出 Markdown</a>{% endblock %}
+{% block nav %}
+<a href="/events">赛事</a>
+<a href="/events/{{ comp.id }}/schedule">赛程</a>
+<a href="/events/{{ comp.id }}/advancement">晋级确认</a>
+<a href="/events/{{ comp.id }}/teams">队伍</a>
+<a href="/events/{{ comp.id }}/team-standings">团体总分</a>
+<a href="/events/{{ comp.id }}/screen-control">大屏控制</a>
+{% endblock %}
 {% block content %}
-<h1>结果中心 · {{ comp.name }} <span class="muted">（已发布场次）</span></h1>
-{% for p in payload %}
+<h1>结果中心 · {{ comp.name }}</h1>
 <div class="card">
-  <h2>{{ p.ev.name }}（{{ p.ev.project_code }} 第{{ p.ev.round }}轮）{% if p.ev.published %}<span class="ok">已发布</span>{% endif %}</h2>
+  <p>
+    导出（已发布场次）：
+    <a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=markdown">Markdown</a>
+    <a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=html" target="_blank">打印 HTML</a>
+    <button class="btn secondary" id="backup-btn">数据库备份</button>
+    <a class="btn secondary" href="/events/{{ comp.id }}/team-standings">团体总分榜</a>
+    <span id="backup-msg" class="muted"></span>
+  </p>
+  <p class="muted">仅「已发布」场次进入公开页/大屏/导出与团体总分（D5 发布制）；评分明细仅本页可见（FR-E4）。</p>
+</div>
+{% for p in payload %}
+<div class="card" data-ceid="{{ p.ev.id }}">
+  <h2>{{ p.ev.name }}（{{ p.ev.project_code }} 第{{ p.ev.round }}轮）
+    {% if p.ev.published %}<span class="tag ok">已发布</span>{% else %}<span class="tag gray">已计算 · 未发布</span>{% endif %}
+  </h2>
+  <p>
+    <button class="btn" onclick="doPub(this, {{ p.ev.id }}, {{ 0 if p.ev.published else 1 }})">{{ "撤回发布" if p.ev.published else "发布（进大屏）" }}</button>
+    <button class="btn secondary" onclick="doCalc(this, {{ p.ev.id }})">手动重算</button>
+    <button class="btn secondary" onclick="toggleDetail(this, {{ p.ev.id }})">评分明细</button>
+  </p>
   {% with result = p.results %}{% include "_result_tables.html" %}{% endwith %}
+  <div class="detail-box" style="display:none">
+    <h3>评分明细（仅管理端，FR-E4）</h3>
+    <div class="detail-body muted">加载中…</div>
+  </div>
 </div>
 {% endfor %}
-{% if not payload %}<p class="muted">暂无已计算/发布场次。</p>{% endif %}
+{% if not payload %}<div class="card"><p class="muted">暂无已计算场次。请在场次控制台完成评分与计算。</p></div>{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+async function doPub(btn, ceid, publish) {
+  try {
+    await api('POST', '/api/competition-events/' + ceid + '/' + (publish ? 'publish' : 'unpublish'), {});
+    location.reload();
+  } catch (e) { alert(e.message); }
+}
+async function doCalc(btn, ceid) {
+  try { await api('POST', '/api/competition-events/' + ceid + '/calculate', {}); location.reload(); }
+  catch (e) { alert(e.message); }
+}
+async function toggleDetail(btn, ceid) {
+  var box = btn.closest('.card').querySelector('.detail-box');
+  if (box.style.display === 'none') {
+    box.style.display = '';
+    try {
+      var r = await api('GET', '/api/competition-events/' + ceid + '/detail-scores');
+      var t = '<table><tr><th>裁判</th><th>背番号</th><th>姓名</th><th>舞种</th><th>名次</th><th>评分/标记</th></tr>';
+      (r.records || []).forEach(function (x) {
+        t += '<tr><td>' + x.judge + '</td><td>' + x.number + '</td><td>' + (x.name || '') + '</td><td>' + x.dance + '</td><td>' + (x.placement ?? '—') + '</td><td>' + (x.mark === null ? '—' : x.mark) + '</td></tr>';
+      });
+      box.querySelector('.detail-body').innerHTML = t + '</table>';
+    } catch (e) { box.querySelector('.detail-body').textContent = e.message; }
+  } else { box.style.display = 'none'; }
+}
+document.getElementById('backup-btn')?.addEventListener('click', async function () {
+  try {
+    var r = await api('POST', '/api/backup', {});
+    document.getElementById('backup-msg').textContent = '已备份：' + r.path;
+  } catch (e) { document.getElementById('backup-msg').textContent = e.message; }
+});
+</script>
 {% endblock %}

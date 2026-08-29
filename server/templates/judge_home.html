@@ -7,7 +7,7 @@
 {% if not assignments %}<p class="muted">当前没有进行中的评分场次，请等待管理员开场。</p>{% endif %}
 {% for a in assignments %}
 <div class="card">
-  <h2>{{ a.name }} <span class="muted">{{ a.code }} / 第{{ a.round }}轮</span></h2>
+  <h2>{{ a.name }} <span class="tag acc">评分中</span> <span class="muted">{{ a.code }} / 第{{ a.round }}轮</span></h2>
   <p>舞种：
   {% for d in a.dances %}
     <a class="btn" href="/judge/competition-events/{{ a.id }}/dances/{{ d }}">{{ d }}

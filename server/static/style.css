@@ -1,39 +1,124 @@
-body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;color:#222}
-header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#1f2d3d;color:#fff}
-header .brand{font-weight:700}
-header nav{display:flex;gap:14px;align-items:center}
-header a{color:#cfe0ff;text-decoration:none}
-main{padding:16px;max-width:1100px;margin:0 auto}
-table{border-collapse:collapse;width:100%;margin:8px 0}
-td,th{border:1px solid #ccd;padding:6px 10px;text-align:left}
-th{background:#f0f3f8}
-.btn{display:inline-block;padding:8px 14px;background:#2b6cb0;color:#fff;border:0;border-radius:6px;cursor:pointer;font-size:14px;text-decoration:none}
-.btn.secondary{background:#718096}
-.btn.danger{background:#c53030}
-.btn:disabled{background:#a0aec0;cursor:not-allowed}
-input,select{padding:8px;font-size:14px;border:1px solid #bbb;border-radius:4px}
-label{display:block;margin:8px 0 2px}
-.card{border:1px solid #dde;border-radius:8px;padding:12px 16px;margin:12px 0;background:#fff}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.badge{color:#68d391;font-size:12px}
-.badge.off{color:#fc8181}
-.ok{color:#38a169}.err{color:#c53030}
-.muted{color:#718096;font-size:12px}
-h1{font-size:20px}h2{font-size:17px}
-/* 裁判移动优先 */
-.judge-sheet input[type=number],.judge-sheet select{width:72px}
-.judge-sheet td{padding:10px 8px}
-/* 大屏 */
-body.screen{background:#0b1220;color:#e8eefc}
-body.screen main{max-width:none;padding:0}
-body.screen header{background:#0b1220}
-.screen-section{display:none;padding:6vh 6vw;text-align:center}
-.screen-section.active{display:block}
-.screen-section h1{font-size:4.5vw;margin:2vh 0}
-.screen-section table{font-size:2.2vw}
-.screen-section td,.screen-section th{border-color:#2a3a5c;background:rgba(255,255,255,.04);padding:1.4vh 2vw}
-.state-provisional{color:#b7791f}
+/* 体育舞蹈评分系统 WebUI v1 —— 设计 token + 组件库（无构建链，纯手写） */
+:root {
+  --bg: #f5f3ef;            /* 暖灰底 */
+  --card: #ffffff;
+  --line: #e5e0d8;
+  --txt: #1f2937;
+  --muted: #8a8377;
+  --acc: #b91c1c;           /* 竞技红 */
+  --acc-soft: #fef2f2;
+  --gold: #b45309;          /* 赛事金 */
+  --ok: #15803d;
+  --ok-soft: #f0fdf4;
+  --warn: #a16207;
+  --warn-soft: #fefce8;
+  --radius: 10px;
+  --shadow: 0 1px 3px rgba(31,41,55,.08), 0 4px 14px rgba(31,41,55,.05);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--txt);
+  font: 15px/1.55 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+a { color: var(--acc); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1 { font-size: 1.45rem; margin: .2em 0 .6em; }
+h2 { font-size: 1.1rem; margin: 1.1em 0 .5em; }
+h3 { font-size: 1rem; margin: .8em 0 .4em; }
+
+/* ---- 顶栏 ---- */
+header {
+  position: sticky; top: 0; z-index: 20;
+  background: #ffffffee; backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 18px;
+}
+header .brand { font-weight: 700; color: var(--acc); letter-spacing: .5px; }
+header nav { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+header nav a {
+  padding: 5px 11px; border-radius: 999px; color: var(--txt); font-size: .92rem;
+}
+header nav a:hover { background: var(--acc-soft); text-decoration: none; }
+.badge { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+.badge.off { background: #c9c2b6; }
+
+/* ---- 布局 ---- */
+main { max-width: 1080px; margin: 0 auto; padding: 18px; }
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 16px 18px; margin: 14px 0;
+}
+.grid { display: grid; gap: 14px; }
+@media (min-width: 760px) { .grid.c2 { grid-template-columns: 1fr 1fr; } .grid.c3 { grid-template-columns: repeat(3,1fr); } }
+.muted { color: var(--muted); font-size: .9rem; }
+.err { color: var(--acc); font-size: .9rem; }
+.ok-text { color: var(--ok); font-weight: 600; }
+
+/* ---- 表格 ---- */
+table { border-collapse: collapse; width: 100%; margin: .5em 0; background: var(--card); }
+th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; font-size: .93rem; }
+th { color: var(--muted); font-weight: 600; font-size: .85rem; white-space: nowrap; }
+tbody tr:hover { background: #faf8f4; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.rank-1 td { background: var(--warn-soft); font-weight: 600; }
+
+/* ---- 按钮 / 表单 ---- */
+.btn {
+  display: inline-block; border: 1px solid var(--acc); background: var(--acc); color: #fff;
+  border-radius: 8px; padding: 7px 16px; font-size: .92rem; cursor: pointer; margin: 2px 2px 2px 0;
+}
+.btn:hover { filter: brightness(1.08); text-decoration: none; }
+.btn.secondary { background: #fff; color: var(--txt); border-color: var(--line); }
+.btn.danger { background: #fff; color: var(--acc); border-color: var(--acc); }
+.btn.big { padding: 12px 22px; font-size: 1.05rem; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+input, select, textarea {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--txt); max-width: 100%;
+}
+input:focus, select:focus { outline: 2px solid var(--acc-soft); border-color: var(--acc); }
+label { display: block; margin: 10px 0 4px; font-size: .88rem; color: var(--muted); }
+
+/* ---- 徽章 / 状态 ---- */
+.tag { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; }
+.tag.ok { background: var(--ok-soft); color: var(--ok); }
+.tag.warn { background: var(--warn-soft); color: var(--warn); }
+.tag.acc { background: var(--acc-soft); color: var(--acc); }
+.tag.gray { background: #f1ede6; color: var(--muted); }
+
+/* ---- 大屏（深色 1920 基准） ---- */
+body.screen { background: #10131a; color: #e8e6e1; }
+body.screen header { background: #10131add; border-color: #262c38; }
+body.screen header .muted { color: #9aa3b2; }
+body.screen main { max-width: 1600px; }
+body.screen h1 { font-size: 3.2vw; color: #f3c969; }
+body.screen h2 { font-size: 2.2vw; color: #d7dbe3; }
+body.screen table { font-size: 1.7vw; background: transparent; }
+body.screen th { color: #9aa3b2; }
+body.screen td, body.screen th { border-color: #262c38; padding: 1vw 1.2vw; }
+body.screen tr.rank-1 td { background: #3a2e12; color: #f3c969; }
+body.screen .screen-section { display: none; min-height: 72vh; }
+body.screen .screen-section.active { display: block; animation: fade .5s; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- 裁判移动端 ---- */
+body.judge-sheet table { font-size: 1.05rem; }
+body.judge-sheet td { padding: 12px 8px; }
+body.judge-sheet select, body.judge-sheet input[type=number] { width: 92px; font-size: 1.15rem; padding: 10px; }
+body.judge-sheet .btn.big { width: 100%; margin-top: 14px; }
+
+/* ---- 响应式 ---- */
+@media (max-width: 720px) {
+  main { padding: 12px; }
+  header { padding: 8px 12px; }
+  .card { padding: 12px; overflow-x: auto; }
+  table { min-width: 480px; }
+  .card.table-fit table { min-width: 0; }
+}
 @media print {
-  header,.btn,#net-badge,nav{display:none!important}
-  main{max-width:none}
+  header, .btn, #net-badge, nav { display: none !important; }
+  main { max-width: none; }
+  .card { border: none; box-shadow: none; }
 }
