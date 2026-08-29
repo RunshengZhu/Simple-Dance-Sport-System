@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set autorefresh = true %}
 {% block title %}晋级确认 · {{ comp.name }}{% endblock %}
 {% block nav %}<a href="/events/{{ comp.id }}/schedule">← 赛程</a><span>{{ comp.name }}</span>{% endblock %}
 {% block content %}

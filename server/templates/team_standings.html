@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set autorefresh = true %}
 {% block title %}团体总分 · {{ comp.name }}{% endblock %}
 {% block nav %}
 <a href="/events/{{ comp.id }}/schedule">← 赛程</a>
@@ -29,4 +30,7 @@
   </table>
   {% if standings["unattributed"] %}<p class="muted">未归属条目 {{ standings["unattributed"] | length }} 条（选手缺单位）</p>{% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+var CID = {{ comp.id }};
 {% endblock %}

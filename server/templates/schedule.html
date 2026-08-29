@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set autorefresh = true %}
 {% block title %}赛程管理 · {{ comp.name }}{% endblock %}
 {% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/import">导入</a><a href="/events/{{ comp.id }}/results">结果</a>{% endblock %}
 {% block content %}
@@ -32,6 +33,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
+var CID = {{ comp.id }};
 <script>
 async function loadProposal() {
   var p = document.getElementById('adv-project').value.trim();

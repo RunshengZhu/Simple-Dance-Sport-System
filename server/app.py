@@ -505,6 +505,22 @@ async def api_progress(ceid: int, request: Request = None):
             "complete": complete, "status": ev["status"]}
 
 
+@app.post("/api/competition-events/{ceid}/return-scores")
+async def api_return_scores(ceid: int, request: Request = None):
+    """FR-G5 评分退回：清空本场评分与结果，状态回到评分中，裁判重新提交。"""
+    require_admin(request)
+    ev, comp = _require_active_event(ceid)
+    if ev["status"] not in ("scoring", "calculated", "published"):
+        raise HTTPException(status_code=400, detail="当前状态不可退回")
+    conn = db.get_db()
+    conn.execute("DELETE FROM score_records WHERE event_id=?", (ceid,))
+    conn.execute("DELETE FROM results WHERE event_id=?", (ceid,))
+    conn.execute("UPDATE events SET status='scoring', published=0 WHERE id=?", (ceid,))
+    conn.commit()
+    sse.bus.publish(comp["id"], "score_returned", {"event_id": ceid})
+    return {"ok": True, "event_id": ceid}
+
+
 @app.post("/api/competition-events/{ceid}/calculate")
 async def api_calculate(ceid: int, request: Request = None):
     require_admin(request)

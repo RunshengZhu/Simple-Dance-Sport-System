@@ -20,6 +20,7 @@
     <button class="btn" onclick="openEvent(false)">开启评分</button>
     <button class="btn secondary" onclick="openEvent(true)">重开（清空评分）</button>
     <button class="btn secondary" onclick="closeEvent()">关闭评分</button>
+    <button class="btn danger" onclick="returnScores()">退回评分（FR-G5）</button>
   </p>
 </div>
 
@@ -64,6 +65,11 @@ async function openEvent(reset) {
   } catch (e) { alert(e.message); }
 }
 async function closeEvent() { await api('POST', '/api/competition-events/' + CEID + '/close'); location.reload(); }
+async function returnScores() {
+  if (!confirm('退回将清空本场全部评分与结果，裁判需重新提交，确认？')) return;
+  try { await api('POST', '/api/competition-events/' + CEID + '/return-scores', {}); location.reload(); }
+  catch (e) { alert(e.message); }
+}
 async function calc() {
   try { await api('POST', '/api/competition-events/' + CEID + '/calculate'); location.reload(); }
   catch (e) { document.getElementById('calc-msg').textContent = e.message; }
