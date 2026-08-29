@@ -795,22 +795,37 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
             placements.append(p)
         if len(set(placements)) != len(roster_list):
             raise HTTPException(status_code=400, detail="名次必须为 1~N 且互不重复")
-    else:
-        if set(values.keys()) != roster_list:
-            raise HTTPException(status_code=400, detail="必须为全部上场选手提交标记")
+    elif kind == "mark":
+        # Mark制（滑冰制预赛）：裁判**只对选中的选手**给 mark（core 语义：mark is True 计票，
+        # 未选中选手无记录、票数 0）。提交即整体替换该裁判该舞种的全部标记。
+        if not set(values.keys()) <= roster_list:
+            raise HTTPException(status_code=400, detail="标记对象必须在本场上场名单内")
         for v in values.values():
             if not isinstance(v, bool):
                 raise HTTPException(status_code=400, detail="Mark制为布尔标记（true/false）")
+        if not any(values.values()):
+            raise HTTPException(status_code=400, detail="至少需勾选一名给予 Mark 的选手")
 
     conn = db.get_db()
-    for num, v in values.items():
-        conn.execute(
-            "INSERT INTO score_records(event_id, judge_code, competitor_number, dance_name, mark, placement) "
-            "VALUES(?,?,?,?,?,?) ON CONFLICT(event_id, dance_name, judge_code, competitor_number) "
-            "DO UPDATE SET mark=excluded.mark, placement=excluded.placement, timestamp=datetime('now','localtime')",
-            (ceid, s["judge_code"], str(num), dance,
-             _sheet_mark_value(kind, v),
-             _sheet_placement_value(kind, v)))
+    if kind == "mark":
+        # 整体替换：清除该裁判该舞种旧记录，仅保留本次勾选（给予 mark）的选手
+        conn.execute("DELETE FROM score_records WHERE event_id=? AND judge_code=? AND dance_name=?",
+                     (ceid, s["judge_code"], dance))
+        for num, v in values.items():
+            if v:
+                conn.execute(
+                    "INSERT INTO score_records(event_id, judge_code, competitor_number, dance_name, mark, placement) "
+                    "VALUES(?,?,?,?,?,?)",
+                    (ceid, s["judge_code"], str(num), dance, 1, None))
+    else:
+        for num, v in values.items():
+            conn.execute(
+                "INSERT INTO score_records(event_id, judge_code, competitor_number, dance_name, mark, placement) "
+                "VALUES(?,?,?,?,?,?) ON CONFLICT(event_id, dance_name, judge_code, competitor_number) "
+                "DO UPDATE SET mark=excluded.mark, placement=excluded.placement, timestamp=datetime('now','localtime')",
+                (ceid, s["judge_code"], str(num), dance,
+                 _sheet_mark_value(kind, v),
+                 _sheet_placement_value(kind, v)))
     conn.commit()
     sse.bus.publish(comp["id"], "score_submitted",
                     {"event_id": ceid, "dance": dance, "judge": s["judge_code"]})
@@ -999,6 +1014,101 @@ async def api_screen_control_set(request: Request = None):
     if SCREEN_CONTROL.get("comp_id"):
         sse.bus.publish(SCREEN_CONTROL["comp_id"], "screen_state_changed", {"mode": mode})
     return {"ok": True, "mode": mode}
+
+
+@app.get("/api/competition-events/{ceid}/skating-table")
+async def api_skating_table(ceid: int, request: Request = None):
+    """滑冰法判定明细表（桌面版核心功能移植，FR-E1/E4）：分舞种
+    各裁判名次 → 1~N 票数 → 累计票 → 序和 → 多数裁决名次 → 最终名次。仅管理端。"""
+    require_admin(request)
+    ev = _event_or_404(ceid)
+    res = load_results(ceid)
+    if not res:
+        raise HTTPException(status_code=404, detail="尚未计算")
+    if scoring_kind(ev) != "skating":
+        raise HTTPException(status_code=400, detail="滑冰法判定明细仅顺位法场次生成（Mark制/评分制无此表）")
+    details = res.get("score_details") or {}
+    if not details:
+        raise HTTPException(status_code=400, detail="该场次无滑冰法判定明细")
+    names = {c["number"]: c["name"] for c in db.rows(db.get_db().execute(
+        "SELECT number, name FROM competitors WHERE competition_id=?", (ev["competition_id"],)))}
+    dances = {}
+    for dance, comp_map in details.items():
+        judges = []
+        for d in comp_map.values():
+            judges = sorted((d.get("judge_placements") or {}).keys())
+            if judges:
+                break
+        rows = []
+        for number, d in sorted(comp_map.items(), key=lambda kv: kv[1].get("final_rank", 99)):
+            rows.append({
+                "number": str(number), "name": names.get(str(number), ""),
+                "placements": d.get("judge_placements") or {},
+                "counts": {str(k): v for k, v in (d.get("placement_counts") or {}).items()},
+                "cum": {str(k): v for k, v in (d.get("cumulative_votes") or {}).items()},
+                "sum": d.get("sum_placement", 0),
+                "majority": d.get("majority_rank"),
+                "rank": d.get("final_rank", 0),
+            })
+        dances[dance] = {"judges": judges, "rows": rows}
+    overall = None
+    od = res.get("overall_score_details") or {}
+    if od:
+        overall = {str(num): {"total_sum": d.get("total_sum_placement", 0),
+                              "rank": d.get("final_rank", 0)} for num, d in od.items()}
+    return {"event": ev["code"], "name": ev["name"], "dances": dances, "overall": overall}
+
+
+def _render_detail_markdown(competition_id, published_only):
+    """明细表导出（Markdown）：已发布/全部已计算场次的滑冰法判定表。"""
+    conn = db.get_db()
+    q = "SELECT * FROM events WHERE competition_id=? AND status IN ('calculated','published')"
+    if published_only:
+        q += " AND published=1"
+    evs = db.rows(conn.execute(q + " ORDER BY project_code, round, code", (competition_id,)))
+    comp = _comp_or_404(competition_id)
+    names = {c["number"]: c["name"] for c in db.rows(conn.execute(
+        "SELECT number, name FROM competitors WHERE competition_id=?", (competition_id,)))}
+    lines = [f"# {comp['name']} 判定明细表", ""]
+    for ev in evs:
+        if scoring_kind(ev) != "skating":
+            continue
+        res = load_results(ev["id"])
+        details = (res or {}).get("score_details") or {}
+        if not details:
+            continue
+        lines.append(f"## {ev['name']}（{ev['project_code']} 第{ev['round']}轮 · {ev['scoring_type']}）")
+        lines.append("")
+        for dance, comp_map in details.items():
+            judges = sorted({j for d in comp_map.values() for j in (d.get("judge_placements") or {})})
+            positions = sorted({str(p) for d in comp_map.values() for p in (d.get("placement_counts") or {})},
+                               key=lambda x: int(x))
+            head = "| 名次 | 背番号 | 姓名 | " + " | ".join(judges) + " | " + " | ".join(f"{p}票" for p in positions) + " | 序和 | 多数 |"
+            lines += [head, "|" + "---|" * (4 + len(judges) + len(positions) + 2)]
+            for number, d in sorted(comp_map.items(), key=lambda kv: kv[1].get("final_rank", 99)):
+                pl = d.get("judge_placements") or {}
+                cnt = d.get("placement_counts") or {}
+                cells = [str(pl.get(j, "-")) for j in judges] + [str(cnt.get(p, 0)) for p in positions]
+                lines.append("| " + " | ".join([str(d.get("final_rank", "")), str(number), names.get(str(number), "")] + cells + [str(d.get("sum_placement", 0)), str(d.get("majority_rank") or "-")]) + " |")
+            lines.append("")
+    return chr(10).join(lines)
+
+
+@app.get("/api/events/{competition_id}/detail-exports")
+async def api_detail_exports(competition_id: int, request: Request = None, format: str = "markdown"):
+    """判定明细表导出（桌面版核心功能）：markdown / csv。"""
+    require_admin(request)
+    md = _render_detail_markdown(competition_id, published_only=False)
+    if format == "markdown":
+        return PlainTextResponse(md, media_type="text/markdown; charset=utf-8")
+    if format == "csv":
+        import csv as _csv, io as _io
+        buf = _io.StringIO()
+        w = _csv.writer(buf)
+        w.writerow(["场次", "舞种", "名次", "背番号", "姓名", "序和", "多数裁决"] +
+                   [f"裁判{j}" for j in range(1, 16)])
+        return PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8")
+    raise HTTPException(status_code=400, detail="未知格式")
 
 
 @app.get("/api/competition-events/{ceid}/detail-scores")

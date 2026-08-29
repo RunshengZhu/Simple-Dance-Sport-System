@@ -179,9 +179,22 @@ def judges_of(competition_id):
 
 
 def is_complete(event, roster_list, dances, judge_codes):
-    """收齐判定：上场选手 × 舞种 × 裁判 全有记录（排除 voided——本版本无作废功能）。"""
+    """收齐判定（按评分类型区分，2026-08-29 对齐 core Mark制语义）：
+    - 顺位法/评分制：上场选手 × 舞种 × 裁判 全有记录
+    - Mark制（滑冰制预赛）：裁判只对选中的选手给 mark——每裁判每舞种存在任意提交记录
+      即视为完成（core 仅统计 mark is True 的票数，未选中选手票数为 0）。"""
     if not roster_list or not dances or not judge_codes:
         return False
+    if scoring_kind(event) == "mark":
+        conn = db.get_db()
+        for d in dances:
+            for j in judge_codes:
+                n = conn.execute(
+                    "SELECT COUNT(*) c FROM score_records WHERE event_id=? AND dance_name=? AND judge_code=?",
+                    (event["id"], d, j)).fetchone()["c"]
+                if n < 1:
+                    return False
+        return True
     conn = db.get_db()
     for d in dances:
         for j in judge_codes:

@@ -117,15 +117,15 @@ def gen_schedule():
     def add(code, name, proj, rnd, dance, typ, adv, roster):
         E.append((code, name, proj, rnd, dance, typ, adv, roster))
     add("S1R1","S1第1轮","S1",1,"华尔兹","SKATING",8,std); add("S1R2","S1第2轮","S1",2,"华尔兹","SKATING",4,std8); add("S1F","S1决赛","S1",3,"华尔兹","SKATING",0,std4)
-    add("S2R1","S2第1轮","S2",1,"探戈","SKATING",8,std);  add("S2F","S2决赛","S2",2,"探戈","SKATING",0,std8)
-    add("S3R1","S3第1轮","S3",1,"快步","SKATING",8,std);  add("S3F","S3决赛","S3",2,"快步","SKATING",0,std8)
+    add("S2R1","S2第1轮","S2",1,"探戈","MARK",8,std);  add("S2F","S2决赛","S2",2,"探戈","SKATING",0,std8)
+    add("S3R1","S3第1轮","S3",1,"快步","MARK",8,std);  add("S3F","S3决赛","S3",2,"快步","MARK",0,std8)
     add("S4","S4直出","S4",1,"维也纳华尔兹","SKATING",0,std)
-    add("S5R1","S5第1轮","S5",1,"狐步","SKATING",8,std);  add("S5F","S5决赛","S5",2,"狐步","SKATING",0,std8)
+    add("S5R1","S5第1轮","S5",1,"狐步","MARK",8,std);  add("S5F","S5决赛","S5",2,"狐步","SKATING",0,std8)
     add("L1R1","L1第1轮","L1",1,"恰恰恰","SKATING",6,lat); add("L1F","L1决赛","L1",2,"恰恰恰","SKATING",0,lat6)
-    add("L2R1","L2第1轮","L2",1,"伦巴","SKATING",6,lat);  add("L2F","L2决赛","L2",2,"伦巴","SKATING",0,lat6)
+    add("L2R1","L2第1轮","L2",1,"伦巴","MARK",6,lat);  add("L2F","L2决赛","L2",2,"伦巴","SKATING",0,lat6)
     add("L3","L3直出","L3",1,"桑巴","SKATING",0,lat)
     add("L4","L4直出","L4",1,"斗牛","SKATING",0,lat8)
-    add("L5R1","L5第1轮","L5",1,"牛仔","SKATING",6,lat);  add("L5F","L5决赛","L5",2,"牛仔","SKATING",0,lat6)
+    add("L5R1","L5第1轮","L5",1,"牛仔","MARK",6,lat);  add("L5F","L5决赛","L5",2,"牛仔","MARK",0,lat6)
     add("M1R1","M1第1轮","M1",1,"现代舞","MARK",6,m10);   add("M1F","M1决赛","M1",2,"现代舞","MARK",0,m10)
     add("M2","M2直出","M2",1,"现代舞","MARK",0,m8)
     add("M3","M3直出","M3",1,"现代舞","MARK",0,m12)
@@ -139,10 +139,10 @@ def gen_schedule():
     add("M4","M4直出","M4",1,"现代舞","MARK",0,m8)
     add("F5","F5直出","F5",1,"集体舞","SCORE",0,teams6)
     # --- 大项目：>40 对，同项目分组（同轮多场次 → 合并晋级） ---
-    add("S10R1A","S10第1轮A组","S10",1,"华尔兹","SKATING",4,std48a)
-    add("S10R1B","S10第1轮B组","S10",1,"华尔兹","SKATING",4,std48b)
-    add("S10R1C","S10第1轮C组","S10",1,"华尔兹","SKATING",4,std48c)
-    add("S10R2","S10第2轮","S10",2,"华尔兹","SKATING",6,std12)
+    add("S10R1A","S10第1轮A组","S10",1,"华尔兹","MARK",4,std48a)
+    add("S10R1B","S10第1轮B组","S10",1,"华尔兹","MARK",4,std48b)
+    add("S10R1C","S10第1轮C组","S10",1,"华尔兹","MARK",4,std48c)
+    add("S10R2","S10第2轮","S10",2,"华尔兹","MARK",6,std12)
     add("S10F","S10决赛","S10",3,"华尔兹","SKATING",0,std6)
     add("L10R1A","L10第1轮A组","L10",1,"恰恰恰","SKATING",5,lat40a)
     add("L10R1B","L10第1轮B组","L10",1,"恰恰恰","SKATING",5,lat40b)
@@ -151,7 +151,7 @@ def gen_schedule():
     add("F10F","F10决赛","F10",2,"集体舞","SCORE",0,teams8)
     add("S8R1","S8第1轮","S8",1,"维也纳华尔兹","SKATING",8,std48a)
     add("S8F","S8决赛","S8",2,"维也纳华尔兹","SKATING",0,std8)
-    add("L7R1","L7第1轮","L7",1,"伦巴","SKATING",6,lat40a)
+    add("L7R1","L7第1轮","L7",1,"伦巴","MARK",6,lat40a)
     add("L7F","L7决赛","L7",2,"伦巴","SKATING",0,lat6)
     add("M5","M5直出","M5",1,"现代舞","MARK",0,m12)
     add("F6","F6直出","F6",1,"集体舞","SCORE",0,teams8)
@@ -214,7 +214,10 @@ def sheet_payload(typ, roster_list, seed):
         p = roster_list[:]; rnd.shuffle(p)
         return {num: i+1 for i, num in enumerate(p)}
     if typ == "MARK":
-        return {num: rnd.random() < 0.6 for num in roster_list}
+        # 滑冰制预赛：裁判只对选中选手给 mark（勾选数量 ≈ 晋级名额或一半）
+        k = max(1, len(roster_list) // 2)
+        picked = rnd.sample(roster_list, k)
+        return {num: True for num in picked}
     return {num: rnd.randint(60, 100)/10.0 for num in roster_list}   # 6.0~10.0 一位小数
 
 def drive_event(code, target):

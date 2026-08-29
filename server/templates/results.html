@@ -30,12 +30,17 @@
   <p>
     <button class="btn" onclick="doPub(this, {{ p.ev.id }}, {{ 0 if p.ev.published else 1 }})">{{ "撤回发布" if p.ev.published else "发布（进大屏）" }}</button>
     <button class="btn secondary" onclick="doCalc(this, {{ p.ev.id }})">手动重算</button>
-    <button class="btn secondary" onclick="toggleDetail(this, {{ p.ev.id }})">评分明细</button>
+    <button class="btn secondary" onclick="toggleDetail(this, {{ p.ev.id }})">原始打分</button>
+    <button class="btn secondary" onclick="toggleSkating(this, {{ p.ev.id }})">滑冰判定表</button>
   </p>
   {% with result = p.results %}{% include "_result_tables.html" %}{% endwith %}
   <div class="detail-box" style="display:none">
-    <h3>评分明细（仅管理端，FR-E4）</h3>
+    <h3>原始打分（仅管理端，FR-E4）</h3>
     <div class="detail-body muted">加载中…</div>
+  </div>
+  <div class="skating-box" style="display:none">
+    <h3>滑冰法判定明细表（仅管理端）</h3>
+    <div class="skating-body muted">加载中…</div>
   </div>
 </div>
 {% endfor %}
@@ -64,6 +69,38 @@ async function toggleDetail(btn, ceid) {
       });
       box.querySelector('.detail-body').innerHTML = t + '</table>';
     } catch (e) { box.querySelector('.detail-body').textContent = e.message; }
+  } else { box.style.display = 'none'; }
+}
+async function toggleSkating(btn, ceid) {
+  var box = btn.closest('.card').querySelector('.skating-box');
+  if (box.style.display === 'none') {
+    box.style.display = '';
+    var body = box.querySelector('.skating-body');
+    try {
+      var r = await api('GET', '/api/competition-events/' + ceid + '/skating-table');
+      var html = '';
+      Object.keys(r.dances || {}).forEach(function (dance) {
+        var d = r.dances[dance];
+        var judges = d.judges || [];
+        var positions = [];
+        (d.rows || []).forEach(function (row) {
+          Object.keys(row.counts || {}).forEach(function (p) { if (positions.indexOf(p) < 0) positions.push(p); });
+        });
+        positions.sort(function (a, b) { return parseInt(a, 10) - parseInt(b, 10); });
+        html += '<h3>' + dance + '</h3><table><tr><th>名次</th><th>背番号</th><th>姓名</th>';
+        judges.forEach(function (j) { html += '<th>' + j + '</th>'; });
+        positions.forEach(function (p) { html += '<th>' + p + '票</th>'; });
+        html += '<th>序和</th><th>多数</th></tr>';
+        (d.rows || []).forEach(function (row) {
+          html += '<tr><td>' + row.rank + '</td><td>' + row.number + '</td><td>' + (row.name || '') + '</td>';
+          judges.forEach(function (j) { html += '<td>' + ((row.placements || {})[j] ?? '-') + '</td>'; });
+          positions.forEach(function (p) { html += '<td>' + ((row.counts || {})[p] ?? 0) + '</td>'; });
+          html += '<td>' + row.sum + '</td><td>' + (row.majority ?? '-') + '</td></tr>';
+        });
+        html += '</table>';
+      });
+      body.innerHTML = html || '该场次无滑冰判定明细（仅顺位法场次生成）';
+    } catch (e) { body.className = 'err'; body.textContent = e.message; }
   } else { box.style.display = 'none'; }
 }
 document.getElementById('backup-btn')?.addEventListener('click', async function () {
