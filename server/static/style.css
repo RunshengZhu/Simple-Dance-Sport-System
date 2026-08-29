@@ -109,14 +109,52 @@ body.judge-sheet td { padding: 12px 8px; }
 body.judge-sheet select, body.judge-sheet input[type=number] { width: 92px; font-size: 1.15rem; padding: 10px; }
 body.judge-sheet .btn.big { width: 100%; margin-top: 14px; }
 
-/* ---- 响应式 ---- */
-@media (max-width: 720px) {
-  main { padding: 12px; }
-  header { padding: 8px 12px; }
-  .card { padding: 12px; overflow-x: auto; }
-  table { min-width: 480px; }
-  .card.table-fit table { min-width: 0; }
+/* ---- 三档响应式：手机 <720 / 平板 720-1080 / 桌面 >1080 ---- */
+
+/* 平板：720~1080 —— 双列网格生效、排版微缩、保留桌面结构 */
+@media (min-width: 720px) {
+  .grid.c2 { grid-template-columns: 1fr 1fr; }
+  .grid.c3 { grid-template-columns: 1fr 1fr; }   /* 平板 c3 降两列 */
+  main { padding: 20px; max-width: 100%; }
+  h1 { font-size: 1.5rem; }
 }
+@media (min-width: 1080px) {
+  .grid.c3 { grid-template-columns: repeat(3, 1fr); }
+  main { max-width: 1180px; }
+  table { font-size: .95rem; }
+}
+
+/* 手机：<720 —— 单列、触控目标加大、表格横向滚动、导航横滑 */
+@media (max-width: 719px) {
+  main { padding: 10px; }
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1.02rem; }
+  header { padding: 8px 10px; gap: 8px; }
+  header .brand { font-size: .95rem; }
+  header nav {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  header nav::-webkit-scrollbar { display: none; }
+  header nav a { white-space: nowrap; padding: 8px 12px; }   /* 触控目标 ≥40px */
+  .card { padding: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 520px; font-size: .86rem; }
+  th, td { padding: 7px 8px; }
+  .card.table-fit table { min-width: 0; }
+  /* 触控目标与防 iOS 聚焦缩放 */
+  .btn { padding: 10px 16px; font-size: .95rem; }
+  .btn.big { padding: 14px 20px; font-size: 1.1rem; width: 100%; }
+  input, select, textarea { font-size: 16px; padding: 10px 12px; width: 100%; max-width: 420px; }
+  label { margin-top: 12px; }
+  .grid { gap: 10px; }
+  /* 长按钮组换行不挤压 */
+  .card p .btn { margin-bottom: 6px; }
+}
+
+/* 吸顶表头：垂直滚动长表时表头跟随（配合 .card 滚动容器） */
+th { position: sticky; top: 0; background: var(--card); z-index: 2; }
+body.screen th { position: static; }
+
 @media print {
   header, .btn, #net-badge, nav { display: none !important; }
   main { max-width: none; }
