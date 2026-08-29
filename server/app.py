@@ -143,7 +143,7 @@ async def home(request: Request):
         return RedirectResponse("/events")
     if s and s["role"] == "judge":
         return RedirectResponse("/judge")
-    return RedirectResponse("/login")
+    return RedirectResponse("/public/schedule")   # 观众动线：未登录首屏=公开赛程
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -275,7 +275,7 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
     return templates.TemplateResponse(request, "judge_sheet.html", {
         "ev": ev, "comp": comp, "dance": dance,
         "roster": roster_list, "rows": rows, "competitors": competitors,
-        "is_skating": scoring_type_of(ev) == ScoringType.SKATING,
+        "is_skating": scoring_kind(ev) == "skating",
         "is_mark": scoring_kind(ev) == "mark",
         "is_score": scoring_kind(ev) == "score",
         "n": len(roster_list),

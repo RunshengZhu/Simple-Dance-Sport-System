@@ -20,6 +20,17 @@ document.getElementById('role').onchange = function () {
   document.getElementById('pw-box').style.display = admin ? '' : 'none';
   document.getElementById('judge-box').style.display = admin ? 'none' : '';
 };
+// URL 参数直达：/login?role=judge&judge=J1（裁判手机书签，易用性走查 2026-08-29）
+(function () {
+  var q = new URLSearchParams(location.search);
+  if (q.get('role') === 'judge') {
+    var sel = document.getElementById('role');
+    sel.value = 'judge';
+    sel.dispatchEvent(new Event('change'));
+    var jid = q.get('judge');
+    if (jid) document.getElementById('judge_id').value = jid;
+  }
+})();
 document.getElementById('btn').onclick = async function () {
   var role = document.getElementById('role').value;
   var body = {role: role};

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}成绩{% endblock %}
-{% block nav %}<a href="/public/schedule">赛程</a><a href="/screen">大屏</a>{% endblock %}
+{% block nav %}<a href="/public/team-standings">团体总分</a><a href="/public/schedule">赛程</a><a href="/screen">大屏</a>{% endblock %}
 {% block content %}
 <h1>{% if comp %}{{ comp.name }}{% endif %} · 成绩</h1>
 {% if standings and standings.standings %}
