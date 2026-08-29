@@ -708,10 +708,20 @@ def _team_standings(competition_id, published_only):
     events = db.rows(conn.execute(q + " ORDER BY project_code, round, code", (competition_id,)))
     unit_by_number = {c["number"]: (c["unit"] or "") for c in db.rows(conn.execute(
         "SELECT number, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
-    entries = []
+    # 口径（用户拍板 2026-08-29）：团体总分只统计每个项目的「最末轮」——
+    # 该项目有结果的轮次中轮号最大者（初赛名次不计，仅最终名次赋分）。
+    with_results = []
+    last_round = {}
     for ev in events:
         data = load_results(ev["id"])
-        if not data:
+        if data and (data.get("overall_results") or data.get("dance_results")):
+            with_results.append((ev, data))
+            pr = ev["project_code"]
+            if pr not in last_round or ev["round"] > last_round[pr]:
+                last_round[pr] = ev["round"]
+    entries = []
+    for ev, data in with_results:
+        if ev["round"] != last_round[ev["project_code"]]:
             continue
         for r in data.get("overall_results") or []:
             num = str(r["competitor_number"])

@@ -11,7 +11,7 @@
   <tr><td>{{ loop.index }}</td><td>{{ s["unit"] }}</td><td>{{ s["total"] }}</td>
       <td class="muted">{% for p, v in s["per_project"].items() %}{{ p }}={{ v }} {% endfor %}</td></tr>
   {% endfor %}</table>
-  <p class="muted">口径：名次赋分（第1~8名 9-7-6-5-4-3-2-1）；双人跨单位归主报单位。</p>
+  <p class="muted">口径：名次赋分（第1~8名 9-7-6-5-4-3-2-1），仅计各项目最末轮；双人跨单位归主报单位。</p>
 </div>
 {% endif %}
 {% for p in payload %}
