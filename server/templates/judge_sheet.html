@@ -35,7 +35,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
 var CEID = {{ ev.id }}, DANCE = {{ dance|tojson }}, SKATING = {{ is_skating|tojson }}, SCORE = {{ is_score|tojson }};
 function collect() {
   var values = {};
@@ -61,5 +60,4 @@ connectSSE('/api/events/' + CID + '/stream', {
   roster_changed: function () { location.reload(); },
   score_returned: function () { location.reload(); }
 }, function () { location.reload(); }, 2000);
-</script>
 {% endblock %}

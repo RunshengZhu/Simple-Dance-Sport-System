@@ -19,7 +19,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
 var CID = {{ comp.id }};
 document.querySelectorAll('button[data-mode]').forEach(function (b) {
   b.addEventListener('click', async function () {
@@ -30,5 +29,4 @@ document.querySelectorAll('button[data-mode]').forEach(function (b) {
     } catch (e) { document.getElementById('msg').textContent = e.message; }
   });
 });
-</script>
 {% endblock %}

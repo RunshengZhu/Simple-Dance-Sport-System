@@ -18,10 +18,8 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
 var CID = {{ comp.id if comp else 0 }};
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
   results_published: function () { location.reload(); }
 }, function () { location.reload(); }, 5000);
-</script>
 {% endblock %}

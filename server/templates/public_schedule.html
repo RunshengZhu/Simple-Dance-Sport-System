@@ -13,11 +13,9 @@
 </table>
 {% endblock %}
 {% block scripts %}
-<script>
 var CID = {{ comp.id if comp else 0 }};
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
   schedule_changed: function () { location.reload(); },
   competition_event_opened: function () { location.reload(); }
 }, function () { location.reload(); }, 5000);
-</script>
 {% endblock %}

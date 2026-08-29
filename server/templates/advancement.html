@@ -38,7 +38,6 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
-<script>
 var CID = {{ comp.id }}, PROJECT = {{ project|tojson }}, ROUND = {{ round }};
 document.getElementById('confirm-btn')?.addEventListener('click', async function () {
   var names = [];
@@ -51,5 +50,4 @@ document.getElementById('confirm-btn')?.addEventListener('click', async function
     document.getElementById('msg').textContent = '已回填：' + JSON.stringify(r.filled);
   } catch (e) { document.getElementById('msg').className = 'err'; document.getElementById('msg').textContent = e.message; }
 });
-</script>
 {% endblock %}

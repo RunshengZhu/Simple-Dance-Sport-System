@@ -42,7 +42,6 @@
 {% if not payload %}<div class="card"><p class="muted">暂无已计算场次。请在场次控制台完成评分与计算。</p></div>{% endif %}
 {% endblock %}
 {% block scripts %}
-<script>
 async function doPub(btn, ceid, publish) {
   try {
     await api('POST', '/api/competition-events/' + ceid + '/' + (publish ? 'publish' : 'unpublish'), {});
@@ -73,5 +72,4 @@ document.getElementById('backup-btn')?.addEventListener('click', async function 
     document.getElementById('backup-msg').textContent = '已备份：' + r.path;
   } catch (e) { document.getElementById('backup-msg').textContent = e.message; }
 });
-</script>
 {% endblock %}

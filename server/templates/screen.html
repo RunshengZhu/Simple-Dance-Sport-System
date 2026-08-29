@@ -21,7 +21,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
 var CID = {{ comp.id if comp else 0 }};
 var sections = ['sec-scoring', 'sec-results', 'sec-standings', 'sec-welcome'];
 var idx = 0, hasScoring = false, hasResults = false, hasStandings = false;
@@ -85,5 +84,4 @@ if (CID) {
     screen_state_changed: refresh
   }, refresh, 5000);
 } else { document.getElementById('sec-welcome').querySelector('h1').textContent = '暂无激活赛事'; }
-</script>
 {% endblock %}

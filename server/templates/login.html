@@ -15,7 +15,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
 document.getElementById('role').onchange = function () {
   var admin = this.value === 'admin';
   document.getElementById('pw-box').style.display = admin ? '' : 'none';
@@ -31,5 +30,4 @@ document.getElementById('btn').onclick = async function () {
     location.href = role === 'admin' ? '/events' : '/judge';
   } catch (e) { document.getElementById('msg').textContent = e.message; }
 };
-</script>
 {% endblock %}

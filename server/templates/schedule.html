@@ -1,60 +1,157 @@
 {% extends "base.html" %}
 {% set autorefresh = true %}
-{% block title %}赛程管理 · {{ comp.name }}{% endblock %}
-{% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/import">导入</a><a href="/events/{{ comp.id }}/results">结果</a>{% endblock %}
+{% block cid %}{{ comp.id }}{% endblock %}
+{% block title %}赛程编排 · {{ comp.name }}{% endblock %}
+{% block nav %}
+<a href="/events">赛事</a>
+<a href="/events/{{ comp.id }}/import">导入</a>
+<a href="/events/{{ comp.id }}/advancement">晋级确认</a>
+<a href="/events/{{ comp.id }}/results">结果中心</a>
+<a href="/events/{{ comp.id }}/team-standings">团体总分</a>
+<a href="/events/{{ comp.id }}/screen-control">大屏控制</a>
+{% endblock %}
 {% block content %}
-<h1>赛程管理 · {{ comp.name }}</h1>
-<table>
-  <tr><th>场次编号</th><th>名称</th><th>项目</th><th>轮次</th><th>舞种</th><th>评分类型</th><th>晋级人数</th><th>状态</th><th>选手数</th><th>操作</th></tr>
-  {% for ev in events %}
-  <tr>
-    <td>{{ ev.code }}</td><td>{{ ev.name }}</td><td>{{ ev.project_code }}</td><td>{{ ev.round }}</td>
-    <td>{{ ev.dances|join("、") }}</td><td>{{ ev.scoring_type }}</td><td>{{ ev.advancement_count }}</td>
-    <td>{{ ev.status }}</td><td>{{ ev.roster|length }}</td>
-    <td><a class="btn secondary" href="/events/{{ comp.id }}/console/{{ ev.id }}">控制台</a></td>
-  </tr>
-  {% endfor %}
-  {% if not events %}<tr><td colspan="10" class="muted">暂无场次，请先在“导入”页上传赛程 CSV</td></tr>{% endif %}
-</table>
+<h1>赛程编排 · {{ comp.name }} <span class="muted">{{ tree | length }} 个项目</span></h1>
 
-<div class="card">
-  <h2>晋级确认</h2>
-  <p class="muted">选择项目与轮次（本轮全部场次计算完成后），生成合并晋级预案（可编辑），确认后蛇形分配回填下一轮。</p>
-  <div class="row">
-    <input id="adv-project" placeholder="项目编号，如 W1">
-    <input id="adv-round" type="number" value="1" min="1" style="width:80px">
-    <button class="btn" onclick="loadProposal()">生成预案</button>
+{% for proj, rounds in tree.items() %}
+<div class="card" data-project="{{ proj }}">
+  <h2>{{ proj }} <span class="tag gray">{{ rounds | sum(attribute="count") }} 场</span></h2>
+  {% for r in rounds %}
+  <h3>第 {{ r.round }} 轮
+    {% if r.all_done %}<span class="tag ok">已全部计算</span>{% else %}<span class="tag warn">进行中/待开始</span>{% endif %}
+  </h3>
+  <table>
+    <tr><th>场次</th><th>名称</th><th>舞种</th><th>类型</th><th class="num">晋级</th><th>状态</th><th class="num">人数</th><th>操作</th></tr>
+    {% for ev in r.events %}
+    <tr data-code="{{ ev.code }}">
+      <td>{{ ev.code }}</td><td>{{ ev.name }}</td><td>{{ ev.dances | join("、") }}</td><td>{{ ev.scoring_type }}</td>
+      <td class="num">{{ ev.advancement_count }}</td>
+      <td>{% if ev.status == 'published' %}<span class="tag ok">已发布</span>
+          {% elif ev.status == 'calculated' %}<span class="tag acc">已计算</span>
+          {% elif ev.status == 'scoring' %}<span class="tag warn">评分中</span>
+          {% else %}<span class="tag gray">待开始</span>{% endif %}</td>
+      <td class="num">{{ ev.roster_n }}</td>
+      <td>
+        <a class="btn secondary" href="/events/{{ comp.id }}/console/{{ ev.id }}">控制台</a>
+        {% if ev.status == 'pending' %}
+        <button class="btn secondary" onclick="editEvent('{{ ev.code }}')">编辑</button>
+        <button class="btn danger" onclick="delEvent('{{ ev.code }}')">删除</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endfor %}
+</div>
+{% endfor %}
+{% if not tree %}<div class="card"><p class="muted">暂无场次。可在下方手工添加，或在「导入」页上传赛程 CSV。</p></div>{% endif %}
+
+<div class="card" id="event-form">
+  <h2 id="form-title">添加场次</h2>
+  <div class="grid c2">
+    <div>
+      <label>场次编号（唯一，如 S8R1 / S10R1B）</label><input id="f-code">
+      <label>场次名称</label><input id="f-name" placeholder="如 S8 第1轮">
+      <label>项目编号</label><input id="f-project" placeholder="如 S8">
+      <label>轮次</label><input id="f-round" type="number" value="1" min="1">
+    </div>
+    <div>
+      <label>舞种（逗号分隔，可多舞种）</label><input id="f-dances" value="华尔兹">
+      <label>评分类型</label>
+      <select id="f-type">
+        <option value="SKATING">顺位法（SKATING）</option>
+        <option value="MARK">Mark制（布尔标记票）</option>
+        <option value="SCORE">评分制（0~10 分值，集体常用）</option>
+      </select>
+      <label>晋级人数（0=决赛轮）</label><input id="f-adv" type="number" value="0" min="0">
+      <label>参赛选手（首轮可预填，逗号分隔背番号）</label><input id="f-roster" placeholder="如 101,102,103">
+    </div>
   </div>
-  <div id="proposal-box" style="display:none">
-    <p class="muted">每行一个背番号（按成绩从高到低），可手动调整：</p>
-    <textarea id="adv-list" rows="6" style="width:100%"></textarea>
-    <p><button class="btn" onclick="confirmAdv()">确认晋级并回填下一轮</button> <span id="adv-msg"></span></p>
-  </div>
+  <p>
+    <button class="btn" id="save-btn" onclick="saveEvent()">添加场次</button>
+    <button class="btn secondary" id="cancel-btn" style="display:none" onclick="resetForm()">取消编辑</button>
+    <span id="f-msg"></span>
+  </p>
+  <p class="muted">提示：大项目分组（>40 对同项目同轮多场次）直接为每组建一场，编号区分（如 R1A/R1B/R1C），晋级确认页自动合并各组预案（FR-J2）。</p>
 </div>
 {% endblock %}
 {% block scripts %}
-var CID = {{ comp.id }};
-<script>
-async function loadProposal() {
-  var p = document.getElementById('adv-project').value.trim();
-  var r = parseInt(document.getElementById('adv-round').value, 10);
-  try {
-    var data = await api('GET', '/api/projects/' + encodeURIComponent(p) + '/rounds/' + r + '/advancement-proposal');
-    var nums = data.proposal.map(function (x) { return x.competitor_number; });
-    document.getElementById('adv-list').value = nums.join('\n');
-    document.getElementById('proposal-box').style.display = '';
-    document.getElementById('adv-msg').textContent = '预案 ' + nums.length + ' 人（含各场次并列晋级）';
-  } catch (e) { document.getElementById('adv-msg').textContent = e.message; }
+var treeData = {{ tree_json | safe }};
+var editingCode = null;
+function codeInfo(code) {
+  for (var proj in treeData)
+    for (var ri in treeData[proj])
+      for (var ei in treeData[proj][ri].events)
+        if (treeData[proj][ri].events[ei].code === code)
+          return treeData[proj][ri].events[ei];
+  return null;
 }
-async function confirmAdv() {
-  var p = document.getElementById('adv-project').value.trim();
-  var r = parseInt(document.getElementById('adv-round').value, 10);
-  var nums = document.getElementById('adv-list').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-  try {
-    var data = await api('POST', '/api/projects/' + encodeURIComponent(p) + '/rounds/' + r + '/advancement-confirm', {advancing: nums});
-    document.getElementById('adv-msg').textContent = '已回填：' + JSON.stringify(data.filled);
-    setTimeout(function () { location.reload(); }, 1500);
-  } catch (e) { document.getElementById('adv-msg').textContent = e.message; }
+function ceidOf(code) {
+  for (var proj in treeData)
+    for (var ri in treeData[proj])
+      for (var ei in treeData[proj][ri].events)
+        if (treeData[proj][ri].events[ei].code === code)
+          return treeData[proj][ri].events[ei].id;
+  return null;
 }
-</script>
+function editEvent(code) {
+  var ev = codeInfo(code);
+  if (!ev) return;
+  editingCode = code;
+  document.getElementById('form-title').textContent = '编辑场次：' + code;
+  document.getElementById('f-code').value = code;
+  document.getElementById('f-code').disabled = true;
+  document.getElementById('f-name').value = ev.name;
+  document.getElementById('f-project').value = codeInfo(code) ? code.replace(/R?\d+$/, '') : '';
+  document.getElementById('f-round').value = ev.round;
+  document.getElementById('f-dances').value = ev.dances.join(',');
+  var tmap = {'顺位法': 'SKATING', 'Mark制': 'MARK', '评分制': 'SCORE'};
+  document.getElementById('f-type').value = tmap[ev.scoring_type] || 'SKATING';
+  document.getElementById('f-adv').value = ev.advancement_count;
+  document.getElementById('save-btn').textContent = '保存修改';
+  document.getElementById('cancel-btn').style.display = '';
+  document.getElementById('event-form').scrollIntoView({behavior: 'smooth'});
+}
+function resetForm() {
+  editingCode = null;
+  document.getElementById('form-title').textContent = '添加场次';
+  ['f-code', 'f-name', 'f-project', 'f-roster'].forEach(function (id) { document.getElementById(id).value = ''; });
+  document.getElementById('f-code').disabled = false;
+  document.getElementById('f-round').value = 1;
+  document.getElementById('f-adv').value = 0;
+  document.getElementById('f-type').value = 'SKATING';
+  document.getElementById('save-btn').textContent = '添加场次';
+  document.getElementById('cancel-btn').style.display = 'none';
+}
+async function saveEvent() {
+  var body = {
+    code: document.getElementById('f-code').value.trim(),
+    name: document.getElementById('f-name').value.trim(),
+    project: document.getElementById('f-project').value.trim(),
+    round: parseInt(document.getElementById('f-round').value, 10),
+    dances: document.getElementById('f-dances').value,
+    type: document.getElementById('f-type').value,
+    adv: parseInt(document.getElementById('f-adv').value, 10) || 0,
+    roster: document.getElementById('f-roster').value.trim()
+  };
+  var msg = document.getElementById('f-msg');
+  try {
+    if (editingCode) {
+      await api('PUT', '/api/competition-events/' + ceidOf(editingCode), body);
+    } else {
+      await api('POST', '/api/events/' + window.CID + '/schedule/add', body);
+    }
+    msg.className = 'ok-text'; msg.textContent = '已保存，刷新中…';
+    setTimeout(function () { location.reload(); }, 400);
+  } catch (e) { msg.className = 'err'; msg.textContent = e.message; }
+}
+async function delEvent(code) {
+  if (!confirm('删除场次 ' + code + '？')) return;
+  var ceid = ceidOf(code);
+  if (!ceid) { alert('未找到场次'); return; }
+  try {
+    await api('DELETE', '/api/competition-events/' + ceid, {});
+    location.reload();
+  } catch (e) { alert(e.message); }
+}
 {% endblock %}

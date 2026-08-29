@@ -47,7 +47,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
 var CID = {{ comp.id }}, CEID = {{ ev.id }};
 var DANCES = {{ dances|tojson }}, JUDGES = {{ judges|tojson }};
 
@@ -99,5 +98,4 @@ connectSSE('/api/events/' + CID + '/stream', {
   results_published: function () { location.reload(); },
   schedule_changed: function () { location.reload(); }
 }, refreshProgress, 3000);
-</script>
 {% endblock %}

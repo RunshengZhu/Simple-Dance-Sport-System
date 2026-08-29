@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block cid %}{{ comp.id }}{% endblock %}
 {% set autorefresh = true %}
 {% block title %}数据导入 · {{ comp.name }}{% endblock %}
 {% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/schedule">赛程</a><a href="/events/{{ comp.id }}/results">结果中心</a>{% endblock %}
@@ -22,7 +23,6 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
 async function doImport(kind) {
   var f = document.getElementById('f-' + kind).files[0];
   var el = document.getElementById('msg-' + kind);
@@ -45,5 +45,4 @@ async function doImport(kind) {
       problems.map(function (p, i) { return '<tr><td>' + (i+1) + '</td><td>' + p + '</td></tr>'; }).join('') + '</table>'
     : '<p class="ok-text">校验报告：无问题 ✓</p>';
 }
-</script>
 {% endblock %}

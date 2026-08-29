@@ -168,12 +168,36 @@ async def import_page(request: Request, competition_id: int):
 async def schedule_page(request: Request, competition_id: int):
     require_admin(request)
     comp = _comp_or_404(competition_id)
-    evs = db.rows(db.get_db().execute(
+    conn = db.get_db()
+    events = db.rows(conn.execute(
         "SELECT * FROM events WHERE competition_id=? ORDER BY project_code, round, code", (competition_id,)))
-    for ev in evs:
-        ev["dances"] = dances_of(ev["id"])
-        ev["roster"] = roster(ev["id"])
-    return templates.TemplateResponse(request, "schedule.html", {"request": request, "comp": comp, "events": evs})
+    tree = {}
+    for ev in events:
+        dances = [r["name"] for r in db.rows(conn.execute(
+            "SELECT name FROM event_dances WHERE event_id=? ORDER BY ord", (ev["id"],)))]
+        n = conn.execute("SELECT COUNT(*) c FROM event_competitors WHERE event_id=?", (ev["id"],)).fetchone()["c"]
+        tree.setdefault(ev["project_code"], {"rounds": {}})
+        rr = tree[ev["project_code"]]["rounds"].setdefault(ev["round"], [])
+        rr.append({"id": ev["id"], "code": ev["code"], "name": ev["name"], "round": ev["round"],
+                   "dances": dances, "scoring_type": ev["scoring_type"],
+                   "advancement_count": ev["advancement_count"], "status": ev["status"],
+                   "published": ev["published"], "roster": [str(x) for x in range(n)] or [], "roster_n": n})
+    # 序列化友好的结构：{proj: [{round, count, all_done, events:[...]}]}
+    tree2 = {}
+    for proj, info in tree.items():
+        lst = []
+        for rnd in sorted(info["rounds"]):
+            evs = info["rounds"][rnd]
+            for e in evs:
+                e["roster"] = []
+            all_done = all(e["status"] in ("calculated", "published") for e in evs)
+            lst.append({"round": rnd, "count": len(evs), "all_done": all_done, "events": evs})
+        tree2[proj] = lst
+    import json as _json
+    return templates.TemplateResponse(request, "schedule.html", {
+        "request": request, "comp": comp, "tree": tree2,
+        "tree_json": _json.dumps(tree2, ensure_ascii=False),
+        "events": events})
 
 
 @app.get("/events/{competition_id}/console/{ceid}", response_class=HTMLResponse)
@@ -503,6 +527,113 @@ async def api_progress(ceid: int, request: Request = None):
     complete = is_complete(ev, roster_list, dances, jcodes)
     return {"roster": roster_list, "dances": dances, "judges": jcodes, "matrix": matrix,
             "complete": complete, "status": ev["status"]}
+
+
+# ----------------------------------------------- schedule editing (FR-C1/J2)
+@app.post("/api/events/{competition_id}/schedule/add")
+async def api_schedule_add(competition_id: int, request: Request = None):
+    """单场新增（FR-J2 低复杂度动线）：任意轮次可挂新场次。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    body = await request.json()
+    code = str(body.get("code") or "").strip()
+    proj = str(body.get("project") or "").strip()
+    try:
+        rnd = int(body.get("round") or 1)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="轮次必须为整数")
+    if not code or not proj:
+        raise HTTPException(status_code=400, detail="场次编号与项目编号必填")
+    typ = str(body.get("type") or "SKATING").strip().upper()
+    typ_map = {"SKATING": "顺位法", "MARK": "Mark制", "SCORE": "评分制"}
+    if typ not in typ_map:
+        raise HTTPException(status_code=400, detail="评分类型须为 SKATING/MARK/SCORE")
+    conn = db.get_db()
+    if conn.execute("SELECT 1 FROM events WHERE competition_id=? AND code=?", (competition_id, code)).fetchone():
+        raise HTTPException(status_code=400, detail="场次编号已存在")
+    cur = conn.execute(
+        "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, status) "
+        "VALUES(?,?,?,?,?,?,?,'pending')",
+        (competition_id, code, str(body.get("name") or code), proj, rnd, typ_map[typ],
+         int(body.get("adv") or 0)))
+    ev_id = cur.lastrowid
+    dances = [x.strip() for x in str(body.get("dances") or "华尔兹").replace("，", ",").split(",") if x.strip()]
+    for k, dname in enumerate(dances):
+        conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ev_id, dname, k))
+    roster = [x.strip() for x in str(body.get("roster") or "").replace("，", ",").split(",") if x.strip()]
+    if roster and rnd == 1:
+        for num in roster:
+            conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)", (ev_id, num))
+    conn.commit()
+    sse.bus.publish(comp["id"], "schedule_changed", {"added": code})
+    return {"ok": True, "event_id": ev_id, "code": code}
+
+
+@app.put("/api/competition-events/{ceid}")
+async def api_event_edit(ceid: int, request: Request = None):
+    """编辑场次（仅 pending：未开场才可改结构，避免破坏评分一致性）。"""
+    require_admin(request)
+    ev = _event_or_404(ceid)
+    if ev["status"] != "pending":
+        raise HTTPException(status_code=400, detail="仅未开场的场次可编辑")
+    conn = db.get_db()
+    body = await request.json()
+    fields, vals = [], []
+    for key, col in (("name", "name"), ("type", "scoring_type"), ("adv", "advancement_count")):
+        if key in body:
+            v = body[key]
+            if key == "type":
+                typ_map = {"SKATING": "顺位法", "MARK": "Mark制", "SCORE": "评分制"}
+                v = typ_map.get(str(v).strip().upper())
+                if not v:
+                    raise HTTPException(status_code=400, detail="评分类型须为 SKATING/MARK/SCORE")
+            vals.append(v); fields.append(f"{col}=?")
+    if fields:
+        vals.append(ceid)
+        conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id=?", vals)
+    if "dances" in body:
+        dances = [x.strip() for x in str(body["dances"]).replace("，", ",").split(",") if x.strip()]
+        if dances:
+            conn.execute("DELETE FROM event_dances WHERE event_id=?", (ceid,))
+            for k, dname in enumerate(dances):
+                conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ceid, dname, k))
+    conn.commit()
+    sse.bus.publish(ev["competition_id"], "schedule_changed", {"edited": ev["code"]})
+    return {"ok": True}
+
+
+@app.delete("/api/competition-events/{ceid}")
+async def api_event_delete(ceid: int, request: Request = None):
+    """删除场次（仅 pending）。"""
+    require_admin(request)
+    ev = _event_or_404(ceid)
+    if ev["status"] != "pending":
+        raise HTTPException(status_code=400, detail="仅未开场的场次可删除（先退回或关闭后清理）")
+    comp_id = ev["competition_id"]
+    conn = db.get_db()
+    conn.execute("DELETE FROM event_dances WHERE event_id=?", (ceid,))
+    conn.execute("DELETE FROM event_competitors WHERE event_id=?", (ceid,))
+    conn.execute("DELETE FROM events WHERE id=?", (ceid,))
+    conn.commit()
+    sse.bus.publish(comp_id, "schedule_changed", {"deleted": ev["code"]})
+    return {"ok": True}
+
+
+@app.put("/api/events/{competition_id}")
+async def api_event_settings(competition_id: int, request: Request = None):
+    """赛事设置：名称/日期/地点（FR-A3）。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    body = await request.json()
+    fields, vals = [], []
+    for key in ("name", "date", "location"):
+        if key in body and str(body[key]).strip():
+            fields.append(f"{key}=?"); vals.append(str(body[key]).strip())
+    if fields:
+        vals.append(competition_id)
+        db.get_db().execute(f"UPDATE competitions SET {', '.join(fields)} WHERE id=?", vals)
+        db.get_db().commit()
+    return {"ok": True}
 
 
 @app.post("/api/competition-events/{ceid}/return-scores")
