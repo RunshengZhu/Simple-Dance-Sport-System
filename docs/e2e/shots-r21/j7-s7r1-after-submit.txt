@@ -1,0 +1,140 @@
+- banner:
+  - generic: 体育舞蹈评分系统
+  - navigation:
+    - link "← 待评场次":
+      - /url: /judge
+    - generic: S7第1轮
+    - generic "实时连接状态": ●
+- main:
+  - heading "探戈 S7第1轮 / 顺位法" [level=1]
+  - paragraph: 上场 8 名选手
+  - table:
+    - rowgroup:
+      - row "背番号 姓名 单位 名次（1~8 唯一）":
+        - columnheader "背番号"
+        - columnheader "姓名"
+        - columnheader "单位"
+        - columnheader "名次（1~8 唯一）"
+      - row "101 陈志明/梁咏琪 北京大学 1":
+        - cell "101"
+        - cell "陈志明/梁咏琪"
+        - cell "北京大学"
+        - cell "1":
+          - combobox:
+            - option "--"
+            - option "1" [selected]
+            - option "2"
+            - option "3"
+            - option "4"
+            - option "5"
+            - option "6"
+            - option "7"
+            - option "8"
+      - row "102 刘伟杰/宋雅琴 清华大学 2":
+        - cell "102"
+        - cell "刘伟杰/宋雅琴"
+        - cell "清华大学"
+        - cell "2":
+          - combobox:
+            - option "--"
+            - option "1"
+            - option "2" [selected]
+            - option "3"
+            - option "4"
+            - option "5"
+            - option "6"
+            - option "7"
+            - option "8"
+      - row "103 张浩然(北京大学)/谢雨婷(清华大学) 北京大学 3":
+        - cell "103"
+        - cell "张浩然(北京大学)/谢雨婷(清华大学)"
+        - cell "北京大学"
+        - cell "3":
+          - combobox:
+            - option "--"
+            - option "1"
+            - option "2"
+            - option "3" [selected]
+            - option "4"
+            - option "5"
+            - option "6"
+            - option "7"
+            - option "8"
+      - row "104 黄俊杰/唐梦琪 南京大学 4":
+        - cell "104"
+        - cell "黄俊杰/唐梦琪"
+        - cell "南京大学"
+        - cell "4":
+          - combobox:
+            - option "--"
+            - option "1"
+            - option "2"
+            - option "3"
+            - option "4" [selected]
+            - option "5"
+            - option "6"
+            - option "7"
+            - option "8"
+      - row "105 吴文轩/韩雪莹 浙江大学 5":
+        - cell "105"
+        - cell "吴文轩/韩雪莹"
+        - cell "浙江大学"
+        - cell "5":
+          - combobox:
+            - option "--"
+            - option "1"
+            - option "2"
+            - option "3"
+            - option "4"
+            - option "5" [selected]
+            - option "6"
+            - option "7"
+            - option "8"
+      - row "106 徐子豪/冯静怡 上海交通大学 6":
+        - cell "106"
+        - cell "徐子豪/冯静怡"
+        - cell "上海交通大学"
+        - cell "6":
+          - combobox:
+            - option "--"
+            - option "1"
+            - option "2"
+            - option "3"
+            - option "4"
+            - option "5"
+            - option "6" [selected]
+            - option "7"
+            - option "8"
+      - row "107 孙铭泽(复旦大学)/曹颖慧(南京大学) 复旦大学 7":
+        - cell "107"
+        - cell "孙铭泽(复旦大学)/曹颖慧(南京大学)"
+        - cell "复旦大学"
+        - cell "7":
+          - combobox:
+            - option "--"
+            - option "1"
+            - option "2"
+            - option "3"
+            - option "4"
+            - option "5"
+            - option "6"
+            - option "7" [selected]
+            - option "8"
+      - row "108 马嘉熙/彭诗涵 中山大学 8":
+        - cell "108"
+        - cell "马嘉熙/彭诗涵"
+        - cell "中山大学"
+        - cell "8":
+          - combobox:
+            - option "--"
+            - option "1"
+            - option "2"
+            - option "3"
+            - option "4"
+            - option "5"
+            - option "6"
+            - option "7"
+            - option "8" [selected]
+  - paragraph:
+    - button "提交名次表" [active]
+    - text: 已提交（全员收齐，已自动计算） 提交后如场次未关闭可再次修改提交。

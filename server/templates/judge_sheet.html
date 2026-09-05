@@ -51,12 +51,12 @@ function collect() {
     else if (SCORE) { if (el.value !== '') values[num] = parseFloat(el.value); }
     else values[num] = el.checked;
   });
-  if (!SKATING) {
+  if (!SKATING && !SCORE) {
     var picked = {};
     Object.keys(values).forEach(function (num) { if (values[num]) picked[num] = true; });
     var cnt = document.getElementById('mark-count');
     if (cnt) cnt.textContent = Object.keys(picked).length;
-    return picked;   // Mark 制：只提交勾选给予 Mark 的选手（core 语义）
+    return picked;   // 仅 Mark 制：只提交勾选给予 Mark 的选手（core 语义）；SCORE 须保留数值
   }
   return values;
 }

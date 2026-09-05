@@ -779,6 +779,8 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
                 fv = float(v)
             except (TypeError, ValueError):
                 raise HTTPException(status_code=400, detail="评分必须为 0~10 的数值")
+            if isinstance(v, bool):
+                raise HTTPException(status_code=400, detail="评分必须为数值（布尔标记不属于评分制）")
             if not (0 <= fv <= 10) or round(fv, 1) != fv:
                 raise HTTPException(status_code=400, detail="评分须为 0~10 且最多一位小数")
     elif skating:
@@ -1204,6 +1206,9 @@ async def api_stream(competition_id: int, request: Request = None):
     async def gen():
         try:
             yield "retry: 3000\n\n"
+            # 连接/重连即推状态同步事件：重连客户端若错过离线期间的一次性变更，
+            # 依赖此快照触发各自 refresh()（base 页不监听此事件，避免重载循环）
+            yield "event: state_sync\ndata: {\"ts\": 1}\n\n"
             while True:
                 if await request.is_disconnected():
                     break

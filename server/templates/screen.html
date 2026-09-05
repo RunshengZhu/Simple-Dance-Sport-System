@@ -81,7 +81,8 @@ if (CID) {
     competition_event_opened: refresh,
     competition_event_closed: refresh,
     schedule_changed: refresh,
-    screen_state_changed: refresh
+    screen_state_changed: refresh,
+    state_sync: refresh   // 重连快照：弥补离线期间错过的一次性事件（容灾 D2）
   }, refresh, 5000);
 } else { document.getElementById('sec-welcome').querySelector('h1').textContent = '暂无激活赛事'; }
 {% endblock %}
