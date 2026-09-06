@@ -53,6 +53,14 @@ def require_admin(request: Request):
     return s
 
 
+@app.exception_handler(HTTPException)
+async def html_auth_redirect(request: Request, exc: HTTPException):
+    """页面路由的登录/权限异常改为跳转登录页（API 路由维持 JSON），避免用户看到裸错误。"""
+    if not request.url.path.startswith("/api/") and exc.status_code in (401, 403):
+        return RedirectResponse("/login", status_code=302)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+
 def require_judge(request: Request):
     s = _session(request)
     if not s or s["role"] != "judge":
@@ -181,7 +189,8 @@ async def schedule_page(request: Request, competition_id: int):
         rr.append({"id": ev["id"], "code": ev["code"], "name": ev["name"], "round": ev["round"],
                    "dances": dances, "scoring_type": ev["scoring_type"],
                    "advancement_count": ev["advancement_count"], "status": ev["status"],
-                   "published": ev["published"], "roster": [str(x) for x in range(n)] or [], "roster_n": n})
+                   "published": ev["published"], "run_seq": ev["run_seq"],
+                   "roster": [str(x) for x in range(n)] or [], "roster_n": n})
     # 序列化友好的结构：{proj: [{round, count, all_done, events:[...]}]}
     tree2 = {}
     for proj, info in tree.items():
@@ -1209,6 +1218,111 @@ async def api_screen_state(competition_id: int):
             "team_standings": _team_standings(comp["id"], published_only=True),
             "forced_mode": SCREEN_CONTROL.get("mode", "auto"),
             "updated_at": int(time.time())}
+
+
+# ------------------------------------------------- run order（防连场编排，FR-J 系增强）
+def _roster_set(ceid):
+    return {r["competitor_number"] for r in db.rows(db.get_db().execute(
+        "SELECT competitor_number FROM event_competitors WHERE event_id=?", (ceid,)))}
+
+
+def _pending_events(competition_id):
+    return db.rows(db.get_db().execute(
+        "SELECT id,code,name,project_code,round,run_seq FROM events "
+        "WHERE competition_id=? AND status='pending' ORDER BY project_code, round, code",
+        (competition_id,)))
+
+
+@app.get("/api/events/{competition_id}/run-order")
+async def api_run_order_get(competition_id: int, request: Request = None):
+    """当前已保存的比赛顺序（仅待赛场次）；roster 供前端重排时自算连场数。"""
+    require_admin(request)
+    _comp_or_404(competition_id)
+    items = []
+    for e in _pending_events(competition_id):
+        rs = _roster_set(e["id"])
+        items.append({"ceid": e["id"], "code": e["code"], "name": e["name"],
+                      "project": e["project_code"], "round": e["round"],
+                      "run_seq": e["run_seq"], "roster": sorted(rs)})
+    return {"order": items}
+
+
+@app.get("/api/events/{competition_id}/run-order/proposal")
+async def api_run_order_proposal(competition_id: int, request: Request = None):
+    """防连场自动排序建议：尊重同项目轮次依赖（轮次未齐不得跳轮），
+    贪心选择与上一场选手重叠最小的场次；首场取人数最少者降低开场压力。"""
+    require_admin(request)
+    _comp_or_404(competition_id)
+    pending = _pending_events(competition_id)
+    rosters = {e["id"]: _roster_set(e["id"]) for e in pending}
+    pending_pr = {}
+    for e in pending:
+        pending_pr[(e["project_code"], e["round"])] = pending_pr.get((e["project_code"], e["round"]), 0) + 1
+    order, overlaps = [], []
+    last = set()
+    remaining = {e["id"]: e for e in pending}
+    while remaining:
+        ready = [e for e in remaining.values()
+                 if all(pending_pr.get((e["project_code"], r), 0) == 0
+                        for r in range(1, e["round"]))]
+        if not ready:
+            ready = list(remaining.values())   # 依赖兜底（不应发生）
+        if last:
+            best = min(ready, key=lambda e: (len(rosters[e["id"]] & last), e["round"], e["project_code"], e["code"]))
+        else:
+            best = min(ready, key=lambda e: (e["round"], len(rosters[e["id"]]), e["project_code"], e["code"]))
+        order.append(best)
+        overlaps.append(len(rosters[best["id"]] & last) if last else 0)
+        last = rosters[best["id"]]
+        pr = (best["project_code"], best["round"])
+        pending_pr[pr] -= 1
+        del remaining[best["id"]]
+    items = [{"ceid": e["id"], "code": e["code"], "name": e["name"], "project": e["project_code"],
+              "round": e["round"], "roster": sorted(rosters[e["id"]])} for e in order]
+    return {"order": items, "overlaps": overlaps}
+
+
+@app.post("/api/events/{competition_id}/run-order")
+async def api_run_order_save(competition_id: int, request: Request = None):
+    """保存（或清空）比赛顺序；仅接受本赛事 pending 场次。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    body = await request.json()
+    order = [int(x) for x in (body.get("order") or [])]
+    conn = db.get_db()
+    conn.execute("UPDATE events SET run_seq=NULL WHERE competition_id=?", (comp["id"],))
+    for pos, ceid in enumerate(order, 1):
+        conn.execute("UPDATE events SET run_seq=? WHERE id=? AND competition_id=? AND status='pending'",
+                     (pos, ceid, comp["id"]))
+    conn.commit()
+    return {"ok": True, "saved": len(order)}
+
+
+@app.get("/api/public/events/{competition_id}/lookup")
+async def api_public_lookup(competition_id: int, num: str = ""):
+    """按背番号查询公示信息（姓名/单位/参赛项目/已发布成绩）。"""
+    comp = _comp_or_404(competition_id)
+    num = (num or "").strip()
+    if not num:
+        raise HTTPException(status_code=400, detail="请输入背番号")
+    conn = db.get_db()
+    c = db.rowdict(conn.execute(
+        "SELECT number,name,unit FROM competitors WHERE competition_id=? AND number=?",
+        (comp["id"], num)).fetchone())
+    if not c:
+        raise HTTPException(status_code=404, detail="未找到该背番号")
+    projects = sorted({r["project_code"] for r in db.rows(conn.execute(
+        "SELECT DISTINCT e.project_code AS project_code FROM event_competitors ec "
+        "JOIN events e ON e.id=ec.event_id WHERE e.competition_id=? AND ec.competitor_number=?",
+        (comp["id"], num)))})
+    results = []
+    for p in (_public_payload() or {}).get("published_results", []):
+        for r in p["results"]:
+            if str(r["competitor_number"]) == num:
+                results.append({"code": p["code"], "name": p["name"], "round": p["round"],
+                                "rank": r["rank"], "total_score": r["total_score"]})
+    return {"number": c["number"], "name": c["name"], "unit": c["unit"], "projects": projects,
+            "published_results": results, "note": "公示口径：仅姓名、单位与已发布成绩"}
 
 
 # ------------------------------------------------------------------ SSE

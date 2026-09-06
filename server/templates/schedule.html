@@ -13,6 +13,30 @@
 {% block content %}
 <h1>赛程编排 · {{ comp.name }} <span class="muted">{{ tree | length }} 个项目</span></h1>
 
+<div class="card" id="run-order-card">
+  <h2>比赛顺序（防连场）</h2>
+  <p class="muted">「自动排序建议」在尊重同项目轮次依赖（未比前轮不得跳到后轮）的前提下，使相邻场次选手重叠最少；
+  建议可逐行 ↑↓ 微调，「连场 N 人」徽章实时显示相邻两场的共同选手数。仅对待赛场次生效，编辑自由度完整保留。</p>
+  <p>
+    <button class="btn" id="ro-suggest" type="button">自动排序建议</button>
+    <button class="btn" id="ro-save" type="button">保存顺序</button>
+    <button class="btn secondary" id="ro-clear" type="button">清空顺序</button>
+    <span id="ro-msg"></span>
+  </p>
+  <ol id="ro-list" class="run-order-list"></ol>
+</div>
+
+<div class="card">
+  <h2>状态筛选</h2>
+  <div class="status-filter">
+    <button class="sf-btn active" data-st="all">全部</button>
+    <button class="sf-btn" data-st="pending">待开始</button>
+    <button class="sf-btn" data-st="scoring">评分中</button>
+    <button class="sf-btn" data-st="calculated">已计算</button>
+    <button class="sf-btn" data-st="published">已发布</button>
+  </div>
+</div>
+
 {% for proj, rounds in tree.items() %}
 <div class="card" data-project="{{ proj }}">
   <h2>{{ proj }} <span class="tag gray">{{ rounds | sum(attribute="count") }} 场</span></h2>
@@ -21,9 +45,9 @@
     {% if r.all_done %}<span class="tag ok">已全部计算</span>{% else %}<span class="tag warn">进行中/待开始</span>{% endif %}
   </h3>
   <table>
-    <tr><th>场次</th><th>名称</th><th>舞种</th><th>类型</th><th class="num">晋级</th><th>状态</th><th class="num">人数</th><th>操作</th></tr>
+    <tr><th>场次</th><th>名称</th><th>舞种</th><th>类型</th><th class="num">晋级</th><th>状态</th><th class="num">人数</th><th>顺</th><th>操作</th></tr>
     {% for ev in r.events %}
-    <tr data-code="{{ ev.code }}">
+    <tr data-code="{{ ev.code }}" data-status="{{ ev.status }}">
       <td>{{ ev.code }}</td><td>{{ ev.name }}</td><td>{{ ev.dances | join("、") }}</td><td>{{ ev.scoring_type }}</td>
       <td class="num">{{ ev.advancement_count }}</td>
       <td>{% if ev.status == 'published' %}<span class="tag ok">已发布</span>
@@ -31,6 +55,7 @@
           {% elif ev.status == 'scoring' %}<span class="tag warn">评分中</span>
           {% else %}<span class="tag gray">待开始</span>{% endif %}</td>
       <td class="num">{{ ev.roster_n }}</td>
+      <td>{% if ev.run_seq %}<span class="tag">{{ ev.run_seq }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
       <td>
         <a class="btn secondary" href="/events/{{ comp.id }}/console/{{ ev.id }}">控制台</a>
         {% if ev.status == 'pending' %}
@@ -154,4 +179,81 @@ async function delEvent(code) {
     location.reload();
   } catch (e) { alert(e.message); }
 }
+
+/* ---- 状态筛选（F5） ---- */
+document.querySelectorAll('.sf-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.sf-btn').forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    var st = btn.dataset.st;
+    document.querySelectorAll('tr[data-status]').forEach(function (tr) {
+      tr.style.display = (st === 'all' || tr.dataset.status === st) ? '' : 'none';
+    });
+    document.querySelectorAll('.card[data-project]').forEach(function (card) {
+      var visible = Array.prototype.some.call(card.querySelectorAll('tr[data-status]'), function (tr) { return tr.style.display !== 'none'; });
+      card.style.display = visible ? '' : 'none';
+    });
+  });
+});
+
+/* ---- 比赛顺序（防连场，F4） ---- */
+var roItems = [];
+function overlapOf(i) {
+  if (i === 0) return 0;
+  var a = new Set(roItems[i - 1].roster), b = roItems[i].roster, n = 0;
+  b.forEach(function (x) { if (a.has(x)) n += 1; });
+  return n;
+}
+function renderRo(msg) {
+  var box = document.getElementById('ro-list');
+  if (!roItems.length) { box.innerHTML = '<li class="muted">暂无待赛场次或尚未生成顺序。</li>'; return; }
+  var html = '';
+  roItems.forEach(function (it, i) {
+    var ov = overlapOf(i);
+    html += '<li class="ro-item' + (ov > 0 ? ' ro-conflict' : '') + '">' +
+      '<span class="ro-pos">' + (i + 1) + '</span> <b>' + it.code + '</b> ' + it.name +
+      ' <span class="muted">(' + it.project + ' 第' + it.round + '轮 · ' + it.roster.length + '人)</span>' +
+      (i > 0 ? ' <span class="tag ' + (ov > 0 ? 'warn' : 'ok') + '">连场 ' + ov + ' 人</span>' : '') +
+      '<span class="ro-btns">' +
+      '<button class="btn secondary" data-up="' + i + '" ' + (i === 0 ? 'disabled' : '') + '>↑</button>' +
+      '<button class="btn secondary" data-down="' + i + '" ' + (i === roItems.length - 1 ? 'disabled' : '') + '>↓</button>' +
+      '</span></li>';
+  });
+  box.innerHTML = html;
+  document.querySelectorAll('[data-up]').forEach(function (b) {
+    b.addEventListener('click', function () { var i = parseInt(b.dataset.up, 10); var t = roItems[i - 1]; roItems[i - 1] = roItems[i]; roItems[i] = t; renderRo(); });
+  });
+  document.querySelectorAll('[data-down]').forEach(function (b) {
+    b.addEventListener('click', function () { var i = parseInt(b.dataset.down, 10); var t = roItems[i + 1]; roItems[i + 1] = roItems[i]; roItems[i] = t; renderRo(); });
+  });
+  if (msg) document.getElementById('ro-msg').textContent = msg;
+}
+document.getElementById('ro-suggest').addEventListener('click', function () {
+  var msg = document.getElementById('ro-msg');
+  msg.textContent = '计算中…';
+  api('GET', '/api/events/' + window.CID + '/run-order/proposal').then(function (d) {
+    roItems = d.order.map(function (e) { return {ceid: e.ceid, code: e.code, name: e.name, project: e.project, round: e.round, roster: e.roster}; });
+    var totalOv = (d.overlaps || []).reduce(function (a, b) { return a + b; }, 0);
+    renderRo('已生成建议（相邻连场合计 ' + totalOv + ' 人次）——可微调后保存');
+  }).catch(function (e) { msg.textContent = e.message; });
+});
+document.getElementById('ro-save').addEventListener('click', function () {
+  var msg = document.getElementById('ro-msg');
+  if (!roItems.length) { msg.textContent = '请先生成或加载顺序'; return; }
+  api('POST', '/api/events/' + window.CID + '/run-order', {order: roItems.map(function (it) { return it.ceid; })})
+    .then(function () { msg.textContent = '已保存'; setTimeout(function () { location.reload(); }, 500); })
+    .catch(function (e) { msg.textContent = e.message; });
+});
+document.getElementById('ro-clear').addEventListener('click', function () {
+  api('POST', '/api/events/' + window.CID + '/run-order', {order: []})
+    .then(function () { location.reload(); })
+    .catch(function (e) { alert(e.message); });
+});
+api('GET', '/api/events/' + window.CID + '/run-order').then(function (d) {
+  var saved = d.order.filter(function (e) { return e.run_seq; }).sort(function (a, b) { return a.run_seq - b.run_seq; });
+  if (saved.length) {
+    roItems = saved.map(function (e) { return {ceid: e.ceid, code: e.code, name: e.name, project: e.project, round: e.round, roster: e.roster}; });
+    renderRo('已加载保存的顺序（' + saved.length + ' 场）');
+  } else renderRo('尚未设置顺序');
+}).catch(function () { renderRo(); });
 {% endblock %}

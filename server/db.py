@@ -116,6 +116,11 @@ def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
     conn.commit()
+    # 轻量迁移：已存在的库补列（run_seq = 比赛顺序，防连场编排用）
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
+    if "run_seq" not in cols:
+        conn.execute("ALTER TABLE events ADD COLUMN run_seq INTEGER")
+        conn.commit()
 
 
 def rowdict(row):

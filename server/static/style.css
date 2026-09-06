@@ -210,3 +210,34 @@ body.screen th { position: static; }
 .judge-sheet .submit-bar .btn { flex: 1; margin: 0; }
 .judge-sheet .submit-bar #progress { white-space: nowrap; }
 .judge-sheet .submit-bar #msg { font-size: .85rem; }
+.judge-sheet .mode-toggle { display: flex; gap: 8px; align-items: center; margin: .6rem 0; flex-wrap: wrap; }
+.judge-sheet .mt-btn { border: 1px solid #d8d2c6; background: #fff; border-radius: 8px; padding: 8px 12px; font-weight: 700; color: #6b6455; }
+.judge-sheet .mt-btn.active { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.judge-sheet .mt-btn.ghost { margin-left: auto; color: #8a1f1f; background: #fdf6f5; border-color: #e7c8c8; font-weight: 600; }
+.judge-sheet .rank-row.selected { outline: 2px solid #b91c1c; outline-offset: -1px; }
+.judge-sheet .rank-keypad {
+  position: sticky; bottom: 66px; background: #fff; border: 1px solid #e5e0d8; border-radius: 12px;
+  padding: 10px; margin: 4px 0 8px; box-shadow: 0 4px 16px rgba(0,0,0,.08); z-index: 4;
+}
+.judge-sheet .kp-title { font-size: .88rem; margin-bottom: 8px; }
+.judge-sheet .kp-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; }
+.judge-sheet .kp-key { min-height: 42px; border: 1px solid #d8d2c6; border-radius: 8px; background: #fff; font-size: 1.1rem; font-weight: 800; color: #37352f; }
+.judge-sheet .kp-key.taken { opacity: .22; pointer-events: none; }
+.judge-sheet .kp-key.own { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+
+/* ---- 赛程：状态筛选 + 比赛顺序（防连场） ---- */
+.status-filter { display: flex; flex-wrap: wrap; gap: 8px; }
+.sf-btn { border: 1px solid #d8d2c6; background: #fff; border-radius: 8px; padding: 6px 14px; font-weight: 600; color: #6b6455; }
+.sf-btn.active { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.run-order-list { list-style: none; padding: 0; margin: .6rem 0 0; max-width: 760px; }
+.ro-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 8px;
+  border: 1px solid #e5e0d8; border-radius: 10px; background: #fff; flex-wrap: wrap;
+}
+.ro-item.ro-conflict { border-color: #e8b4b4; background: #fdf6f5; }
+.ro-pos { width: 28px; height: 28px; border-radius: 50%; background: #37352f; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: .9rem; flex: 0 0 auto; }
+.ro-btns { margin-left: auto; display: flex; gap: 6px; }
+.ro-btns .btn { padding: 4px 10px; }
+.lookup-row { display: flex; gap: 10px; margin-bottom: .5rem; }
+.lookup-row input { flex: 1; font-size: 1.05rem; padding: 10px; }
+.lk-head { font-size: 1.05rem; margin-bottom: .4rem; }

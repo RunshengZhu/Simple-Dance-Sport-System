@@ -21,7 +21,12 @@
   {% endfor %}
 </div>
 {% elif is_skating %}
-<p class="muted">按名次顺序依次点击选手：第 1 次点击 = 第 1 名，第 2 次 = 第 2 名……点已排选手取消并自动补位。</p>
+<div class="mode-toggle">
+  <button type="button" class="mt-btn active" data-mode="seq">① 顺序点选</button>
+  <button type="button" class="mt-btn" data-mode="direct">② 直接指定</button>
+  <button type="button" class="mt-btn ghost" id="reset-all">重置</button>
+</div>
+<p class="muted" id="mode-hint">按名次顺序依次点击选手：第 1 次点击 = 第 1 名，第 2 次 = 第 2 名……点已排选手取消并自动补位。</p>
 <div class="rank-list">
   {% for num in roster %}
   <div class="rank-row" data-num="{{ num }}">
@@ -31,6 +36,10 @@
     <input type="hidden" class="val" data-num="{{ num }}" value="{{ rows.get(num) and rows[num]["placement"] if rows.get(num) and rows[num]["placement"] else "" }}">
   </div>
   {% endfor %}
+</div>
+<div class="rank-keypad" id="keypad" style="display:none">
+  <div class="kp-title">为 <b id="kp-num">--</b> 指定名次 <span class="muted">灰色名次已被占用；点自己的名次键 = 取消</span></div>
+  <div class="kp-keys" id="kp-keys"></div>
 </div>
 {% else %}
 <p class="muted">为每支队伍打 0~10 分（一位小数），点击输入框唤起数字键盘。</p>
@@ -73,38 +82,98 @@ function collect() {
 }
 
 if (SKATING) {
-  var order = [];
-  function renderRank() {
-    document.querySelectorAll('.rank-row').forEach(function (row) {
-      var v = row.querySelector('input.val').value;
-      var badge = row.querySelector('.rank-badge');
-      if (v) { badge.textContent = v; row.classList.add('assigned'); row.querySelector('.rank-hint').textContent = '点击取消'; }
-      else { badge.textContent = ''; row.classList.remove('assigned'); row.querySelector('.rank-hint').textContent = '点击排名'; }
+  var assignMode = 'seq', selected = null;
+  var keypad = document.getElementById('keypad'), kpKeys = document.getElementById('kp-keys'),
+      kpNum = document.getElementById('kp-num'), modeHint = document.getElementById('mode-hint');
+  var HINTS = {
+    seq: '按名次顺序依次点击选手：第 1 次点击 = 第 1 名，第 2 次 = 第 2 名……点已排选手取消并自动补位。',
+    direct: '直接指定：点击选手行选中，再点下方名次键；点自己的名次键 = 取消。两种模式可随时切换，已排名次保留。'
+  };
+  function rowsAll() { return Array.prototype.slice.call(document.querySelectorAll('.rank-row')); }
+  function getV(row) { return row.querySelector('input.val').value; }
+  function setV(row, v) { row.querySelector('input.val').value = v; }
+  function rankOwner(r) {
+    var out = null;
+    rowsAll().forEach(function (row) { if (getV(row) === String(r)) out = row.dataset.num; });
+    return out;
+  }
+  function renderSkating() {
+    rowsAll().forEach(function (row) {
+      var v = getV(row), badge = row.querySelector('.rank-badge'), hint = row.querySelector('.rank-hint');
+      if (v) { badge.textContent = v; row.classList.add('assigned'); } else { badge.textContent = ''; row.classList.remove('assigned'); }
+      var sel = assignMode === 'direct' && selected === row.dataset.num;
+      row.classList.toggle('selected', sel);
+      if (assignMode === 'seq') hint.textContent = v ? '点击取消' : '点击排名';
+      else hint.textContent = v ? '当前第 ' + v + ' 名' : (sel ? '在下方点名次' : '点击选中');
     });
-    var done = order.length;
+    var done = rowsAll().filter(function (row) { return getV(row) !== ''; }).length;
     document.getElementById('progress').textContent = '已排 ' + done + ' / ' + N + (done < N ? ' · 还差 ' + (N - done) : ' · 可提交');
+    var show = assignMode === 'direct' && selected;
+    keypad.style.display = show ? 'block' : 'none';
+    if (show) {
+      kpNum.textContent = selected;
+      Array.prototype.forEach.call(kpKeys.children, function (key) {
+        var owner = rankOwner(key.dataset.r);
+        key.classList.toggle('taken', !!owner && owner !== selected);
+        key.classList.toggle('own', owner === selected);
+      });
+    }
   }
-  function initOrder() {
-    order = Array.prototype.map.call(document.querySelectorAll('.rank-row'), function (row) {
-      return {num: row.dataset.num, v: parseInt(row.querySelector('input.val').value, 10) || 0};
-    }).filter(function (x) { return x.v > 0; })
-      .sort(function (a, b) { return a.v - b.v; })
-      .map(function (x) { return x.num; });
+  function setMode(m) {
+    assignMode = m; selected = null;
+    document.querySelectorAll('.mt-btn[data-mode]').forEach(function (b) { b.classList.toggle('active', b.dataset.mode === m); });
+    modeHint.textContent = HINTS[m];
+    renderSkating();
   }
-  function tapRank(num) {
-    var i = order.indexOf(num);
-    if (i >= 0) order.splice(i, 1); else order.push(num);   // 取消自动补位 / 顺序递增
-    document.querySelectorAll('.rank-row').forEach(function (row) {
-      var k = order.indexOf(row.dataset.num);
-      row.querySelector('input.val').value = k >= 0 ? String(k + 1) : '';
+  function tapSeq(num) {
+    var ord = rowsAll().filter(function (row) { return getV(row) !== ''; })
+      .sort(function (a, b) { return parseInt(getV(a), 10) - parseInt(getV(b), 10); })
+      .map(function (row) { return row.dataset.num; });
+    var i = ord.indexOf(num);
+    if (i >= 0) ord.splice(i, 1); else ord.push(num);
+    rowsAll().forEach(function (row) {
+      var k = ord.indexOf(row.dataset.num);
+      setV(row, k >= 0 ? String(k + 1) : '');
     });
-    renderRank();
+    renderSkating();
+  }
+  function tapDirect(num) {
+    selected = (selected === num) ? null : num;
+    renderSkating();
+  }
+  function keyRank(r) {
+    if (!selected) return;
+    var row = document.querySelector('.rank-row[data-num="' + selected + '"]');
+    if (getV(row) === String(r)) setV(row, '');
+    else setV(row, String(r));
+    var next = rowsAll().filter(function (row) { return getV(row) === ''; })[0];  // 自动跳到下一个未排
+    selected = next ? next.dataset.num : null;
+    if (!next) selected = row.dataset.num;   // 全排完时保持当前行便于调整
+    renderSkating();
   }
   document.querySelectorAll('.rank-row').forEach(function (row) {
-    row.addEventListener('click', function () { tapRank(row.dataset.num); });
+    row.addEventListener('click', function () {
+      if (assignMode === 'seq') tapSeq(row.dataset.num); else tapDirect(row.dataset.num);
+    });
   });
-  initOrder();
-  renderRank();
+  document.querySelectorAll('.mt-btn[data-mode]').forEach(function (b) {
+    b.addEventListener('click', function () { setMode(b.dataset.mode); });
+  });
+  document.getElementById('reset-all').addEventListener('click', function () {
+    if (!confirm('清空全部已排名次？')) return;
+    rowsAll().forEach(function (row) { setV(row, ''); });
+    selected = null;
+    renderSkating();
+  });
+  for (var k = 1; k <= N; k++) {
+    (function (r) {
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'kp-key'; btn.dataset.r = String(r); btn.textContent = String(r);
+      btn.addEventListener('click', function () { keyRank(r); });
+      kpKeys.appendChild(btn);
+    })(k);
+  }
+  renderSkating();
 } else if (SCORE) {
   function renderScore() {
     var done = Array.prototype.filter.call(document.querySelectorAll('input.val'), function (i) { return i.value !== ''; }).length;

@@ -50,7 +50,7 @@ function renderResults() {
   var i = resIdx % pub.length;
   var p = pub[i];
   var rows = (p.results || []).slice(0, 8).map(function (r) {
-    return '<tr><td>' + esc(r.rank) + '</td><td>' + esc(r.competitor_number) + '</td><td>' +
+    return '<tr' + (String(r.rank) === '1' ? ' class="rank-1"' : '') + '><td>' + esc(r.rank) + '</td><td>' + esc(r.competitor_number) + '</td><td>' +
       esc(r.competitor_name || '') + '</td><td>' + esc(r.total_score) + '</td></tr>';
   }).join('');
   // 成绩公告一次只显示一个场次，含选手（单人/双人）或队伍名称，右上角标注轮换进度（1/N）

@@ -3,6 +3,14 @@
 {% block nav %}<a href="/public/team-standings">团体总分</a><a href="/public/schedule">赛程</a><a href="/screen">大屏</a>{% endblock %}
 {% block content %}
 <h1>{% if comp %}{{ comp.name }}{% endif %} · 成绩</h1>
+<div class="card" id="lookup-card">
+  <h2>按背番号查询</h2>
+  <div class="lookup-row">
+    <input id="lookup-num" inputmode="numeric" placeholder="输入背番号，如 101">
+    <button class="btn" id="lookup-go" type="button">查询</button>
+  </div>
+  <div id="lookup-result" class="muted">输入背番号查询选手公示信息（姓名/单位）与已发布成绩。</div>
+</div>
 {% if standings and standings.standings %}
 <div class="card">
   <h2>团体总分榜（单位）</h2>
@@ -27,6 +35,28 @@
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
+function doLookup() {
+  var num = document.getElementById('lookup-num').value.trim();
+  var box = document.getElementById('lookup-result');
+  if (!num) { box.textContent = '请输入背番号'; return; }
+  fetch('/api/public/events/' + CID + '/lookup?num=' + encodeURIComponent(num))
+    .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || '查询失败'); }); return r.json(); })
+    .then(function (d) {
+      var html = '<div class="lk-head"><b>' + d.number + '</b> ' + d.name + ' <span class="muted">' + (d.unit || '') + '</span></div>';
+      if (d.projects.length) html += '<div class="muted">参赛项目：' + d.projects.join(' / ') + '</div>';
+      if (d.published_results.length) {
+        html += '<table><tr><th>场次</th><th>名次</th><th>总分</th></tr>';
+        d.published_results.forEach(function (r) {
+          html += '<tr><td>' + r.name + '</td><td><b>' + r.rank + '</b></td><td>' + r.total_score + '</td></tr>';
+        });
+        html += '</table>';
+      } else html += '<div class="muted">暂无已发布成绩（成绩发布后在此显示）。</div>';
+      box.innerHTML = html;
+    })
+    .catch(function (e) { box.textContent = e.message; });
+}
+document.getElementById('lookup-go').addEventListener('click', doLookup);
+document.getElementById('lookup-num').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLookup(); });
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
   results_published: function () { location.reload(); }
 }, function () { location.reload(); }, 5000);
