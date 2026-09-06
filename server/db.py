@@ -117,10 +117,17 @@ def init_db():
     conn.executescript(SCHEMA)
     conn.commit()
     # 轻量迁移：已存在的库补列（run_seq = 比赛顺序，防连场编排用）
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
-    if "run_seq" not in cols:
+    ev_cols = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
+    if "run_seq" not in ev_cols:
         conn.execute("ALTER TABLE events ADD COLUMN run_seq INTEGER")
-        conn.commit()
+    if "announced" not in ev_cols:
+        conn.execute("ALTER TABLE events ADD COLUMN announced INTEGER DEFAULT 0")   # 播报标记（备忘）
+    ec_cols = {r[1] for r in conn.execute("PRAGMA table_info(event_competitors)")}
+    if "checked_in" not in ec_cols:
+        conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_in INTEGER DEFAULT 0")  # 检录
+        conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_by TEXT")
+        conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_at TEXT")
+    conn.commit()
 
 
 def rowdict(row):

@@ -224,6 +224,21 @@ body.screen th { position: static; }
 .judge-sheet .kp-key { min-height: 42px; border: 1px solid #d8d2c6; border-radius: 8px; background: #fff; font-size: 1.1rem; font-weight: 800; color: #37352f; }
 .judge-sheet .kp-key.taken { opacity: .22; pointer-events: none; }
 .judge-sheet .kp-key.own { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.judge-sheet .rank-row.off, .judge-sheet .mark-row.off, .judge-sheet .score-row.off {
+  opacity: .45; cursor: not-allowed; background: #f3f1ec;
+}
+.judge-sheet .mark-row.off .mark-hint, .judge-sheet .rank-row.off .rank-hint, .judge-sheet .score-row.off .mark-hint { color: #b91c1c; font-weight: 700; }
+
+/* ---- 检录/播报台（staff） ---- */
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin: .5rem 0; }
+.chip {
+  min-width: 52px; padding: 9px 10px; border-radius: 8px; font-weight: 800; font-size: 1rem;
+  border: 1px solid #d8d2c6; background: #f3f1ec; color: #6b6455;
+}
+.chip.on { background: #1d7a46; border-color: #1d7a46; color: #fff; }
+.st-event h3 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.st-event .tag { white-space: nowrap; }
+.ann-btn.announced { background: #1d7a46; border-color: #1d7a46; }
 
 /* ---- 赛程：状态筛选 + 比赛顺序（防连场） ---- */
 .status-filter { display: flex; flex-wrap: wrap; gap: 8px; }

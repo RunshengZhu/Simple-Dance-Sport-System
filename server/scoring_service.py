@@ -168,6 +168,13 @@ def roster(event_id):
         (event_id,)))]
 
 
+def checked_roster(event_id):
+    """已检录（确认到场）的选手背号——裁判评分与收齐判定的有效名单。"""
+    return [r["competitor_number"] for r in db.rows(db.get_db().execute(
+        "SELECT competitor_number FROM event_competitors WHERE event_id=? AND checked_in=1 "
+        "ORDER BY competitor_number", (event_id,)))]
+
+
 def dances_of(event_id):
     return [r["name"] for r in db.rows(db.get_db().execute(
         "SELECT name FROM event_dances WHERE event_id=? ORDER BY ord", (event_id,)))]
@@ -180,10 +187,14 @@ def judges_of(competition_id):
 
 def is_complete(event, roster_list, dances, judge_codes):
     """收齐判定（按评分类型区分，2026-08-29 对齐 core Mark制语义）：
-    - 顺位法/评分制：上场选手 × 舞种 × 裁判 全有记录
+    有效名单 = 已检录选手（checked_in=1，未到场者不参与评分与收齐判定）。
+    - 顺位法/评分制：已检录选手 × 舞种 × 裁判 全有记录
     - Mark制（滑冰制预赛）：裁判只对选中的选手给 mark——每裁判每舞种存在任意提交记录
       即视为完成（core 仅统计 mark is True 的票数，未选中选手票数为 0）。"""
-    if not roster_list or not dances or not judge_codes:
+    if not dances or not judge_codes:
+        return False
+    checked = checked_roster(event["id"])
+    if not checked:
         return False
     if scoring_kind(event) == "mark":
         conn = db.get_db()
@@ -201,7 +212,7 @@ def is_complete(event, roster_list, dances, judge_codes):
             n = conn.execute(
                 "SELECT COUNT(*) c FROM score_records WHERE event_id=? AND dance_name=? AND judge_code=?",
                 (event["id"], d, j)).fetchone()["c"]
-            if n < len(roster_list):
+            if n < len(checked):
                 return False
     return True
 

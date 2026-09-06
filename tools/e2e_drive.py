@@ -101,6 +101,13 @@ if MODE == "drive":
         judges.append((f"J{k}", j))
     report["judges"].append(f"{len(judges)} judges logged in")
 
+def staff_login(role):
+    """主持人/检录员登录（host123 / marshal123 默认口令）。"""
+    jar = http.cookiejar.CookieJar()
+    body = {"role": role, "password": "marshal123" if role == "marshal" else "host123"}
+    code, d = jreq2("POST", "/api/login", jar, body)
+    return jar if code == 200 else None
+
 codes = [e[0] for e in E]
 published_set = set(codes[:12]); calculated_set = set(codes[12:18])
 scoring_set = set(codes[18:26]); pending_set = set(codes[26:])
@@ -125,6 +132,10 @@ def roster_of(c): return next(e[7] for e in E if e[0] == c).split(",")
 def ceid_of(c): return ceid_by_code[c]
 
 if MODE == "drive":
+    no_show_map, present_map = {}, {}
+    staff_jars = {"marshal": staff_login("marshal"), "host": staff_login("host")}
+    assert staff_jars["marshal"] and staff_jars["host"], "staff login failed"
+
     def sheet_payload(typ, roster_list, seed):
         rnd = random.Random(seed)
         if typ == "SKATING":
@@ -141,12 +152,27 @@ if MODE == "drive":
 
     def drive_event(code_, target):
         ceid = ceid_of(code_); typ = typ_of(code_); ros = roster_of(code_)
+        present_map[code_] = None   # 占位：open 后更新
         c, _ = jreq2("POST", f"/api/competition-events/{ceid}/open", admin, {"roster": ros, "reset": False})
         log = [(c, f"open {code_}")]
+        # ---- 检录模拟（仅模拟测试逻辑）：随机缺席 ~10%，到场者 70% 检录处预检录，其余主持人场内补录 ----
+        rnd = random.Random(f"ck-{code_}")
+        k_ns = max(0, int(len(ros) * 0.1)) if len(ros) >= 10 else 0
+        no_show = sorted(rnd.sample(ros, k=k_ns))
+        present = [x for x in ros if x not in no_show]
+        present_map[code_] = present
+        no_show_map[code_] = no_show
+        pre = sorted(rnd.sample(present, k=max(1, int(len(present) * 0.7)))) if present else []
+        onsite = [x for x in present if x not in pre]
+        mj, hj = staff_jars["marshal"], staff_jars["host"]
+        c, _ = jreq2("POST", f"/api/competition-events/{ceid}/checkin", mj, {"numbers": pre, "state": True})
+        log.append((c, f"pre-checkin {len(pre)}/{len(ros)}"))
+        c, _ = jreq2("POST", f"/api/competition-events/{ceid}/checkin", hj, {"numbers": onsite, "state": True})
+        log.append((c, f"onsite-checkin {len(onsite)}"))
         if target in ("published", "calculated"):
             def sub(jt):
                 _, jar = jt
-                return submit_sheet(jar, code_, sheet_payload(typ, ros, seed=f"{code_}-{jt[0]}"))
+                return submit_sheet(jar, code_, sheet_payload(typ, present, seed=f"{code_}-{jt[0]}"))
             with ThreadPoolExecutor(max_workers=9) as ex:
                 rs = list(ex.map(sub, judges))
             log.append((f"9J->{rs.count(200)}x200", code_))
@@ -159,7 +185,7 @@ if MODE == "drive":
                 log.append((c, f"pub {code_}"))
         elif target == "scoring":
             for jn, jar in judges[:4]:
-                c = submit_sheet(jar, code_, sheet_payload(typ, ros, seed=f"{code_}-p-{jn}"))
+                c = submit_sheet(jar, code_, sheet_payload(typ, present, seed=f"{code_}-p-{jn}"))
                 log.append((c, f"partial {jn}"))
         return log
 
@@ -194,6 +220,22 @@ if MODE == "drive":
         if target == "pending": continue
         for c, t in drive_event(code_, target): report["admin"].append(f"{c} {t}")
 
+    # ---- 防影子运行：纯驱动状态校验（须在注入期之前——注入的并发重写会合法地自动计算场次）----
+    c, sch2 = jreq2("GET", f"/api/public/events/{cid}/schedule")
+    mix = defaultdict(int)
+    for e in (sch2 or {}).get("events", []): mix[e["status"]] += 1
+    exp_mix = defaultdict(int)
+    for e in E:
+        t = _target_of(e[0])
+        if t != "pending": exp_mix[t] += 1
+    got_mix = {k: v for k, v in mix.items() if k != "pending"}
+    invariant("状态分布=同规则推导期望", got_mix == dict(exp_mix), f"got {dict(mix)} exp {dict(exp_mix)}")
+    bad_drives = []
+    for ent in report["admin"]:
+        if isinstance(ent, tuple) and len(ent) == 2 and isinstance(ent[0], int) and ent[0] >= 400:
+            bad_drives.append(ent)
+    invariant("驱动调用无非预期 4xx/5xx", not bad_drives, bad_drives[:5])
+
     # ---- 异常注入面（R2/D5）----
     ceid_p = ceid_by_code[sorted(pending_set)[0]]
     c, _ = jreq2("POST", f"/api/competition-events/{ceid_p}/open", admin, {"roster": [], "reset": False})
@@ -220,6 +262,46 @@ if MODE == "drive":
                      judges[8][1], {"values": bad})
         invariant("重复名次=400", c == 400, c)
 
+    # ---- 检录边界（R25）----
+    ck_sc = sorted(c0 for c0 in scoring_set if _target_of(c0) == "scoring" and no_show_map.get(c0))
+    if ck_sc:
+        c0 = ck_sc[0]
+        present0 = present_map[c0]
+        ghost = no_show_map[c0][0]
+        # 1) 裁判提交含未检录背号 → 400（缺席者不可评）
+        vals = sheet_payload(typ_of(c0), present0, seed="ghost-test")
+        vals[ghost] = 1 if typ_of(c0) == "MARK" else (2 if typ_of(c0) == "SKATING" else 8.0)
+        c, _ = jreq2("PUT", f"/api/judge/competition-events/{ceid_by_code[c0]}/dances/{urllib.parse.quote(dance_of(c0))}/sheet",
+                     judges[8][1], {"values": vals})
+        invariant("未检录背号评分=400", c == 400, c)
+        # 2) 检录名单外背号 → 400
+        c, _ = jreq2("POST", f"/api/competition-events/{ceid_by_code[c0]}/checkin", staff_jars["marshal"],
+                     {"numbers": ["99999"], "state": True})
+        invariant("名单外背号检录=400", c == 400, c)
+        # 3) 撤销一个已检录背号 → 撤销后恢复（场内状态可修正）
+        vic = present0[0]
+        c, _ = jreq2("POST", f"/api/competition-events/{ceid_by_code[c0]}/checkin", staff_jars["host"],
+                     {"numbers": [vic], "state": False})
+        invariant("撤销检录=200", c == 200, c)
+        c, _ = jreq2("POST", f"/api/competition-events/{ceid_by_code[c0]}/checkin", staff_jars["host"],
+                     {"numbers": [vic], "state": True})
+        invariant("恢复检录=200", c == 200, c)
+    # 4) 播报标记边界
+    done_ev = sorted(c0 for c0 in codes if _target_of(c0) in ("published", "calculated"))
+    pend_ev = sorted(pending_set)
+    if done_ev and pend_ev:
+        c, _ = jreq2("POST", f"/api/competition-events/{ceid_by_code[pend_ev[0]]}/announce", staff_jars["host"], {"announced": True})
+        invariant("pending 播报=400", c == 400, c)
+        c, _ = jreq2("POST", f"/api/competition-events/{ceid_by_code[done_ev[0]]}/announce", staff_jars["host"], {"announced": True})
+        invariant("已算完播报标记=200", c == 200, c)
+        c, d = jreq2("GET", f"/api/competition-events/{ceid_by_code[done_ev[0]]}/results", admin)
+        c, _ = jreq2("POST", f"/api/competition-events/{ceid_by_code[done_ev[0]]}/announce", staff_jars["host"], {"announced": False})
+        invariant("播报取消=200", c == 200, c)
+    # 5) 角色越权：裁判会话访问检录 API → 401
+    c, _ = jreq2("POST", f"/api/competition-events/{ceid_by_code[sorted(scoring_set)[0]]}/checkin",
+                 judges[0][1], {"numbers": roster_of(sorted(scoring_set)[0])[0], "state": True})
+    invariant("裁判调检录API=401", c == 401, c)
+
     # ---- 观众负载（可选）----
     stop = threading.Event()
     ENDPOINTS = ["/public/schedule", "/public/results", "/screen",
@@ -238,9 +320,10 @@ if MODE == "drive":
     sc_active = sorted(c0 for c0 in scoring_set if _target_of(c0) == "scoring")
     if sc_active:
         c0 = sc_active[0]
+        present0 = present_map.get(c0) or roster_of(c0)
         def resubmit(jt):
             _, jar = jt
-            return submit_sheet(jar, c0, sheet_payload(typ_of(c0), roster_of(c0), seed=f"re-{jt[0]}"))
+            return submit_sheet(jar, c0, sheet_payload(typ_of(c0), present0, seed=f"re-{jt[0]}"))
         with ThreadPoolExecutor(max_workers=9) as ex:
             wr = list(ex.map(resubmit, judges))
         report["admin"].append(f"concurrent rewrites -> {wr.count(200)}x200")
@@ -248,24 +331,6 @@ if MODE == "drive":
         time.sleep(max(0, VIEWER_SECONDS - 5))
         stop.set()
         for t in vts: t.join()
-
-# ---- 防影子运行：驱动后服务端状态分布必须与同规则推导的期望一致 ----
-c, sch2 = jreq2("GET", f"/api/public/events/{cid}/schedule")
-mix = defaultdict(int)
-for e in (sch2 or {}).get("events", []): mix[e["status"]] += 1
-exp_mix = defaultdict(int)
-for e in E:
-    t = _target_of(e[0])
-    if t != "pending": exp_mix[t] += 1
-got_mix = {k: v for k, v in mix.items() if k != "pending"}
-invariant("状态分布=同规则推导期望", got_mix == dict(exp_mix), f"got {dict(mix)} exp {dict(exp_mix)}")
-bad_drives = []
-for ent in report["admin"]:
-    if isinstance(ent, tuple) and len(ent) == 2 and isinstance(ent[0], int) and ent[0] >= 400:
-        bad_drives.append(ent)
-    elif isinstance(ent, str) and " -> 4" in ent:
-        bad_drives.append(ent)
-invariant("驱动调用无非预期 4xx/5xx", not bad_drives, bad_drives[:5])
 
 # ---- R4：团体总分全量独立复算（最末轮口径）----
 POINTS = {1: 9.0, 2: 7.0, 3: 6.0, 4: 5.0, 5: 4.0, 6: 3.0, 7: 2.0, 8: 1.0}

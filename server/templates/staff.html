@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block cid %}{{ comp.id if comp else 0 }}{% endblock %}
+{% block title %}{{ '主持台' if role == 'host' else '检录台' }}{% endblock %}
+{% block nav %}
+<a href="/manual">操作手册</a>
+<a href="#" id="logout">退出</a>
+<span class="muted">{{ '主持人' if role == 'host' else '检录长/检录员' }}</span>
+{% endblock %}
+{% block content %}
+<h1>{% if comp %}{{ comp.name }} · {% endif %}{{ '主持台' if role == 'host' else '检录台' }}
+  <span class="muted">{{ '赛程 · 检录 · 播报' }}</span></h1>
+{% if not comp %}<div class="card"><p class="muted">暂无激活赛事。</p></div>{% endif %}
+
+<h2>待赛 / 评分中场次 · 检录</h2>
+<p class="muted">点击背号即检录/撤销检录（可由检录处或主持人开场前补充完成）；裁判仅能对已检录背号评分。</p>
+{% for ev in items %}
+<div class="card st-event" data-ceid="{{ ev.id }}">
+  <h3>{{ ev.code }} {{ ev.name }}
+    <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '评分中' if ev.status == 'scoring' else '待开始' }}</span>
+    <span class="muted">{{ ev.project }} 第{{ ev.round }}轮</span>
+    <span class="tag" id="prog-{{ ev.id }}">检录 {{ ev.checked_n }} / {{ ev.total }}</span>
+  </h3>
+  <div class="chip-row">
+    {% for r in ev.roster %}
+    <button type="button" class="chip {{ 'on' if r.checked else 'off' }}" data-ceid="{{ ev.id }}" data-num="{{ r.number }}"
+            title="{{ '检录人: ' + r.by if r.by else '未检录' }}">{{ r.number }}</button>
+    {% endfor %}
+  </div>
+  <p>
+    <button class="btn secondary" data-all="{{ ev.id }}" data-state="1">全部检录</button>
+    <button class="btn secondary" data-all="{{ ev.id }}" data-state="0">全清</button>
+  </p>
+</div>
+{% endfor %}
+{% if not items %}<div class="card"><p class="muted">暂无待赛/评分中场次。</p></div>{% endif %}
+
+<h2>已完成场次 · 成绩与播报</h2>
+<p class="muted">「已播报」为备忘标记，可随时标/取消，不影响赛程与计算逻辑。</p>
+{% for ev in done %}
+<div class="card st-event" data-ceid="{{ ev.id }}">
+  <h3>{{ ev.code }} {{ ev.name }}
+    <span class="tag {{ 'ok' if ev.status == 'published' else 'acc' }}">{{ '已发布' if ev.status == 'published' else '已计算' }}</span>
+    <button type="button" class="btn secondary ann-btn" data-ceid="{{ ev.id }}" data-state="{{ 0 if ev.announced else 1 }}">
+      {{ '已播报 ✓（点击取消）' if ev.announced else '标记为已播报' }}
+    </button>
+  </h3>
+  {% if ev.results %}
+  <table>
+    <tr><th>名次</th><th>背番号</th><th>总分</th></tr>
+    {% for r in ev.results[:8] %}
+    <tr><td>{{ r["rank"] }}</td><td>{{ r["competitor_number"] }}</td><td>{{ r["total_score"] }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">无结果数据。</p>{% endif %}
+</div>
+{% endfor %}
+{% if not done %}<div class="card"><p class="muted">暂无已完成场次。</p></div>{% endif %}
+{% endblock %}
+{% block scripts %}
+var CID = {{ comp.id if comp else 0 }};
+document.getElementById('logout').onclick = async function () {
+  await api('POST', '/api/logout', {});
+  location.href = '/login';
+};
+function progText(ceid, n, total) {
+  var el = document.getElementById('prog-' + ceid);
+  if (el) el.textContent = '检录 ' + n + ' / ' + total;
+}
+function postCheckin(ceid, numbers, state) {
+  return api('POST', '/api/competition-events/' + ceid + '/checkin', {numbers: numbers, state: state});
+}
+document.querySelectorAll('.chip').forEach(function (chip) {
+  chip.addEventListener('click', function () {
+    var ceid = chip.dataset.ceid, num = chip.dataset.num;
+    var state = !chip.classList.contains('on');
+    postCheckin(ceid, [num], state).then(function (d) {
+      chip.classList.toggle('on', state);
+      chip.classList.toggle('off', !state);
+      progText(ceid, d.checked_n, d.total);
+    }).catch(function (e) { alert(e.message); });
+  });
+});
+document.querySelectorAll('[data-all]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var ceid = btn.dataset.all, state = btn.dataset.state === '1';
+    var nums = Array.prototype.map.call(
+      document.querySelectorAll('.chip[data-ceid="' + ceid + '"]'), function (c) { return c.dataset.num; });
+    postCheckin(ceid, nums, state).then(function (d) {
+      document.querySelectorAll('.chip[data-ceid="' + ceid + '"]').forEach(function (c) {
+        c.classList.toggle('on', state); c.classList.toggle('off', !state);
+      });
+      progText(ceid, d.checked_n, d.total);
+    }).catch(function (e) { alert(e.message); });
+  });
+});
+document.querySelectorAll('.ann-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var ceid = btn.dataset.ceid, state = btn.dataset.state === '1';
+    api('POST', '/api/competition-events/' + ceid + '/announce', {announced: state}).then(function () {
+      btn.dataset.state = state ? '0' : '1';
+      btn.textContent = state ? '已播报 ✓（点击取消）' : '标记为已播报';
+    }).catch(function (e) { alert(e.message); });
+  });
+});
+if (CID) connectSSE('/api/events/' + CID + '/stream', {
+  checkin_changed: function () { location.reload(); },
+  calculation_done: function () { location.reload(); },
+  competition_event_opened: function () { location.reload(); },
+  results_published: function () { location.reload(); }
+}, function () { location.reload(); }, 5000);
+{% endblock %}

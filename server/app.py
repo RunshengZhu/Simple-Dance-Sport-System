@@ -26,9 +26,12 @@ from server import db, sse
 from server.scoring_service import (
     calculate_event, load_results, roster, dances_of, judges_of, is_complete,
     advancement_proposal, confirm_advancement, scoring_type_of, scoring_kind,
+    checked_roster,
 )
 
 ADMIN_PASSWORD = os.environ.get("DSPORT_ADMIN_PASSWORD", "admin123")
+HOST_PASSWORD = os.environ.get("DSPORT_HOST_PASSWORD", "host123")        # 主持人
+MARSHAL_PASSWORD = os.environ.get("DSPORT_MARSHAL_PASSWORD", "marshal123")  # 检录长/检录员
 SCREEN_CONTROL = {"mode": "auto", "comp_id": None}   # 大屏强制模式（v1 内存态，重启归 auto）
 PORT = int(os.environ.get("DSPORT_PORT", "8321"))
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -68,6 +71,14 @@ def require_judge(request: Request):
     return s
 
 
+def require_staff(request: Request):
+    """主持人 / 检录长·检录员 共用权限（检录与播报台）。"""
+    s = _session(request)
+    if not s or s["role"] not in ("host", "marshal"):
+        raise HTTPException(status_code=401, detail="需要主持人或检录员登录")
+    return s
+
+
 def login_failures_window(ip: str):
     now = time.time()
     wins = _login_windows.setdefault(ip, [])
@@ -98,6 +109,16 @@ async def api_login(request: Request):
             login_failures_window(ip).append(time.time())
             raise HTTPException(status_code=403, detail="口令错误")
         conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'admin')", (token,))
+    elif role == "host":
+        if body.get("password") != HOST_PASSWORD:
+            login_failures_window(ip).append(time.time())
+            raise HTTPException(status_code=403, detail="口令错误")
+        conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'host')", (token,))
+    elif role == "marshal":
+        if body.get("password") != MARSHAL_PASSWORD:
+            login_failures_window(ip).append(time.time())
+            raise HTTPException(status_code=403, detail="口令错误")
+        conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'marshal')", (token,))
     elif role == "judge":
         code = str(body.get("judge_id") or "")
         row = conn.execute("SELECT * FROM judges WHERE code=? ", (code,)).fetchone()
@@ -280,9 +301,11 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
             "SELECT * FROM score_records WHERE event_id=? AND judge_code=? AND dance_name=? AND competitor_number=?",
             (ev["id"], s["judge_code"], dance, num)).fetchone())
     # 盲评公平性：评分页不向裁判提供背番号以外的任何选手信息（姓名/单位不出库）
+    # 检录门禁：未检录选手置灰且不可评分
+    checked = set(checked_roster(ceid))
     return templates.TemplateResponse(request, "judge_sheet.html", {
         "ev": ev, "comp": comp, "dance": dance,
-        "roster": roster_list, "rows": rows,
+        "roster": roster_list, "rows": rows, "checked": checked,
         "is_skating": scoring_kind(ev) == "skating",
         "is_mark": scoring_kind(ev) == "mark",
         "is_score": scoring_kind(ev) == "score",
@@ -782,14 +805,15 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
         raise HTTPException(status_code=400, detail="场次已关闭评分")
     body = await request.json()
     roster_list = set(roster(ceid))
+    checked = set(checked_roster(ceid))
     values = body.get("values") or {}
     kind = scoring_kind(ev)
     skating = kind == "skating"
 
     # 服务端复验（不信任客户端）
     if kind == "score":
-        if set(values.keys()) != roster_list:
-            raise HTTPException(status_code=400, detail="必须为全部上场队伍提交评分")
+        if set(values.keys()) != checked:
+            raise HTTPException(status_code=400, detail="必须为全部已检录队伍提交评分")
         for v in values.values():
             try:
                 fv = float(v)
@@ -800,24 +824,25 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
             if not (0 <= fv <= 10) or round(fv, 1) != fv:
                 raise HTTPException(status_code=400, detail="评分须为 0~10 且最多一位小数")
     elif skating:
-        if set(values.keys()) != roster_list:
-            raise HTTPException(status_code=400, detail="必须为全部上场选手提交名次")
+        if set(values.keys()) != checked:
+            raise HTTPException(status_code=400, detail="必须为全部已检录选手提交名次")
         placements = []
         for num, v in values.items():
             try:
                 p = int(v)
             except (TypeError, ValueError):
                 raise HTTPException(status_code=400, detail="名次必须为 1~N 的整数")
-            if not (1 <= p <= len(roster_list)):
+            if not (1 <= p <= len(checked)):
                 raise HTTPException(status_code=400, detail="名次超出范围 1~N")
             placements.append(p)
-        if len(set(placements)) != len(roster_list):
+        if len(set(placements)) != len(checked):
             raise HTTPException(status_code=400, detail="名次必须为 1~N 且互不重复")
     elif kind == "mark":
         # Mark制（滑冰制预赛）：裁判**只对选中的选手**给 mark（core 语义：mark is True 计票，
         # 未选中选手无记录、票数 0）。提交即整体替换该裁判该舞种的全部标记。
-        if not set(values.keys()) <= roster_list:
-            raise HTTPException(status_code=400, detail="标记对象必须在本场上场名单内")
+        # 检录门禁：只能给已检录选手 mark。
+        if not set(values.keys()) <= checked:
+            raise HTTPException(status_code=400, detail="标记对象必须为已检录选手")
         for v in values.values():
             if not isinstance(v, bool):
                 raise HTTPException(status_code=400, detail="Mark制为布尔标记（true/false）")
@@ -849,6 +874,83 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
                     {"event_id": ceid, "dance": dance, "judge": s["judge_code"]})
     auto = _auto_calculate_if_ready(_event_or_404(ceid), comp)
     return {"ok": True, "auto_calculated": auto}
+
+
+# ---------------------------------------------- 检录/播报台（主持人 · 检录长/检录员）
+@app.get("/staff", response_class=HTMLResponse)
+async def staff_page(request: Request):
+    """主持台/检录台共用页：赛程 + 逐场检录 + 已完成场次成绩与播报标记。"""
+    s = require_staff(request)
+    comp = _active_competition()
+    conn = db.get_db()
+    items, done = [], []
+    if comp:
+        events = db.rows(conn.execute(
+            "SELECT id,code,name,project_code,round,status,announced FROM events "
+            "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
+            (comp["id"],)))
+        for ev in events:
+            rows = db.rows(conn.execute(
+                "SELECT competitor_number, checked_in, checked_by FROM event_competitors "
+                "WHERE event_id=? ORDER BY CAST(competitor_number AS INTEGER), competitor_number",
+                (ev["id"],)))
+            roster = [{"number": r["competitor_number"], "checked": bool(r["checked_in"]),
+                       "by": r["checked_by"] or ""} for r in rows]
+            item = {"id": ev["id"], "code": ev["code"], "name": ev["name"],
+                    "project": ev["project_code"], "round": ev["round"], "status": ev["status"],
+                    "announced": bool(ev["announced"]), "roster": roster,
+                    "checked_n": sum(1 for x in roster if x["checked"]),
+                    "total": len(roster)}
+            if ev["status"] in ("calculated", "published"):
+                res = load_results(ev["id"])
+                item["results"] = (res or {}).get("overall_results", [])
+                done.append(item)
+            else:
+                items.append(item)
+    return templates.TemplateResponse(request, "staff.html", {
+        "request": request, "comp": comp, "items": items, "done": done, "role": s["role"]})
+
+
+@app.post("/api/competition-events/{ceid}/checkin")
+async def api_checkin(ceid: int, request: Request = None):
+    """批量检录/撤销检录（主持人或检录长·检录员）。仅接受本场上场名单内的背号。"""
+    s = require_staff(request)
+    ev, comp = _require_active_event(ceid)
+    body = await request.json()
+    numbers = [str(x).strip() for x in (body.get("numbers") or [])]
+    state = 1 if body.get("state") else 0
+    if not numbers:
+        raise HTTPException(status_code=400, detail="未提供背号")
+    roster_set = set(roster(ceid))
+    bad = [n for n in numbers if n not in roster_set]
+    if bad:
+        raise HTTPException(status_code=400, detail="背号不在本场上场名单内: " + ",".join(bad[:5]))
+    conn = db.get_db()
+    for num in numbers:
+        conn.execute(
+            "UPDATE event_competitors SET checked_in=?, checked_by=?, checked_at=? "
+            "WHERE event_id=? AND competitor_number=?",
+            (state, s["role"] if state else None,
+             time.strftime("%Y-%m-%d %H:%M:%S") if state else None, ceid, num))
+    conn.commit()
+    sse.bus.publish(comp["id"], "checkin_changed",
+                    {"event_id": ceid, "count": len(numbers), "state": bool(state)})
+    return {"ok": True, "updated": len(numbers),
+            "checked_n": len(checked_roster(ceid)), "total": len(roster_set)}
+
+
+@app.post("/api/competition-events/{ceid}/announce")
+async def api_announce(ceid: int, request: Request = None):
+    """播报标记（备忘位，可标/可取消，仅 calculated/published 场次，不影响赛程逻辑）。"""
+    s = require_staff(request)
+    ev, comp = _require_active_event(ceid)
+    if ev["status"] not in ("calculated", "published"):
+        raise HTTPException(status_code=400, detail="仅已完成计算的场次可标记播报")
+    body = await request.json()
+    state = 1 if body.get("announced") else 0
+    db.get_db().execute("UPDATE events SET announced=? WHERE id=?", (state, ceid))
+    db.get_db().commit()
+    return {"ok": True, "announced": bool(state)}
 
 
 # ------------------------------------------------------------------ advancement

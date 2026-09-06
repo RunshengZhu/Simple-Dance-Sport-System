@@ -7,6 +7,7 @@
   3. 其余 scoring 态场次维持 J1-J4 部分评分（驱动器产物）
 """
 import json, sys, time, urllib.parse
+import http.cookiejar
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8321"
 CID = int(sys.argv[2]) if len(sys.argv) > 2 else 11
@@ -26,6 +27,10 @@ for k in range(1, 10):
     j = login("judge", f"J{k}")
     assert j, f"J{k} login"
     judges.append((f"J{k}", j))
+# 检录员会话（检录后裁判才可评分）
+marshal_jar = http.cookiejar.CookieJar()
+c, _ = jreq("POST", "/api/login", marshal_jar, {"role": "marshal", "password": "marshal123"})
+assert c == 200, "marshal login"
 
 _, pub = jreq("GET", f"/api/public/events/{CID}/schedule")
 ceid = {e["code"]: e["id"] for e in pub.get("events", [])}
@@ -39,6 +44,9 @@ def status_of(code_):
 roster = [str(101 + i) for i in range(8)]
 c, _ = jreq("POST", f"/api/competition-events/{ceid['S7R1']}/open", admin, {"roster": roster, "reset": False})
 print("open S7R1:", c)
+c, _ = jreq("POST", f"/api/competition-events/{ceid['S7R1']}/checkin", marshal_jar,
+            {"numbers": roster, "state": True})   # 检录后裁判才可评分
+print("checkin S7R1:", c)
 for jn, jar in judges[:8]:
     rnd = __import__("random").Random(f"S7R1-{jn}")
     perm = roster[:]; rnd.shuffle(perm)
@@ -57,6 +65,9 @@ if c == 200:
     ceid["S9R1"] = d["event_id"]
     c, _ = jreq("POST", f"/api/competition-events/{ceid['S9R1']}/open", admin, {"roster": roster, "reset": False})
     print("open S9R1:", c)
+    c, _ = jreq("POST", f"/api/competition-events/{ceid['S9R1']}/checkin", marshal_jar,
+                {"numbers": roster, "state": True})
+    print("checkin S9R1:", c)
     for jn, jar in judges[:4]:
         for dance in ("华尔兹", "探戈"):
             rnd = __import__("random").Random(f"S9R1-{jn}-{dance}")

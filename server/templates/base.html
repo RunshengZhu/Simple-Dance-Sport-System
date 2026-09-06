@@ -22,7 +22,7 @@
 <script>window.CID = {% block cid %}0{% endblock %};</script>
 <script src="/static/app.js"></script>
 {% if autorefresh %}<script>
-if (window.CID) { connectSSE('/api/events/' + window.CID + '/stream', {results_published: function(){location.reload();}, competition_event_opened: function(){location.reload();}, competition_event_closed: function(){location.reload();}, schedule_changed: function(){location.reload();}, score_submitted: function(){location.reload();}, calculation_done: function(){location.reload();}, screen_state_changed: function(){location.reload();}}, function(){location.reload();}, 3000); }
+if (window.CID) { connectSSE('/api/events/' + window.CID + '/stream', {results_published: function(){location.reload();}, competition_event_opened: function(){location.reload();}, competition_event_closed: function(){location.reload();}, schedule_changed: function(){location.reload();}, score_submitted: function(){location.reload();}, calculation_done: function(){location.reload();}, screen_state_changed: function(){location.reload();}, checkin_changed: function(){location.reload();}}, function(){location.reload();}, 3000); }
 </script>{% endif %}
 <script>
 {% block scripts %}{% endblock %}
