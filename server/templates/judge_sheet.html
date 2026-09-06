@@ -4,16 +4,14 @@
 {% block content %}
 <div class="judge-sheet">
 <h1>{{ dance }} <span class="muted">{{ ev.name }} / {{ ev.scoring_type }}</span></h1>
-<p id="roster-note" class="muted">{% if is_score %}上场 {{ n }} 支队伍{% else %}上场 {{ n }} 名选手{% endif %}</p>
+<p id="roster-note" class="muted">{% if is_score %}上场 {{ n }} 支队伍{% else %}上场 {{ n }} 名选手{% endif %} · 盲评原则：评分页仅显示背番号</p>
 {% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
 {% if is_mark %}<p class="muted">滑冰制预赛：裁判只对选中给予 <b>Mark</b> 的选手打勾（通常为晋级名额数量）；未勾选选手视为未获得你的 Mark。已选 <span id="mark-count">0</span> / {{ n }}</p>{% endif %}
 <table>
-  <tr><th>背番号</th><th>姓名</th><th>单位</th><th>{% if is_skating %}名次（1~{{ n }} 唯一）{% elif is_score %}评分（0~10，一位小数）{% else %}给予 Mark{% endif %}</th></tr>
+  <tr><th>背番号</th><th>{% if is_skating %}名次（1~{{ n }} 唯一）{% elif is_score %}评分（0~10，一位小数）{% else %}给予 Mark{% endif %}</th></tr>
   {% for num in roster %}
   <tr>
     <td>{{ num }}</td>
-    <td>{{ (competitors.get(num) or {}).get("name", "") }}</td>
-    <td class="muted">{{ (competitors.get(num) or {}).get("unit", "") }}</td>
     <td>
       {% if is_skating %}
       <select class="val" data-num="{{ num }}">

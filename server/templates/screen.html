@@ -23,57 +23,86 @@
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
 var sections = ['sec-scoring', 'sec-results', 'sec-standings', 'sec-welcome'];
-var idx = 0, hasScoring = false, hasResults = false, hasStandings = false;
-function showNext() {
-  // 只轮播有内容的节；都无内容则停留在欢迎页
-  var avail = [];
-  if (hasScoring) avail.push('sec-scoring');
-  if (hasResults) avail.push('sec-results');
-  if (hasStandings) avail.push('sec-standings');
-  avail.push('sec-welcome');
-  sections.forEach(function (id) { document.getElementById(id).classList.remove('active'); });
-  document.getElementById(avail[idx % avail.length]).classList.add('active');
-  idx += 1;
-}
-setInterval(showNext, 8000);
+var idx = 0, resIdx = 0, forcedMode = 'auto';
+var stateData = {};
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
 
-async function refresh() {
-  var data = await api('GET', '/api/public/events/' + CID + '/screen-state');
-  hasScoring = (data.scoring_now || []).length > 0;
-  hasResults = (data.published_results || []).length > 0;
-  document.getElementById('scoring-list').innerHTML = hasScoring
+function setSection(id) {
+  sections.forEach(function (x) { document.getElementById(x).classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+}
+
+function renderScoring() {
+  var list = stateData.scoring_now || [];
+  document.getElementById('scoring-list').innerHTML = list.length
     ? '<table><tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th></tr>' +
-      data.scoring_now.map(function (e) {
+      list.map(function (e) {
         return '<tr><td>' + esc(e.code) + '</td><td>' + esc(e.name) + '</td><td>' + esc(e.project_code) + '</td><td>第' + esc(e.round) + '轮</td></tr>';
       }).join('') + '</table>'
     : '暂无进行中场次';
-  var forced = data.forced_mode || 'auto';
-  var ts = data.team_standings || {};
-  hasStandings = (ts.standings || []).length > 0;
-  document.getElementById('standings-list').innerHTML = hasStandings
+}
+
+function renderResults() {
+  var pub = stateData.published_results || [];
+  var box = document.getElementById('results-list');
+  if (!pub.length) { box.innerHTML = '<p class="muted" style="font-size:2vw">暂无已发布成绩</p>'; return; }
+  var i = resIdx % pub.length;
+  var p = pub[i];
+  var rows = (p.results || []).slice(0, 8).map(function (r) {
+    return '<tr><td>' + esc(r.rank) + '</td><td>' + esc(r.competitor_number) + '</td><td>' +
+      esc(r.competitor_name || '') + '</td><td>' + esc(r.total_score) + '</td></tr>';
+  }).join('');
+  // 成绩公告一次只显示一个场次，含选手（单人/双人）或队伍名称，右上角标注轮换进度（1/N）
+  box.innerHTML = '<h2 style="font-size:2.6vw">' + esc(p.name) +
+    '<span class="muted" style="font-size:1.6vw;margin-left:1.5vw">' + (i + 1) + ' / ' + pub.length + '</span></h2>' +
+    '<table><tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th>总分</th></tr>' + rows + '</table>';
+}
+
+function renderStandings() {
+  var ts = stateData.team_standings || {};
+  var list = ts.standings || [];
+  document.getElementById('standings-list').innerHTML = list.length
     ? '<table><tr><th>名次</th><th>单位</th><th>总分</th><th>各项目</th></tr>' +
-      ts.standings.slice(0, 8).map(function (s, i) {
+      list.slice(0, 8).map(function (s, i) {
         var per = Object.keys(s.per_project || {}).map(function (k) { return esc(k) + '=' + esc(s.per_project[k]); }).join(' ');
         return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.unit) + '</td><td>' + esc(s.total) + '</td><td style=\'font-size:1.4vw\'>' + per + '</td></tr>';
       }).join('') + '</table>'
     : '暂无团体总分';
-  document.getElementById('results-list').innerHTML = (data.published_results || []).map(function (p) {
-    var rows = (p.results || []).slice(0, 8).map(function (r) {
-      return '<tr><td>' + esc(r.rank) + '</td><td>' + esc(r.competitor_number) + '</td><td>' + esc(r.total_score) + '</td></tr>';
-    }).join('');
-    return '<h2>' + esc(p.name) + '</h2><table><tr><th>名次</th><th>背番号</th><th>总分</th></tr>' + rows + '</table>';
-  }).join('') || '<p class="muted" style="font-size:2vw">暂无已发布成绩</p>';
-  // 强制模式（FR-G9）：指定单一画面，不做轮播
-  var forcedMap = {scoring: 'sec-scoring', results: 'sec-results', standings: 'sec-standings', welcome: 'sec-welcome'};
-  if (forcedMap[forced]) {
-    sections.forEach(function (id) { document.getElementById(id).classList.remove('active'); });
-    document.getElementById(forcedMap[forced]).classList.add('active');
-    return;
-  }
-  showNext();
 }
+
+function applyForcedOrRotate() {
+  var forcedMap = {scoring: 'sec-scoring', results: 'sec-results', standings: 'sec-standings', welcome: 'sec-welcome'};
+  if (forcedMode !== 'auto' && forcedMap[forcedMode]) { setSection(forcedMap[forcedMode]); return; }
+  rotate();
+}
+
+function rotate() {
+  // 只轮播有内容的节；都无内容则停留在欢迎页
+  var avail = [];
+  if ((stateData.scoring_now || []).length > 0) avail.push('sec-scoring');
+  if ((stateData.published_results || []).length > 0) avail.push('sec-results');
+  if (((stateData.team_standings || {}).standings || []).length > 0) avail.push('sec-standings');
+  avail.push('sec-welcome');
+  setSection(avail[idx % avail.length]);
+  idx += 1;
+}
+
+async function refresh() {
+  stateData = await api('GET', '/api/public/events/' + CID + '/screen-state');
+  forcedMode = stateData.forced_mode || 'auto';
+  renderScoring(); renderResults(); renderStandings();
+  applyForcedOrRotate();
+}
+
+// 轮播定时（8s）：auto=切换下一节；强制成绩公告=切换下一场次；其余强制=锁定不动
+setInterval(function () {
+  if (forcedMode === 'results') { resIdx += 1; renderResults(); return; }
+  if (forcedMode !== 'auto') return;
+  resIdx += 1;
+  rotate();
+}, 8000);
+
 if (CID) {
   refresh();
   connectSSE('/api/events/' + CID + '/stream', {

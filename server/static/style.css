@@ -88,18 +88,18 @@ label { display: block; margin: 10px 0 4px; font-size: .88rem; color: var(--mute
 .tag.acc { background: var(--acc-soft); color: var(--acc); }
 .tag.gray { background: #f1ede6; color: var(--muted); }
 
-/* ---- 大屏（深色 1920 基准） ---- */
-body.screen { background: #10131a; color: #e8e6e1; }
+/* ---- 大屏（深色 1920 基准；单屏锁定，无滚动） ---- */
+body.screen { background: #10131a; color: #e8e6e1; overflow: hidden; height: 100vh; }
 body.screen header { background: #10131add; border-color: #262c38; }
 body.screen header .muted { color: #9aa3b2; }
-body.screen main { max-width: 1600px; }
-body.screen h1 { font-size: 3.2vw; color: #f3c969; }
+body.screen main { max-width: 1600px; height: calc(100vh - 58px); overflow: hidden; padding-bottom: 0; }
+body.screen h1 { font-size: 3.2vw; color: #f3c969; margin: 1.2vw 0; }
 body.screen h2 { font-size: 2.2vw; color: #d7dbe3; }
 body.screen table { font-size: 1.7vw; background: transparent; }
 body.screen th { color: #9aa3b2; }
-body.screen td, body.screen th { border-color: #262c38; padding: 1vw 1.2vw; }
+body.screen td, body.screen th { border-color: #262c38; padding: 0.9vw 1.2vw; }
 body.screen tr.rank-1 td { background: #3a2e12; color: #f3c969; }
-body.screen .screen-section { display: none; min-height: 72vh; }
+body.screen .screen-section { display: none; height: 100%; overflow: hidden; }
 body.screen .screen-section.active { display: block; animation: fade .5s; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -159,4 +159,22 @@ body.screen th { position: static; }
   header, .btn, #net-badge, nav { display: none !important; }
   main { max-width: none; }
   .card { border: none; box-shadow: none; }
+}
+
+/* ---- 操作手册（/manual） ---- */
+.manual-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-top: .8rem; }
+.manual-nav a { background: #f7f0e8; border: 1px solid #e5d9c5; border-radius: 8px; padding: 8px 14px; font-weight: 600; color: #8a1f1f; }
+.manual-lifecycle .lc-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: .6rem 0; }
+.manual-lifecycle .lc-flow span { background: #f7f0e8; border: 1px solid #e5d9c5; border-radius: 6px; padding: 4px 10px; font-weight: 600; white-space: nowrap; }
+.manual-lifecycle .lc-flow i { color: #b91c1c; font-style: normal; font-weight: 700; }
+.step { margin: 1.4rem 0; padding: 1rem 1.2rem; background: var(--card, #fff); border: 1px solid #eee3d3; border-radius: 10px; }
+.step h3 { margin-top: 0; }
+.step img { display: block; max-width: 100%; height: auto; max-height: 78vh; border: 1px solid #e5e0d8; border-radius: 8px; margin: .6rem 0 .2rem; background: #fff; }
+.step code { background: #f7f0e8; padding: 2px 6px; border-radius: 4px; }
+.manual-note { border-left: 4px solid #b91c1c; padding: .8rem 1rem; margin: .8rem 0; }
+@media (max-width: 719px) { .step { padding: .8rem .7rem; } }
+@media print {
+  .step { break-inside: avoid; }
+  .manual-nav { display: none; }
+  .step img { max-height: none; }
 }

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}操作手册{% endblock %}
+{% block nav %}<a href="/">首页</a>{% endblock %}
+{% block content %}
+<h1>操作手册 · 赛事完整周期动线</h1>
+<p class="muted">本手册基于 R21 全栈 E2E 验证（docs/E2E-STANDARD.md，36 检查点）编写，所有截图均为正式部署实机图。
+管理员与裁判动线经桌面（1440×900）/移动（375×812）双端验证；移动端动线以移动端截图呈现。</p>
+
+<div class="manual-lifecycle card">
+  <h2>赛事生命周期总览</h2>
+  <div class="lc-flow">
+    <span>1 建赛</span><i>→</i><span>2 导入</span><i>→</i><span>3 激活</span><i>→</i>
+    <span>4 编排·开场</span><i>→</i><span>5 评分·自动计算</span><i>→</i>
+    <span>6 晋级回填</span><i>→</i><span>7 发布</span><i>→</i><span>8 大屏·公示</span>
+  </div>
+  <p class="muted">角色分工：管理员负责 1-4 与 6-8 的控制面；裁判仅参与 5（移动端盲评）；观众走 8 的公开查询；大屏全程自动展示，管理员可强制切换。</p>
+</div>
+
+<div class="manual-nav card">
+  <a href="#admin">🧑‍💼 管理员动线（10 步）</a>
+  <a href="#judge">⚖️ 裁判动线（5 步 · 移动端）</a>
+  <a href="#public">👀 观众动线（3 步 · 移动端）</a>
+  <a href="#screen">📺 大屏（4 视图）</a>
+</div>
+
+<h2 id="admin">一、管理员动线（桌面 1440×900）</h2>
+
+<div class="step"><h3>第 1 步 · 登录</h3>
+  <p><code>/login</code>　角色选「管理员」，输入管理员口令登录。错口令将被拒绝（登录防爆破 5 次/分）。</p>
+  <img src="/static/manual/r21/a1-login.png" alt="管理员登录" loading="lazy">
+  <p class="muted">验证点：登录后进入「赛事管理」页；观众无需登录，可从本页直接进入赛程/成绩/大屏。</p>
+</div>
+
+<div class="step"><h3>第 2 步 · 创建赛事</h3>
+  <p><code>/events</code>　填写赛事名称（必填）、日期、地点，点击「创建」。同页列表实时刷新。</p>
+  <img src="/static/manual/r21/a2-events.png" alt="创建赛事" loading="lazy">
+  <p class="muted">验证点：创建成功后列表出现新赛事；系统同时仅允许一个赛事处于运行流程（激活语义）。</p>
+</div>
+
+<div class="step"><h3>第 3 步 · 激活赛事</h3>
+  <p><code>/events</code>　在赛事列表对目标赛事执行「激活」。激活新赛事会自动停用上一场（单赛事运行，Q6）。
+  所有控制面操作（导入/开场/发布）都要求赛事处于激活态。</p>
+  <img src="/static/manual/r21/a2-events.png" alt="激活赛事" loading="lazy">
+  <p class="muted">验证点：目标赛事状态变为运行中；旧赛事自动停用。</p>
+</div>
+
+<div class="step"><h3>第 4 步 · 导入数据</h3>
+  <p><code>/events/{id}/import</code>　依次上传三类 UTF-8 CSV：选手（背番号,项目编号,姓名,学校/单位；
+  集体队伍以 T 编号作为选手导入）、裁判（裁判ID,姓名）、赛程（场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手）。</p>
+  <img src="/static/manual/r21/a3-import.png" alt="数据导入" loading="lazy">
+  <p class="muted">验证点：导入后逐条校验报告（错误行会明确提示，不整批失败）；跨单位双人姓名内标注双方单位，归主报单位（D13）。</p>
+</div>
+
+<div class="step"><h3>第 5 步 · 赛程编排与场次管理</h3>
+  <p><code>/events/{id}/schedule</code>　项目树总览（按项目分组的场次卡，四色状态标签）。
+  支持添加场次（多舞种、三种评分类型、上场名单预填）、编辑与删除（仅 pending 态可改）。</p>
+  <img src="/static/manual/r21/a4-schedule-tree.png" alt="赛程编排树" loading="lazy">
+  <p class="muted">验证点：状态徽章与实际一致（待赛/评分中/已计算/已发布）；分组大项目（如 S10 A/B/C 组）树形展示。</p>
+</div>
+
+<div class="step"><h3>第 6 步 · 场次控制台：开场 → 监控 → 退回</h3>
+  <p><code>/events/{id}/console/{ceid}</code>　「开启评分」（pending→scoring，上场名单确认）；
+  裁判提交进度矩阵实时刷新（SSE）；异常时「退回评分」清空本场评分回 scoring（危险操作，二次确认）；
+  收齐后自动计算，也可「手动计算/重算」。</p>
+  <img src="/static/manual/r21/a5-console.png" alt="场次控制台" loading="lazy">
+  <p class="muted">验证点：未激活时开场被拒；空名单开场 400；裁判收齐瞬间 auto_calculated=true 并自动关闭评分。</p>
+</div>
+
+<div class="step"><h3>第 7 步 · 晋级确认与蛇形回填</h3>
+  <p><code>/events/{id}/advancement</code>　选项目与轮次，系统给出合并晋级预案（同项目同轮多场次自动合并，
+  名额=各组之和），可编辑勾选后确认，晋级选手按蛇形分配回填下一轮上场名单。</p>
+  <img src="/static/manual/r21/a6-advancement.png" alt="晋级确认" loading="lazy">
+  <p class="muted">验证点：预案人数=各组晋级名额之和（如 S10 三组各 4 → 合并 12）；回填后下一轮 roster 与预案一致。</p>
+</div>
+
+<div class="step"><h3>第 8 步 · 结果中心：发布 / 重算 / 导出 / 备份</h3>
+  <p><code>/events/{id}/results</code>　逐场「发布（进大屏）」/撤回；「手动重算」；「原始打分」「滑冰判定表」管理端明细；
+  Markdown/打印 HTML 导出；「数据库备份」一键落盘。</p>
+  <img src="/static/manual/r21/a7-results-center.png" alt="结果中心" loading="lazy">
+  <p class="muted">验证点：发布后公开页与大屏同步可见，撤回双向隐藏；明细接口无管理员会话返回 401。</p>
+</div>
+
+<div class="step"><h3>第 9 步 · 单位队伍与团体总分</h3>
+  <p><code>/events/{id}/teams</code>　单位参赛统计与集体队伍（FR-I1~I4）。
+  <code>/events/{id}/team-standings</code>　团体总分管理口径（全部已计算），best_n 参数即时重算。</p>
+  <img src="/static/manual/r21/a10-teams.png" alt="单位与队伍管理" loading="lazy">
+  <img src="/static/manual/r21/a11-team-standings.png" alt="团体总分管理" loading="lazy">
+  <p class="muted">验证点：口径=最末轮名次赋分（9-7-6-5-4-3-2-1）；跨单位双人归主报单位；公开端只见已发布场次。</p>
+</div>
+
+<div class="step"><h3>第 10 步 · 大屏控制</h3>
+  <p><code>/events/{id}/screen-control</code>　五态按钮：自动轮播 / 评分进行中 / 成绩公告 / 团体总分榜 / 欢迎页。
+  强制模式经 SSE 秒级推送到大屏；强制「成绩公告」时大屏按单场次轮换（右上角 1/N 进度）。</p>
+  <img src="/static/manual/r21/a12-screen-control.png" alt="大屏控制" loading="lazy">
+  <p class="muted">验证点：模式变更即时生效；服务重启后大屏自动重连并恢复（state_sync 快照机制）。</p>
+</div>
+
+<h2 id="judge">二、裁判动线（移动端 375×812）</h2>
+<div class="card manual-note">
+  <b>盲评公平性原则</b>：评分页仅显示背番号，不显示姓名、单位等任何身份信息；姓名仅在报名与公示（公开成绩）环节可见。
+</div>
+
+<div class="step"><h3>第 1 步 · 直达登录（手机书签）</h3>
+  <p><code>/login?role=judge&amp;judge=J1</code>　自动选中裁判角色并预填裁判 ID，输入无口令直接登录（D10：裁判凭 ID 登录，不绑设备）。
+  裁判长可为每位裁判生成专属直达链接。</p>
+  <img src="/static/manual/r21/j1-login-prefill.png" alt="裁判直达登录" loading="lazy">
+  <p class="muted">验证点：ID 不存在返回 403；登录后直达工作台。</p>
+</div>
+
+<div class="step"><h3>第 2 步 · 工作台：待评场次</h3>
+  <p><code>/judge</code>　本场全部评分中场次卡片，状态徽章 + 舞种入口；多舞种场次每个舞种独立入口。
+  他裁提交/开场/退回等事件经 SSE 秒级推送刷新。</p>
+  <img src="/static/manual/r21/j2-workbench.png" alt="裁判工作台" loading="lazy">
+  <p class="muted">验证点：已评场次有 ✓ 标记；评分被管理退回后卡片实时恢复待评。</p>
+</div>
+
+<div class="step"><h3>第 3 步 · 顺位法评分（SKATING）</h3>
+  <p>为每名选手（仅背番号）下拉选择 1~N 名次，全表填满且互不重复后「提交名次表」。
+  整页一屏放下，无需滚动。提交后未关闭前可修改重交。</p>
+  <img src="/static/manual/r21/j3-sheet-skating.png" alt="顺位法评分表" loading="lazy">
+  <p class="muted">验证点：重复名次服务端 400「名次必须为 1~N 且互不重复」；最后一名裁判提交触发自动计算并关闭。</p>
+</div>
+
+<div class="step"><h3>第 4 步 · Mark 制评分（滑冰制预赛）</h3>
+  <p>只对选中给予 Mark 的选手打勾（通常=晋级名额数），「已选 X / N」实时计数；提交即整体替换本裁判本场名单。</p>
+  <img src="/static/manual/r21/j4-mark-selected.png" alt="Mark 制评分表" loading="lazy">
+  <p class="muted">验证点：允许任意子集（部分提交语义）；收齐按「每裁判有提交」判定；至少勾选一人。</p>
+</div>
+
+<div class="step"><h3>第 5 步 · 评分制评分（SCORE，集体项目）</h3>
+  <p>对每支队伍给 0~10 分（一位小数）。非法值（如 11）服务端拒绝并提示，不落库。</p>
+  <img src="/static/manual/r21/j5-sheet-score.png" alt="评分制评分表" loading="lazy">
+  <p class="muted">验证点：越界/超精度 400；9 裁判收齐自动计算；总分=全裁判求和，同分标准竞赛排名。</p>
+</div>
+
+<h2 id="public">三、观众动线（移动端 375×812，无需登录）</h2>
+
+<div class="step"><h3>第 1 步 · 公开赛程</h3>
+  <p><code>/public/schedule</code>　未登录访问首页自动跳转至此。全场次列表与实时状态徽章。</p>
+  <img src="/static/manual/r21/p1-public-schedule.png" alt="公开赛程" loading="lazy">
+  <p class="muted">验证点：状态徽章与控制台一致；SSE 实时刷新。</p>
+</div>
+
+<div class="step"><h3>第 2 步 · 公开成绩（含选手/队伍名称）</h3>
+  <p><code>/public/results</code>　团体总分榜 + 各已发布场次成绩（名次 / 背番号 / 选手·队伍名称 / 总分）。
+  仅展示已发布场次；公示环节在此呈现选手姓名。</p>
+  <img src="/static/manual/r21/p2-public-results.png" alt="公开成绩" loading="lazy">
+  <p class="muted">验证点：未发布场次不可见；跨单位双人显示双方姓名与单位。</p>
+</div>
+
+<div class="step"><h3>第 3 步 · 团体总分榜</h3>
+  <p><code>/public/team-standings</code>　按单位聚合的名次赋分总分（仅已发布口径），页脚标注计分口径。</p>
+  <img src="/static/manual/r21/p3-public-standings.png" alt="团体总分榜" loading="lazy">
+  <p class="muted">验证点：与管理端口径一致（发布子集）；新发布自动出现（SSE）。</p>
+</div>
+
+<h2 id="screen">四、大屏（1920×1080，单屏无滚动）</h2>
+<div class="card manual-note">
+  大屏 <code>/screen</code> 默认自动轮播：评分进行中 → 成绩公告 → 团体总分榜 → 欢迎页（8 秒一换，跳过无内容节）。
+  管理员可在「大屏控制」强制锁定单一画面；强制「成绩公告」时按单场次轮换（1/N）。整页按 1080p 设计，任何视图不出滚动条。
+</div>
+<div class="step"><h3>视图 1 · 欢迎页</h3>
+  <img src="/static/manual/r21/s-screen-welcome.png" alt="大屏欢迎页" loading="lazy">
+</div>
+<div class="step"><h3>视图 2 · 评分进行中</h3>
+  <img src="/static/manual/r21/s-screen-scoring.png" alt="大屏评分进行中" loading="lazy">
+</div>
+<div class="step"><h3>视图 3 · 成绩公告（单场次轮换，含选手/队伍名称）</h3>
+  <img src="/static/manual/r21/s-screen-results.png" alt="大屏成绩公告" loading="lazy">
+</div>
+<div class="step"><h3>视图 4 · 团体总分榜</h3>
+  <img src="/static/manual/r21/s-screen-standings.png" alt="大屏团体总分榜" loading="lazy">
+</div>
+
+<p class="muted" style="margin-top:2rem">手册版本 v1.0 · 2026-09-06 · 基于 commit 059cd9b+ 实机截图 ·
+配合 docs/WALKTHROUGH.md（动线走查）与 docs/E2E-STANDARD.md（验收标准）使用。</p>
+{% endblock %}
+{% block scripts %}
+{% endblock %}

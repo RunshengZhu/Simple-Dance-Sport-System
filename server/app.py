@@ -270,16 +270,21 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         rows[num] = db.rowdict(db.get_db().execute(
             "SELECT * FROM score_records WHERE event_id=? AND judge_code=? AND dance_name=? AND competitor_number=?",
             (ev["id"], s["judge_code"], dance, num)).fetchone())
-    competitors = {c["number"]: c for c in db.rows(db.get_db().execute(
-        "SELECT number, name, unit FROM competitors WHERE competition_id=?", (ev["competition_id"],)))}
+    # 盲评公平性：评分页不向裁判提供背番号以外的任何选手信息（姓名/单位不出库）
     return templates.TemplateResponse(request, "judge_sheet.html", {
         "ev": ev, "comp": comp, "dance": dance,
-        "roster": roster_list, "rows": rows, "competitors": competitors,
+        "roster": roster_list, "rows": rows,
         "is_skating": scoring_kind(ev) == "skating",
         "is_mark": scoring_kind(ev) == "mark",
         "is_score": scoring_kind(ev) == "score",
         "n": len(roster_list),
     })
+
+
+@app.get("/manual", response_class=HTMLResponse)
+async def manual_page(request: Request):
+    """操作手册（赛事完整周期各角色动线，实机截图说明）。"""
+    return templates.TemplateResponse(request, "manual.html", {"request": request})
 
 
 @app.get("/public/schedule", response_class=HTMLResponse)
@@ -300,10 +305,12 @@ async def public_results(request: Request):
     if comp:
         evs = db.rows(db.get_db().execute(
             "SELECT * FROM events WHERE competition_id=? AND published=1 ORDER BY project_code, round, code", (comp["id"],)))
+        name_by_number = {c["number"]: c["name"] for c in db.rows(db.get_db().execute(
+            "SELECT number, name FROM competitors WHERE competition_id=?", (comp["id"],)))}
         for ev in evs:
             res = load_results(ev["id"])
             if res:
-                payload.append({"ev": ev, "results": res})
+                payload.append({"ev": ev, "results": res, "names": name_by_number})
     standings = _team_standings(comp["id"], published_only=True) if comp else {"standings": []}
     return templates.TemplateResponse(request, "public_results.html", {"request": request, "comp": comp, "payload": payload, "standings": standings})
 
@@ -1138,12 +1145,19 @@ def _public_payload():
         "SELECT code,name,project_code,round,status,published,id FROM events WHERE competition_id=? ORDER BY project_code, round, code",
         (comp["id"],)))
     published = []
+    name_by_number = {c["number"]: c["name"] for c in db.rows(db.get_db().execute(
+        "SELECT number, name FROM competitors WHERE competition_id=?", (comp["id"],)))}
     for ev in events:
         if ev["published"]:
             res = load_results(ev["id"])
             if res:
+                rows = []
+                for r in res["overall_results"]:
+                    r = dict(r)
+                    r["competitor_name"] = name_by_number.get(str(r["competitor_number"]), "")
+                    rows.append(r)
                 published.append({"code": ev["code"], "name": ev["name"], "project": ev["project_code"],
-                                  "round": ev["round"], "results": res["overall_results"]})
+                                  "round": ev["round"], "results": rows})
     return {"competition": {k: comp[k] for k in ("id", "name", "date", "location")},
             "events": events, "published_results": published,
             "team_standings": _team_standings(comp["id"], published_only=True)}
