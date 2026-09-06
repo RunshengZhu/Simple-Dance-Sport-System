@@ -114,22 +114,24 @@
   <p class="muted">验证点：已评场次有 ✓ 标记；评分被管理退回后卡片实时恢复待评。</p>
 </div>
 
-<div class="step"><h3>第 3 步 · 顺位法评分（SKATING）</h3>
-  <p>为每名选手（仅背番号）下拉选择 1~N 名次，全表填满且互不重复后「提交名次表」。
-  整页一屏放下，无需滚动。提交后未关闭前可修改重交。</p>
-  <img src="/static/manual/r21/j3-sheet-skating.png" alt="顺位法评分表" loading="lazy">
-  <p class="muted">验证点：重复名次服务端 400「名次必须为 1~N 且互不重复」；最后一名裁判提交触发自动计算并关闭。</p>
+<div class="step"><h3>第 3 步 · 顺位法评分（SKATING）——顺序点选，一人一点</h3>
+  <p>按名次顺序依次点击选手行：第 1 次点击 = 第 1 名，第 2 次 = 第 2 名……名次徽章自动编号；
+  点已排选手取消并自动补位。整页单屏，底部吸附提交栏常驻（已排 X/N），一人仅需 <b>1 次点击</b>。</p>
+  <img src="/static/manual/r21/j3-sheet-skating.png" alt="顺位法顺序点选" loading="lazy">
+  <p class="muted">验证点：人数不满时提交被本地拦截（不发请求）；重复名次不可能出现；最后一名裁判提交触发自动计算并关闭。</p>
 </div>
 
-<div class="step"><h3>第 4 步 · Mark 制评分（滑冰制预赛）</h3>
-  <p>只对选中给予 Mark 的选手打勾（通常=晋级名额数），「已选 X / N」实时计数；提交即整体替换本裁判本场名单。</p>
-  <img src="/static/manual/r21/j4-mark-selected.png" alt="Mark 制评分表" loading="lazy">
-  <p class="muted">验证点：允许任意子集（部分提交语义）；收齐按「每裁判有提交」判定；至少勾选一人。</p>
+<div class="step"><h3>第 4 步 · Mark 制评分（滑冰制预赛）——整行大触控点选</h3>
+  <p>点击选手整行即给予 Mark（大触控目标，行高亮 + 红色对勾），再点一次取消；「已选 X / N」实时计数（通常=晋级名额数）。
+  提交即整体替换本裁判本场名单。</p>
+  <img src="/static/manual/r21/j4-mark-selected.png" alt="Mark 制整行点选" loading="lazy">
+  <p class="muted">验证点：允许任意子集（部分提交语义）；收齐按「每裁判有提交」判定；至少勾选一名。</p>
 </div>
 
-<div class="step"><h3>第 5 步 · 评分制评分（SCORE，集体项目）</h3>
-  <p>对每支队伍给 0~10 分（一位小数）。非法值（如 11）服务端拒绝并提示，不落库。</p>
-  <img src="/static/manual/r21/j5-sheet-score.png" alt="评分制评分表" loading="lazy">
+<div class="step"><h3>第 5 步 · 评分制评分（SCORE，集体项目）——数字键盘直填</h3>
+  <p>点击输入框唤起数字键盘，为每支队伍打 0~10 分（一位小数）；进度栏实时显示已填数量，
+  全部填完方可提交。非法值（如 11）服务端拒绝并提示，不落库。</p>
+  <img src="/static/manual/r21/j5-sheet-score.png" alt="评分制数字键盘" loading="lazy">
   <p class="muted">验证点：越界/超精度 400；9 裁判收齐自动计算；总分=全裁判求和，同分标准竞赛排名。</p>
 </div>
 

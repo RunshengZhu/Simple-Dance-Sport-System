@@ -1,46 +1,61 @@
 {% extends "base.html" %}
 {% block title %}评分 · {{ ev.name }} · {{ dance }}{% endblock %}
 {% block nav %}<a href="/judge">← 待评场次</a><span>{{ ev.name }}</span>{% endblock %}
+{% block bodyclass %}judge-sheet{% endblock %}
 {% block content %}
 <div class="judge-sheet">
 <h1>{{ dance }} <span class="muted">{{ ev.name }} / {{ ev.scoring_type }}</span></h1>
 <p id="roster-note" class="muted">{% if is_score %}上场 {{ n }} 支队伍{% else %}上场 {{ n }} 名选手{% endif %} · 盲评原则：评分页仅显示背番号</p>
 {% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
-{% if is_mark %}<p class="muted">滑冰制预赛：裁判只对选中给予 <b>Mark</b> 的选手打勾（通常为晋级名额数量）；未勾选选手视为未获得你的 Mark。已选 <span id="mark-count">0</span> / {{ n }}</p>{% endif %}
-<table>
-  <tr><th>背番号</th><th>{% if is_skating %}名次（1~{{ n }} 唯一）{% elif is_score %}评分（0~10，一位小数）{% else %}给予 Mark{% endif %}</th></tr>
+
+{% if is_mark %}
+<p class="muted">滑冰制预赛：点击选手行给予 <b>Mark</b>（通常为晋级名额数量）；再点一次取消。已选 <span id="mark-count">0</span> / {{ n }}</p>
+<div class="mark-list">
   {% for num in roster %}
-  <tr>
-    <td>{{ num }}</td>
-    <td>
-      {% if is_skating %}
-      <select class="val" data-num="{{ num }}">
-        <option value="">--</option>
-        {% for i in range(1, n + 1) %}<option value="{{ i }}" {% if rows.get(num) and rows[num]["placement"] == i %}selected{% endif %}>{{ i }}</option>{% endfor %}
-      </select>
-      {% elif is_score %}
-      <input type="number" class="val" data-num="{{ num }}" min="0" max="10" step="0.5"
-        value="{{ rows.get(num) and rows[num]["mark"] if rows.get(num) and rows[num]["mark"] is not none else "" }}">
-      {% else %}
-      <input type="checkbox" class="val" data-num="{{ num }}"
-        {% if rows.get(num) and rows[num]["mark"] is not none %}{{ "checked" if rows[num]["mark"] else "" }}{% endif %}>
-      {% endif %}
-    </td>
-  </tr>
+  <div class="mark-row" data-num="{{ num }}">
+    <span class="mark-box"></span>
+    <span class="row-num">{{ num }}</span>
+    <span class="mark-hint">点击给 Mark</span>
+    <input type="checkbox" class="val" data-num="{{ num }}" {% if rows.get(num) and rows[num]["mark"] is not none %}{{ "checked" if rows[num]["mark"] else "" }}{% endif %}>
+  </div>
   {% endfor %}
-</table>
-<p><button class="btn" id="submit" onclick="submitSheet()">提交{% if is_skating %}名次表{% elif is_score %}评分表{% else %}Mark 名单{% endif %}</button>
-<span id="msg"></span> <span class="muted">提交后如场次未关闭可再次修改提交。</span></p>
+</div>
+{% elif is_skating %}
+<p class="muted">按名次顺序依次点击选手：第 1 次点击 = 第 1 名，第 2 次 = 第 2 名……点已排选手取消并自动补位。</p>
+<div class="rank-list">
+  {% for num in roster %}
+  <div class="rank-row" data-num="{{ num }}">
+    <span class="rank-badge"></span>
+    <span class="row-num">{{ num }}</span>
+    <span class="rank-hint">点击排名</span>
+    <input type="hidden" class="val" data-num="{{ num }}" value="{{ rows.get(num) and rows[num]["placement"] if rows.get(num) and rows[num]["placement"] else "" }}">
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">为每支队伍打 0~10 分（一位小数），点击输入框唤起数字键盘。</p>
+<div class="score-list">
+  {% for num in roster %}
+  <label class="score-row">
+    <span class="row-num">{{ num }}</span>
+    <input type="number" class="val" data-num="{{ num }}" min="0" max="10" step="0.5" inputmode="decimal" placeholder="0.0~10.0"
+      value="{{ rows.get(num) and rows[num]["mark"] if rows.get(num) and rows[num]["mark"] is not none else "" }}">
+  </label>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="submit-bar">
+  <span id="progress" class="muted"></span>
+  <button class="btn big" id="submit" onclick="submitSheet()">提交{% if is_skating %}名次表{% elif is_score %}评分表{% else %}Mark 名单{% endif %}</button>
+  <span id="msg"></span>
+</div>
+<p class="muted">提交后如场次未关闭可再次修改提交。</p>
 </div>
 {% endblock %}
 {% block scripts %}
-var CEID = {{ ev.id }}, DANCE = {{ dance|tojson }}, SKATING = {{ is_skating|tojson }}, SCORE = {{ is_score|tojson }};
-document.querySelectorAll('input.val[type=checkbox]').forEach(function (el) {
-  el.addEventListener('change', function () {
-    var cnt = document.getElementById('mark-count');
-    if (cnt) cnt.textContent = document.querySelectorAll('input.val:checked').length;
-  });
-});
+var CEID = {{ ev.id }}, DANCE = {{ dance|tojson }}, SKATING = {{ is_skating|tojson }}, SCORE = {{ is_score|tojson }}, N = {{ n }};
+
 function collect() {
   var values = {};
   document.querySelectorAll('.val').forEach(function (el) {
@@ -52,20 +67,90 @@ function collect() {
   if (!SKATING && !SCORE) {
     var picked = {};
     Object.keys(values).forEach(function (num) { if (values[num]) picked[num] = true; });
-    var cnt = document.getElementById('mark-count');
-    if (cnt) cnt.textContent = Object.keys(picked).length;
     return picked;   // 仅 Mark 制：只提交勾选给予 Mark 的选手（core 语义）；SCORE 须保留数值
   }
   return values;
 }
+
+if (SKATING) {
+  var order = [];
+  function renderRank() {
+    document.querySelectorAll('.rank-row').forEach(function (row) {
+      var v = row.querySelector('input.val').value;
+      var badge = row.querySelector('.rank-badge');
+      if (v) { badge.textContent = v; row.classList.add('assigned'); row.querySelector('.rank-hint').textContent = '点击取消'; }
+      else { badge.textContent = ''; row.classList.remove('assigned'); row.querySelector('.rank-hint').textContent = '点击排名'; }
+    });
+    var done = order.length;
+    document.getElementById('progress').textContent = '已排 ' + done + ' / ' + N + (done < N ? ' · 还差 ' + (N - done) : ' · 可提交');
+  }
+  function initOrder() {
+    order = Array.prototype.map.call(document.querySelectorAll('.rank-row'), function (row) {
+      return {num: row.dataset.num, v: parseInt(row.querySelector('input.val').value, 10) || 0};
+    }).filter(function (x) { return x.v > 0; })
+      .sort(function (a, b) { return a.v - b.v; })
+      .map(function (x) { return x.num; });
+  }
+  function tapRank(num) {
+    var i = order.indexOf(num);
+    if (i >= 0) order.splice(i, 1); else order.push(num);   // 取消自动补位 / 顺序递增
+    document.querySelectorAll('.rank-row').forEach(function (row) {
+      var k = order.indexOf(row.dataset.num);
+      row.querySelector('input.val').value = k >= 0 ? String(k + 1) : '';
+    });
+    renderRank();
+  }
+  document.querySelectorAll('.rank-row').forEach(function (row) {
+    row.addEventListener('click', function () { tapRank(row.dataset.num); });
+  });
+  initOrder();
+  renderRank();
+} else if (SCORE) {
+  function renderScore() {
+    var done = Array.prototype.filter.call(document.querySelectorAll('input.val'), function (i) { return i.value !== ''; }).length;
+    document.getElementById('progress').textContent = '已填 ' + done + ' / ' + N + (done < N ? ' · 还差 ' + (N - done) : ' · 可提交');
+  }
+  document.querySelectorAll('input.val').forEach(function (inp) { inp.addEventListener('input', renderScore); });
+  renderScore();
+} else {
+  function renderMark() {
+    document.querySelectorAll('.mark-row').forEach(function (row) {
+      var cb = row.querySelector('input.val');
+      row.classList.toggle('checked', cb.checked);
+      row.querySelector('.mark-hint').textContent = cb.checked ? '已给 Mark · 点击取消' : '点击给 Mark';
+    });
+    var cnt = document.getElementById('mark-count');
+    if (cnt) cnt.textContent = document.querySelectorAll('input.val:checked').length;
+    var done = document.querySelectorAll('input.val:checked').length;
+    document.getElementById('progress').textContent = '已选 ' + done + ' / ' + N;
+  }
+  document.querySelectorAll('.mark-row').forEach(function (row) {
+    row.addEventListener('click', function () {
+      var cb = row.querySelector('input.val');
+      cb.checked = !cb.checked;
+      renderMark();
+    });
+  });
+  renderMark();
+}
+
 async function submitSheet() {
   var el = document.getElementById('msg');
+  if (SKATING || SCORE) {
+    var filled = Object.keys(collect()).length;
+    if (filled < N) {
+      el.className = 'err';
+      el.textContent = '还有 ' + (N - filled) + (SKATING ? ' 名选手未排名' : ' 支队伍未评分');
+      return;
+    }
+  }
   try {
     var r = await api('PUT', '/api/judge/competition-events/' + CEID + '/dances/' + encodeURIComponent(DANCE) + '/sheet', {values: collect()});
     el.className = 'ok';
     el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判');
   } catch (e) { el.className = 'err'; el.textContent = e.message; }
 }
+
 var CID = {{ ev.competition_id }};
 connectSSE('/api/events/' + CID + '/stream', {
   competition_event_opened: function () { location.reload(); },

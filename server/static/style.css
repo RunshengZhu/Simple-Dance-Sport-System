@@ -178,3 +178,35 @@ body.screen th { position: static; }
   .manual-nav { display: none; }
   .step img { max-height: none; }
 }
+
+/* ---- 裁判评分表：移动优先点选交互 ---- */
+.judge-sheet .rank-list, .judge-sheet .mark-list, .judge-sheet .score-list { margin: .6rem 0 0; max-width: 640px; }
+.judge-sheet .rank-row, .judge-sheet .mark-row, .judge-sheet .score-row {
+  display: flex; align-items: center; gap: 14px; padding: 12px 14px; margin-bottom: 10px;
+  border: 1px solid #e5e0d8; border-radius: 12px; background: #fff; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.judge-sheet .row-num { font-size: 1.35rem; font-weight: 800; letter-spacing: 1px; min-width: 3.2em; }
+.judge-sheet .rank-hint, .judge-sheet .mark-hint { color: #b9b2a4; font-size: .85rem; margin-left: auto; }
+.judge-sheet .rank-badge {
+  width: 42px; height: 42px; border-radius: 50%; border: 2px dashed #c9c2b6; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; font-size: 1.25rem; font-weight: 800; color: #b91c1c;
+}
+.judge-sheet .rank-row.assigned { border-color: #b91c1c; background: #fdf6f5; }
+.judge-sheet .rank-row.assigned .rank-badge { border: none; background: #b91c1c; color: #fff; }
+.judge-sheet .mark-box {
+  width: 28px; height: 28px; border: 2px solid #c9c2b6; border-radius: 8px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 900;
+}
+.judge-sheet .mark-row.checked { border-color: #b91c1c; background: #fdf6f5; }
+.judge-sheet .mark-row.checked .mark-box { background: #b91c1c; border-color: #b91c1c; }
+.judge-sheet .mark-row.checked .mark-box::after { content: "✓"; }
+.judge-sheet .mark-row input[type=checkbox] { position: absolute; opacity: 0; pointer-events: none; }
+.judge-sheet .score-row { justify-content: space-between; }
+.judge-sheet .score-row input[type=number] { width: 120px; font-size: 1.2rem; padding: 12px; text-align: center; }
+.judge-sheet .submit-bar {
+  position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+  background: var(--card, #fff); padding: 12px 2px; border-top: 2px solid #eee3d3; margin-top: 12px;
+}
+.judge-sheet .submit-bar .btn { flex: 1; margin: 0; }
+.judge-sheet .submit-bar #progress { white-space: nowrap; }
+.judge-sheet .submit-bar #msg { font-size: .85rem; }
