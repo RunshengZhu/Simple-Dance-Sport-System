@@ -45,12 +45,8 @@
     </button>
   </h3>
   {% if ev.results %}
-  <table>
-    <tr><th>名次</th><th>背番号</th><th>总分</th></tr>
-    {% for r in ev.results[:8] %}
-    <tr><td>{{ r["rank"] }}</td><td>{{ r["competitor_number"] }}</td><td>{{ r["total_score"] }}</td></tr>
-    {% endfor %}
-  </table>
+  {% with rows = ev.results, names = ev.names %}{% include "_announce_table.html" %}{% endwith %}
+  <p><a class="btn secondary" href="/api/events/{{ ev.competition_id }}/exports?format=markdown&code={{ ev.code }}">下载本场成绩单 (.md)</a></p>
   {% else %}<p class="muted">无结果数据。</p>{% endif %}
 </div>
 {% endfor %}

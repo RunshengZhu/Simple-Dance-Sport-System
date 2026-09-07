@@ -25,10 +25,7 @@
 {% for p in payload %}
 <div class="card">
   <h2>{{ p.ev.name }}（{{ p.ev.project_code }} 第{{ p.ev.round }}轮）</h2>
-  <table><tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th>总分</th></tr>
-  {% for r in p.results["overall_results"] %}
-  <tr><td>{{ r["rank"] }}</td><td>{{ r["competitor_number"] }}</td><td>{{ p.names.get(r["competitor_number"]|string, "") }}</td><td>{{ r["total_score"] }}</td></tr>
-  {% endfor %}</table>
+  {% with rows = p.results["overall_results"], names = p.names %}{% include "_announce_table.html" %}{% endwith %}
 </div>
 {% endfor %}
 {% if not payload %}<p class="muted">暂无已发布成绩。</p>{% endif %}

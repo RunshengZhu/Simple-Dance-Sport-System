@@ -884,7 +884,10 @@ async def staff_page(request: Request):
     comp = _active_competition()
     conn = db.get_db()
     items, done = [], []
+    name_by_number = {}
     if comp:
+        name_by_number = {c["number"]: c["name"] for c in db.rows(conn.execute(
+            "SELECT number, name FROM competitors WHERE competition_id=?", (comp["id"],)))}
         events = db.rows(conn.execute(
             "SELECT id,code,name,project_code,round,status,announced FROM events "
             "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
@@ -904,6 +907,8 @@ async def staff_page(request: Request):
             if ev["status"] in ("calculated", "published"):
                 res = load_results(ev["id"])
                 item["results"] = (res or {}).get("overall_results", [])
+                item["names"] = name_by_number
+                item["competition_id"] = comp["id"]
                 done.append(item)
             else:
                 items.append(item)
@@ -1456,12 +1461,35 @@ async def api_stream(competition_id: int, request: Request = None):
 
 # ------------------------------------------------------------------ exports & backup
 @app.get("/api/events/{competition_id}/exports")
-async def api_export(competition_id: int, request: Request = None, format: str = "markdown"):
-    require_admin(request)
+async def api_export(competition_id: int, request: Request = None, format: str = "markdown", code: str = ""):
+    """成绩单导出（markdown/html）。管理员=全部已发布；主持/检录角色可下载，
+    带 code 参数可导出单场（含未发布但已计算的场次，供成绩播报使用）。"""
+    s = _session(request)
+    if not s or s["role"] not in ("admin", "host", "marshal"):
+        raise HTTPException(status_code=401, detail="需要登录")
     comp = _comp_or_404(competition_id)
-    evs = db.rows(db.get_db().execute(
-        "SELECT * FROM events WHERE competition_id=? AND published=1 ORDER BY project_code, round, code",
-        (competition_id,)))
+    conn = db.get_db()
+    code = (code or "").strip()
+    if code:
+        evs = db.rows(conn.execute(
+            "SELECT * FROM events WHERE competition_id=? AND code=? AND status IN ('calculated','published')",
+            (competition_id, code)))
+        if not evs:
+            raise HTTPException(status_code=404, detail="场次不存在或未完成计算")
+    else:
+        evs = db.rows(conn.execute(
+            "SELECT * FROM events WHERE competition_id=? AND published=1 ORDER BY project_code, round, code",
+            (competition_id,)))
+    name_by_number = {c["number"]: c["name"] for c in db.rows(conn.execute(
+        "SELECT number, name FROM competitors WHERE competition_id=?", (competition_id,)))}
+
+    def _rows(res):
+        out = []
+        for r in res["overall_results"]:
+            nm = name_by_number.get(str(r["competitor_number"]), "")
+            out.append((r["rank"], r["competitor_number"], nm, r["total_score"]))
+        return out
+
     if format == "markdown":
         lines = ["# {0} 成绩".format(comp["name"]), ""]
         for ev in evs:
@@ -1469,10 +1497,10 @@ async def api_export(competition_id: int, request: Request = None, format: str =
             if not res:
                 continue
             lines.append("## {0}（{1} 第{2}轮）".format(ev["name"], ev["project_code"], ev["round"]))
-            lines.append("| 名次 | 背番号 | 总分 |")
-            lines.append("|---|---|---|")
-            for r in res["overall_results"]:
-                lines.append("| {0} | {1} | {2} |".format(r["rank"], r["competitor_number"], r["total_score"]))
+            lines.append("| 名次 | 背番号 | 选手 / 队伍 | 总分 |")
+            lines.append("|---|---|---|---|")
+            for rank, num, nm, total in _rows(res):
+                lines.append("| {0} | {1} | {2} | {3} |".format(rank, num, nm, total))
             lines.append("")
         return PlainTextResponse("\n".join(lines), media_type="text/markdown; charset=utf-8")
     elif format == "html":
@@ -1481,9 +1509,9 @@ async def api_export(competition_id: int, request: Request = None, format: str =
             res = load_results(ev["id"])
             if not res:
                 continue
-            body = "".join("<tr><td>{0}</td><td>{1}</td><td>{2}</td></tr>".format(
-                r["rank"], r["competitor_number"], r["total_score"]) for r in res["overall_results"])
-            rows_html.append("<h2>{0}（{1} 第{2}轮）</h2><table><tr><th>名次</th><th>背番号</th><th>总分</th></tr>{3}</table>".format(
+            body = "".join("<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>".format(
+                rank, num, nm, total) for rank, num, nm, total in _rows(res))
+            rows_html.append("<h2>{0}（{1} 第{2}轮）</h2><table><tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th>总分</th></tr>{3}</table>".format(
                 ev["name"], ev["project_code"], ev["round"], body))
         css = ("body{font-family:sans-serif;margin:2em}"
                "table{border-collapse:collapse}td,th{border:1px solid #999;padding:4px 12px}")

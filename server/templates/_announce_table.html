@@ -1,0 +1,6 @@
+{# 成绩公告共享表（公开成绩页 / 检录主持台复用同一套 UI 逻辑）。
+   调用方以 {% with rows=..., names=... %} 传入：rows=overall_results，names=背番号→姓名映射。 #}
+<table><tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th>总分</th></tr>
+{% for r in rows %}
+<tr><td>{{ r["rank"] }}</td><td>{{ r["competitor_number"] }}</td><td>{{ names.get(r["competitor_number"]|string, "") }}</td><td>{{ r["total_score"] }}</td></tr>
+{% endfor %}</table>
