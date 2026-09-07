@@ -4,6 +4,7 @@
 <a href="/events/{{ comp.id }}/schedule">← 赛程</a>
 <a href="/events/{{ comp.id }}/results">结果中心</a>
 <span>{{ comp.name }}</span>
+<a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
 {% endblock %}
 {% block content %}
 <h1>大屏控制（FR-G9 / D4）</h1>

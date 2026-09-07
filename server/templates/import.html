@@ -2,7 +2,9 @@
 {% block cid %}{{ comp.id }}{% endblock %}
 {% set autorefresh = true %}
 {% block title %}数据导入 · {{ comp.name }}{% endblock %}
-{% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/schedule">赛程</a><a href="/events/{{ comp.id }}/results">结果中心</a>{% endblock %}
+{% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/schedule">赛程</a><a href="/events/{{ comp.id }}/results">结果中心</a>
+<a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+{% endblock %}
 {% block content %}
 <h1>数据导入 · {{ comp.name }}</h1>
 <p class="muted">支持 UTF-8 CSV。列格式见 README（选手：背番号,项目编号,姓名,学校/单位；赛程：场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手；裁判：裁判ID,姓名）。集体队伍以 T 编号作为选手行导入（FR-I1）。</p>

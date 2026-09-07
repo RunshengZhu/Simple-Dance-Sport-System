@@ -129,14 +129,16 @@ body.judge-sheet .btn.big { width: 100%; margin-top: 14px; }
   main { padding: 10px; }
   h1 { font-size: 1.25rem; }
   h2 { font-size: 1.02rem; }
-  header { padding: 8px 10px; gap: 8px; }
-  header .brand { font-size: .95rem; }
+  header { padding: 8px 10px; gap: 8px; flex-wrap: wrap; row-gap: 4px; }
+  header .brand { font-size: .95rem; white-space: nowrap; }
   header nav {
     flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    scrollbar-width: thin;
   }
-  header nav::-webkit-scrollbar { display: none; }
+  header nav::-webkit-scrollbar { height: 4px; }
+  header nav::-webkit-scrollbar-thumb { background: #cfc8ba; border-radius: 2px; }
   header nav a { white-space: nowrap; padding: 8px 12px; }   /* 触控目标 ≥40px */
+  header nav span { white-space: nowrap; }                    /* N3：角色/代码标签不逐字换行 */
   .card { padding: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   table { min-width: 520px; font-size: .86rem; }
   th, td { padding: 7px 8px; }
@@ -224,10 +226,22 @@ body.screen th { position: static; }
 .judge-sheet .kp-key { min-height: 42px; border: 1px solid #d8d2c6; border-radius: 8px; background: #fff; font-size: 1.1rem; font-weight: 800; color: #37352f; }
 .judge-sheet .kp-key.taken { opacity: .22; pointer-events: none; }
 .judge-sheet .kp-key.own { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.judge-sheet .kp-key.own { background: #b91c1c; border-color: #b91c1c; color: #fff; }
 .judge-sheet .rank-row.off, .judge-sheet .mark-row.off, .judge-sheet .score-row.off {
-  opacity: .45; cursor: not-allowed; background: #f3f1ec;
+  opacity: 1; cursor: not-allowed; background: #e9e6df; border-color: #d4cfc4;
 }
-.judge-sheet .mark-row.off .mark-hint, .judge-sheet .rank-row.off .rank-hint, .judge-sheet .score-row.off .mark-hint { color: #b91c1c; font-weight: 700; }
+.judge-sheet .rank-row.off .row-num, .judge-sheet .mark-row.off .row-num, .judge-sheet .score-row.off .row-num { color: #a49e92; }
+
+/* ---- R32 可用性整改 ---- */
+#roster-box { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px 16px; }
+#roster-box label { display: flex; align-items: center; gap: 6px; margin: 0; flex-wrap: wrap; }
+details.card > summary { cursor: pointer; list-style: none; }
+details.card > summary::before { content: "▸ "; color: #b91c1c; }
+details.card[open] > summary::before { content: "▾ "; }
+details.card[open] > summary { margin-bottom: .6rem; }
+.judge-sheet .rank-row.off .rank-hint, .judge-sheet .mark-row.off .mark-hint, .judge-sheet .score-row.off .mark-hint { color: #b91c1c; font-weight: 700; }
+.lookup-row { gap: 8px; padding-right: 2px; }
+.lookup-row input { min-width: 0; }
 
 /* ---- 检录/播报台（staff） ---- */
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin: .5rem 0; }

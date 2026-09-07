@@ -237,10 +237,12 @@ async def console_page(request: Request, competition_id: int, ceid: int):
     ev = _event_or_404(ceid)
     all_competitors = db.rows(db.get_db().execute(
         "SELECT DISTINCT number, name, unit FROM competitors WHERE competition_id=? ORDER BY number", (competition_id,)))
+    checked = set(checked_roster(ev["id"]))
     return templates.TemplateResponse(request, "console.html", {
         "comp": comp, "ev": ev,
         "dances": dances_of(ev["id"]), "roster": roster(ev["id"]),
-        "all_competitors": all_competitors,
+        "all_competitors": all_competitors, "checked": checked,
+        "checked_n": len(checked), "total": len(roster(ev["id"])),
         "judges": judges_of(competition_id), "result": load_results(ev["id"]),
     })
 

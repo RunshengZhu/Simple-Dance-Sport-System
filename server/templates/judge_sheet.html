@@ -34,7 +34,7 @@
   <div class="rank-row {{ '' if ok else 'off' }}" data-num="{{ num }}">
     <span class="rank-badge"></span>
     <span class="row-num">{{ num }}</span>
-    <span class="rank-hint">{{ '未检录' if not ok else '点击排名' }}</span>
+    <span class="rank-hint">{{ '🔒 未检录' if not ok else '点击排名' }}</span>
     <input type="hidden" class="val" data-num="{{ num }}" {% if not ok %}disabled{% endif %} value="{{ rows.get(num) and rows[num]["placement"] if rows.get(num) and rows[num]["placement"] else "" }}">
   </div>
   {% endfor %}
@@ -102,6 +102,12 @@ if (SKATING) {
     rowsAll().forEach(function (row) { if (getV(row) === String(r)) out = row.dataset.num; });
     return out;
   }
+  function offToast() {
+    var el = document.getElementById('msg');
+    el.className = 'err';
+    el.textContent = '该选手未检录，无法评分';
+    setTimeout(function () { el.textContent = ''; }, 2500);
+  }
   function renderSkating() {
     rowsAll().forEach(function (row) {
       var v = getV(row), badge = row.querySelector('.rank-badge'), hint = row.querySelector('.rank-hint');
@@ -109,7 +115,7 @@ if (SKATING) {
       if (v) { badge.textContent = v; row.classList.add('assigned'); } else { badge.textContent = ''; row.classList.remove('assigned'); }
       var sel = assignMode === 'direct' && selected === row.dataset.num;
       row.classList.toggle('selected', sel);
-      if (off) { hint.textContent = '未检录'; return; }
+      if (off) { hint.textContent = '🔒 未检录'; return; }
       if (assignMode === 'seq') hint.textContent = v ? '点击取消' : '点击排名';
       else hint.textContent = v ? '当前第 ' + v + ' 名' : (sel ? '在下方点名次' : '点击选中');
     });
@@ -134,7 +140,7 @@ if (SKATING) {
   }
   function tapSeq(num) {
     var row = document.querySelector('.rank-row[data-num="' + num + '"]');
-    if (row.classList.contains('off')) return;   // 未检录不可排
+    if (row.classList.contains('off')) { offToast(); return; }   // 未检录不可排
     var ord = rowsAll().filter(function (r) { return getV(r) !== ''; })
       .sort(function (a, b) { return parseInt(getV(a), 10) - parseInt(getV(b), 10); })
       .map(function (r) { return r.dataset.num; });
@@ -148,7 +154,7 @@ if (SKATING) {
   }
   function tapDirect(num) {
     var row = document.querySelector('.rank-row[data-num="' + num + '"]');
-    if (row.classList.contains('off')) return;
+    if (row.classList.contains('off')) { offToast(); return; }
     selected = (selected === num) ? null : num;
     renderSkating();
   }

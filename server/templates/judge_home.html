@@ -3,7 +3,7 @@
 {% block bodyclass %}{% endblock %}
 {% block nav %}<span>{{ judge_code }}</span><a href="#" onclick="api('POST','/api/logout').then(()=>location='/login')">退出</a>{% endblock %}
 {% block content %}
-<h1>裁判工作台{% if comp %} · {{ comp.name }}{% endif %}</h1>
+<h1>裁判工作台{% if comp %} · {{ comp.name }}{% endif %}<span id="j-progress"></span></h1>
 {% if not assignments %}<p class="muted">当前没有进行中的评分场次，请等待管理员开场。</p>{% endif %}
 {% for a in assignments %}
 <div class="card">
@@ -19,6 +19,25 @@
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
+/* J3：待评/已评计数徽章 */
+(function () {
+  var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
+  var total = 0, judged = 0;
+  cards.forEach(function (c) {
+    var links = c.querySelectorAll('a.btn');
+    if (!links.length) return;
+    total += 1;
+    var allDone = Array.prototype.every.call(links, function (a) { return a.textContent.indexOf('✓') >= 0; });
+    if (allDone) judged += 1;
+  });
+  var h = document.getElementById('j-progress');
+  if (h && total) {
+    var t = document.createElement('span');
+    t.className = 'tag ' + (judged === total ? 'ok' : 'warn');
+    t.textContent = judged === total ? '已全部评分 ' + judged + '/' + total : '待评 ' + (total - judged) + '/' + total;
+    h.appendChild(t);
+  }
+})();
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
   competition_event_opened: function () { location.reload(); },
   competition_event_closed: function () { location.reload(); },

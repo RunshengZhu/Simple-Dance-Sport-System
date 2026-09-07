@@ -9,10 +9,12 @@
 <a href="/events/{{ comp.id }}/results">结果中心</a>
 <a href="/events/{{ comp.id }}/team-standings">团体总分</a>
 <a href="/events/{{ comp.id }}/screen-control">大屏控制</a>
+<a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
 {% endblock %}
 {% block content %}
 <h1>赛程编排 · {{ comp.name }} <span class="muted">{{ tree | length }} 个项目</span></h1>
 
+{% if tree %}
 <div class="card" id="run-order-card">
   <h2>比赛顺序（防连场）</h2>
   <p class="muted">「自动排序建议」在尊重同项目轮次依赖（未比前轮不得跳到后轮）的前提下，使相邻场次选手重叠最少；
@@ -36,6 +38,15 @@
     <button class="sf-btn" data-st="published">已发布</button>
   </div>
 </div>
+{% else %}
+<div class="card">
+  <h2>三步开始</h2>
+  <p>1.「导入」页上传选手 / 裁判 / 赛程三份 CSV；<br>
+     2. 回到本页编排场次（可添加、调整比赛顺序）；<br>
+     3. 进入场次控制台「开启评分」。</p>
+  <p><a class="btn" href="/events/{{ comp.id }}/import">前往导入</a></p>
+</div>
+{% endif %}
 
 {% for proj, rounds in tree.items() %}
 <div class="card" data-project="{{ proj }}">

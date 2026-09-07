@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% set autorefresh = true %}
 {% block title %}晋级确认 · {{ comp.name }}{% endblock %}
-{% block nav %}<a href="/events/{{ comp.id }}/schedule">← 赛程</a><span>{{ comp.name }}</span>{% endblock %}
+{% block nav %}<a href="/events/{{ comp.id }}/schedule">← 赛程</a><span>{{ comp.name }}</span>
+<a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+{% endblock %}
 {% block content %}
 <h1>晋级确认</h1>
 <div class="card">

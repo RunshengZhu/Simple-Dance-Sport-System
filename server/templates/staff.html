@@ -4,17 +4,27 @@
 {% block nav %}
 <a href="/manual">操作手册</a>
 <a href="#" id="logout">退出</a>
-<span class="muted">{{ '主持人' if role == 'host' else '检录长/检录员' }}</span>
 {% endblock %}
 {% block content %}
 <h1>{% if comp %}{{ comp.name }} · {% endif %}{{ '主持台' if role == 'host' else '检录台' }}
+  <span class="tag acc">{{ '主持人' if role == 'host' else '检录长/检录员' }}</span>
   <span class="muted">{{ '赛程 · 检录 · 播报' }}</span></h1>
 {% if not comp %}<div class="card"><p class="muted">暂无激活赛事。</p></div>{% endif %}
+
+<div class="card">
+  <h2>场次筛选</h2>
+  <div class="status-filter">
+    <button class="sf-btn active" data-f="all">全部</button>
+    <button class="sf-btn" data-f="need">待检录</button>
+    <button class="sf-btn" data-f="done">已完成</button>
+  </div>
+  <input id="staff-search" placeholder="按场次编号/名称过滤，如 S11 或 F2" style="margin-top:8px">
+</div>
 
 <h2>待赛 / 评分中场次 · 检录</h2>
 <p class="muted">点击背号即检录/撤销检录（可由检录处或主持人开场前补充完成）；裁判仅能对已检录背号评分。</p>
 {% for ev in items %}
-<div class="card st-event" data-ceid="{{ ev.id }}">
+<div class="card st-event" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-need="{{ 1 if ev.checked_n < ev.total else 0 }}">
   <h3>{{ ev.code }} {{ ev.name }}
     <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '评分中' if ev.status == 'scoring' else '待开始' }}</span>
     <span class="muted">{{ ev.project }} 第{{ ev.round }}轮</span>
@@ -37,7 +47,7 @@
 <h2>已完成场次 · 成绩与播报</h2>
 <p class="muted">「已播报」为备忘标记，可随时标/取消，不影响赛程与计算逻辑。</p>
 {% for ev in done %}
-<div class="card st-event" data-ceid="{{ ev.id }}">
+<div class="card st-event" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}">
   <h3>{{ ev.code }} {{ ev.name }}
     <span class="tag {{ 'ok' if ev.status == 'published' else 'acc' }}">{{ '已发布' if ev.status == 'published' else '已计算' }}</span>
     <button type="button" class="btn secondary ann-btn" data-ceid="{{ ev.id }}" data-state="{{ 0 if ev.announced else 1 }}">
@@ -54,6 +64,32 @@
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
+/* 场次筛选（S1）：待检录优先 */
+(function () {
+  var chips = document.querySelectorAll('.status-filter .sf-btn');
+  var search = document.getElementById('staff-search');
+  var mode = 'all', kw = '';
+  function apply() {
+    document.querySelectorAll('.st-event').forEach(function (card) {
+      var need = card.dataset.need === '1';
+      var okMode = mode === 'all' ||
+        (mode === 'need' && (card.dataset.need === '1' || card.dataset.status === 'scoring')) ||
+        (mode === 'done' && card.dataset.status === 'done');
+      var okKw = !kw || (card.dataset.code + ' ' + card.dataset.name).indexOf(kw) >= 0;
+      card.style.display = okMode && okKw ? '' : 'none';
+    });
+  }
+  chips.forEach(function (b) {
+    b.addEventListener('click', function () {
+      chips.forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      mode = b.dataset.f;
+      apply();
+    });
+  });
+  if (search) search.addEventListener('input', function () { kw = search.value.trim().toUpperCase(); apply(); });
+  window.__staffApply = apply;
+})();
 document.getElementById('logout').onclick = async function () {
   await api('POST', '/api/logout', {});
   location.href = '/login';
