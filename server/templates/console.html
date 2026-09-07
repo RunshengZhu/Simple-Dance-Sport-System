@@ -12,7 +12,8 @@
     {% for c in all_competitors %}
     <label><input type="checkbox" class="cand" value="{{ c.number }}"
       {% if c.number|string in roster %}checked{% endif %}> {{ c.number }} {{ c.name }}
-      {% if c.number|string in checked %}<span class="tag ok">已检录</span>{% else %}<span class="tag gray">未检录</span>{% endif %}
+      {% if c.number|string in roster %}{% if c.number|string in checked %}<span class="tag ok">已检录</span>{% else %}<span class="tag gray">未检录</span>{% endif %}
+      {% else %}<span class="muted">未上场</span>{% endif %}
       <span class="muted">{{ c.unit }}</span></label>
     {% endfor %}
     {% if not all_competitors %}<span class="muted">选手库为空，请先导入选手</span>{% endif %}
@@ -29,6 +30,12 @@
 <p>状态：<b id="status">{{ ev.status }}</b>{% if ev.published %} <span class="ok">已发布</span>{% endif %}
  　舞种：{{ dances|join("、") }}
  {% if checked_n < total %}· <span class="err">检录 {{ checked_n }}/{{ total }}（未检录背号裁判无法评分）</span>{% else %}· <span class="ok">检录 {{ checked_n }}/{{ total }}</span>{% endif %}</p>
+{% if ev.status in ('scoring', 'calculated') %}
+<p class="lifecycle-bar">
+  <button class="btn secondary" onclick="closeEvent()">关闭评分</button>
+  <button class="btn danger" onclick="returnScores()">退回评分（FR-G5）</button>
+</p>
+{% endif %}
 
 {% if ev.status == 'pending' %}{{ roster_card() }}{% endif %}
 
@@ -104,6 +111,7 @@ async function refreshProgress() {
 refreshProgress();
 connectSSE('/api/events/' + CID + '/stream', {
   score_submitted: refreshProgress,
+  checkin_changed: refreshProgress,
   calculation_done: function () { location.reload(); },
   results_published: function () { location.reload(); },
   schedule_changed: function () { location.reload(); }

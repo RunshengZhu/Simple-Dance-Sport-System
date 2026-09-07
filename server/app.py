@@ -97,7 +97,10 @@ _failed = {}
 
 @app.post("/api/login")
 async def api_login(request: Request):
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="请求体须为 JSON")
     role = body.get("role")
     ip = request.client.host if request.client else "?"
     if login_blocked(ip):
@@ -522,6 +525,8 @@ async def api_open(ceid: int, request: Request = None):
     raw_roster = body.get("roster") or []
     if isinstance(raw_roster, str):
         raw_roster = raw_roster.replace("，", ",").split(",")
+    if not isinstance(raw_roster, list):
+        raise HTTPException(status_code=422, detail="roster 须为背号数组或逗号分隔字符串")
     roster_list = [str(n).strip() for n in raw_roster if str(n).strip()]
     if not roster_list:
         raise HTTPException(status_code=400, detail="上场选手名单不能为空")

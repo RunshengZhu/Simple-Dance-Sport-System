@@ -42,9 +42,9 @@
 <div class="card">
   <h2>三步开始</h2>
   <p>1.「导入」页上传选手 / 裁判 / 赛程三份 CSV；<br>
-     2. 回到本页编排场次（可添加、调整比赛顺序）；<br>
+     2. 回到本页编排场次（可添加、调整比赛顺序，支持防连场自动排序）；<br>
      3. 进入场次控制台「开启评分」。</p>
-  <p><a class="btn" href="/events/{{ comp.id }}/import">前往导入</a></p>
+  <p><a class="btn" href="/events/{{ comp.id }}/import">前往导入</a>　<a class="btn secondary" href="#event-form">手工添加单场</a></p>
 </div>
 {% endif %}
 
@@ -80,7 +80,6 @@
   {% endfor %}
 </div>
 {% endfor %}
-{% if not tree %}<div class="card"><p class="muted">暂无场次。可在下方手工添加，或在「导入」页上传赛程 CSV。</p></div>{% endif %}
 
 <div class="card" id="event-form">
   <h2 id="form-title">添加场次</h2>
@@ -239,6 +238,7 @@ function renderRo(msg) {
   });
   if (msg) document.getElementById('ro-msg').textContent = msg;
 }
+if (document.getElementById('ro-suggest')) {
 document.getElementById('ro-suggest').addEventListener('click', function () {
   var msg = document.getElementById('ro-msg');
   msg.textContent = '计算中…';
@@ -267,4 +267,5 @@ api('GET', '/api/events/' + window.CID + '/run-order').then(function (d) {
     renderRo('已加载保存的顺序（' + saved.length + ' 场）');
   } else renderRo('尚未设置顺序');
 }).catch(function () { renderRo(); });
+}
 {% endblock %}

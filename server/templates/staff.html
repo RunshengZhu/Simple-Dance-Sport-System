@@ -43,6 +43,7 @@
 </div>
 {% endfor %}
 {% if not items %}<div class="card"><p class="muted">暂无待赛/评分中场次。</p></div>{% endif %}
+<p class="muted" id="staff-empty" style="display:none">该筛选条件下没有场次。</p>
 
 <h2>已完成场次 · 成绩与播报</h2>
 <p class="muted">「已播报」为备忘标记，可随时标/取消，不影响赛程与计算逻辑。</p>
@@ -70,14 +71,19 @@ var CID = {{ comp.id if comp else 0 }};
   var search = document.getElementById('staff-search');
   var mode = 'all', kw = '';
   function apply() {
+    var shown = 0;
     document.querySelectorAll('.st-event').forEach(function (card) {
-      var need = card.dataset.need === '1';
+      var st = card.dataset.status;
       var okMode = mode === 'all' ||
-        (mode === 'need' && (card.dataset.need === '1' || card.dataset.status === 'scoring')) ||
-        (mode === 'done' && card.dataset.status === 'done');
-      var okKw = !kw || (card.dataset.code + ' ' + card.dataset.name).indexOf(kw) >= 0;
-      card.style.display = okMode && okKw ? '' : 'none';
+        (mode === 'need' && (card.dataset.need === '1' || st === 'scoring')) ||
+        (mode === 'done' && (st === 'calculated' || st === 'published'));
+      var okKw = !kw || (card.dataset.code + ' ' + card.dataset.name).toLowerCase().indexOf(kw.toLowerCase()) >= 0;
+      var vis = okMode && okKw;
+      card.style.display = vis ? '' : 'none';
+      if (vis) shown += 1;
     });
+    var empty = document.getElementById('staff-empty');
+    if (empty) empty.style.display = shown ? 'none' : '';
   }
   chips.forEach(function (b) {
     b.addEventListener('click', function () {

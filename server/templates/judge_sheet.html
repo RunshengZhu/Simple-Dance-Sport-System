@@ -16,7 +16,7 @@
   <div class="mark-row {{ '' if ok else 'off' }}" data-num="{{ num }}">
     <span class="mark-box"></span>
     <span class="row-num">{{ num }}</span>
-    <span class="mark-hint">{{ '未检录' if not ok else '点击给 Mark' }}</span>
+    <span class="mark-hint">{{ '🔒 未检录' if not ok else '点击给 Mark' }}</span>
     <input type="checkbox" class="val" data-num="{{ num }}" {% if not ok %}disabled{% endif %} {% if rows.get(num) and rows[num]["mark"] is not none %}{{ "checked" if rows[num]["mark"] else "" }}{% endif %}>
   </div>
   {% endfor %}
@@ -50,7 +50,7 @@
   {% set ok = num in checked %}
   <label class="score-row {{ '' if ok else 'off' }}">
     <span class="row-num">{{ num }}</span>
-    <span class="mark-hint">{{ '未检录' if not ok else '' }}</span>
+    <span class="mark-hint">{{ '🔒 未检录' if not ok else '' }}</span>
     <input type="number" class="val" data-num="{{ num }}" min="0" max="10" step="0.5" inputmode="decimal" placeholder="0.0~10.0"
       {% if not ok %}disabled{% endif %}
       value="{{ rows.get(num) and rows[num]["mark"] if rows.get(num) and rows[num]["mark"] is not none else "" }}">
@@ -69,6 +69,12 @@
 {% endblock %}
 {% block scripts %}
 var CEID = {{ ev.id }}, DANCE = {{ dance|tojson }}, SKATING = {{ is_skating|tojson }}, SCORE = {{ is_score|tojson }}, N = {{ n }}, CHECKED = {{ checked|length }};
+  function offToast() {
+    var el = document.getElementById('msg');
+    el.className = 'err';
+    el.textContent = '该选手未检录，无法评分';
+    setTimeout(function () { el.textContent = ''; }, 2500);
+  }
 
 function collect() {
   var values = {};
@@ -101,12 +107,6 @@ if (SKATING) {
     var out = null;
     rowsAll().forEach(function (row) { if (getV(row) === String(r)) out = row.dataset.num; });
     return out;
-  }
-  function offToast() {
-    var el = document.getElementById('msg');
-    el.className = 'err';
-    el.textContent = '该选手未检录，无法评分';
-    setTimeout(function () { el.textContent = ''; }, 2500);
   }
   function renderSkating() {
     rowsAll().forEach(function (row) {
@@ -197,13 +197,16 @@ if (SKATING) {
     document.getElementById('progress').textContent = '已填 ' + done + ' / ' + CHECKED + (done < CHECKED ? ' · 还差 ' + (CHECKED - done) : ' · 可提交');
   }
   document.querySelectorAll('input.val').forEach(function (inp) { inp.addEventListener('input', renderScore); });
+  document.querySelectorAll('.score-row.off').forEach(function (row) {
+    row.addEventListener('click', function () { offToast(); });
+  });
   renderScore();
 } else {
   function renderMark() {
     document.querySelectorAll('.mark-row').forEach(function (row) {
       var cb = row.querySelector('input.val');
       if (row.classList.contains('off')) {
-        row.querySelector('.mark-hint').textContent = '未检录';
+        row.querySelector('.mark-hint').textContent = '🔒 未检录';
         return;
       }
       row.classList.toggle('checked', cb.checked);
@@ -214,8 +217,9 @@ if (SKATING) {
     var done = document.querySelectorAll('input.val:checked').length;
     document.getElementById('progress').textContent = '已选 ' + done + ' / ' + CHECKED;
   }
-  document.querySelectorAll('.mark-row:not(.off)').forEach(function (row) {
+  document.querySelectorAll('.mark-row').forEach(function (row) {
     row.addEventListener('click', function () {
+      if (row.classList.contains('off')) { offToast(); return; }
       var cb = row.querySelector('input.val');
       cb.checked = !cb.checked;
       renderMark();

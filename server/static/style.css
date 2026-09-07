@@ -226,16 +226,15 @@ body.screen th { position: static; }
 .judge-sheet .kp-key { min-height: 42px; border: 1px solid #d8d2c6; border-radius: 8px; background: #fff; font-size: 1.1rem; font-weight: 800; color: #37352f; }
 .judge-sheet .kp-key.taken { opacity: .22; pointer-events: none; }
 .judge-sheet .kp-key.own { background: #b91c1c; border-color: #b91c1c; color: #fff; }
-.judge-sheet .kp-key.own { background: #b91c1c; border-color: #b91c1c; color: #fff; }
 .judge-sheet .rank-row.off, .judge-sheet .mark-row.off, .judge-sheet .score-row.off {
   opacity: 1; cursor: not-allowed; background: #e9e6df; border-color: #d4cfc4;
 }
-.judge-sheet .rank-row.off .row-num, .judge-sheet .mark-row.off .row-num, .judge-sheet .score-row.off .row-num { color: #a49e92; }
 
 /* ---- R32 可用性整改 ---- */
 #roster-box { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px 16px; }
 #roster-box label { display: flex; align-items: center; gap: 6px; margin: 0; flex-wrap: wrap; }
 details.card > summary { cursor: pointer; list-style: none; }
+details.card > summary::-webkit-details-marker { display: none; }
 details.card > summary::before { content: "▸ "; color: #b91c1c; }
 details.card[open] > summary::before { content: "▾ "; }
 details.card[open] > summary { margin-bottom: .6rem; }
