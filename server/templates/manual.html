@@ -3,8 +3,9 @@
 {% block nav %}<a href="/">首页</a>{% endblock %}
 {% block content %}
 <h1>操作手册 · 赛事完整周期动线</h1>
-<p class="muted">本手册基于 R21 全栈 E2E 验证（docs/E2E-STANDARD.md，36 检查点）编写，所有截图均为正式部署实机图。
-管理员与裁判动线经桌面（1440×900）/移动（375×812）双端验证；移动端动线以移动端截图呈现。</p>
+<p class="muted">本手册基于 R21-R25 全栈 E2E 与 UX 评审迭代编写（docs/E2E-STANDARD.md、docs/UX-REVIEW-R24.md），
+所有截图均为正式部署实机图。覆盖五类角色动线：管理员（桌面 1440×900）、裁判（移动 375×812）、
+检录/主持台（主持人 · 检录长/检录员）、观众（移动）、大屏（1920×1080）。</p>
 
 <div class="manual-lifecycle card">
   <h2>赛事生命周期总览</h2>
@@ -207,8 +208,8 @@
   <img src="/static/manual/r21/s-screen-standings.png" alt="大屏团体总分榜" loading="lazy">
 </div>
 
-<p class="muted" style="margin-top:2rem">手册版本 v1.0 · 2026-09-06 · 基于 commit 059cd9b+ 实机截图 ·
-配合 docs/WALKTHROUGH.md（动线走查）与 docs/E2E-STANDARD.md（验收标准）使用。</p>
+<p class="muted" style="margin-top:2rem">手册版本 v1.1 · 2026-09-07 · 含检录/双角色/双模式打分/防连场/背番号查询 ·
+基于 feat/service-core 实机截图 · 配合 docs/WALKTHROUGH.md（动线走查）与 docs/E2E-STANDARD.md（验收标准）使用。</p>
 {% endblock %}
 {% block scripts %}
 {% endblock %}
