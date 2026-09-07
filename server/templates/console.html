@@ -111,7 +111,7 @@ async function refreshProgress() {
 refreshProgress();
 connectSSE('/api/events/' + CID + '/stream', {
   score_submitted: refreshProgress,
-  checkin_changed: refreshProgress,
+  checkin_changed: function () { location.reload(); },   // 整页刷新：页头检录计数与徽章均为服务端渲染
   calculation_done: function () { location.reload(); },
   results_published: function () { location.reload(); },
   schedule_changed: function () { location.reload(); }

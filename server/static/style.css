@@ -229,6 +229,7 @@ body.screen th { position: static; }
 .judge-sheet .rank-row.off, .judge-sheet .mark-row.off, .judge-sheet .score-row.off {
   opacity: 1; cursor: not-allowed; background: #e9e6df; border-color: #d4cfc4;
 }
+.judge-sheet .rank-row.off .row-num, .judge-sheet .mark-row.off .row-num, .judge-sheet .score-row.off .row-num { color: #a49e92; }
 
 /* ---- R32 可用性整改 ---- */
 #roster-box { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px 16px; }
