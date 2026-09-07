@@ -516,9 +516,18 @@ async def api_open(ceid: int, request: Request = None):
     require_admin(request)
     ev, comp = _require_active_event(ceid)
     body = await request.json()
-    roster_list = [str(n) for n in body.get("roster") or []]
+    # roster 兼容数组与逗号字符串两种形态（A5：字符串此前被按字符拆分入库）
+    raw_roster = body.get("roster") or []
+    if isinstance(raw_roster, str):
+        raw_roster = raw_roster.replace("，", ",").split(",")
+    roster_list = [str(n).strip() for n in raw_roster if str(n).strip()]
     if not roster_list:
         raise HTTPException(status_code=400, detail="上场选手名单不能为空")
+    known = {c["number"] for c in db.rows(db.get_db().execute(
+        "SELECT number FROM competitors WHERE competition_id=?", (comp["id"],)))}
+    unknown = [n for n in roster_list if n not in known]
+    if unknown:
+        raise HTTPException(status_code=400, detail="背号不在选手库中: " + ",".join(unknown[:5]))
     if dances_of(ev["id"]) == []:
         raise HTTPException(status_code=400, detail="场次未配置舞种，请检查赛程导入")
     had_scores = bool(db.get_db().execute(
@@ -695,6 +704,8 @@ async def api_return_scores(ceid: int, request: Request = None):
 async def api_calculate(ceid: int, request: Request = None):
     require_admin(request)
     ev, comp = _require_active_event(ceid)
+    if not checked_roster(ceid):
+        raise HTTPException(status_code=400, detail="本场尚无已检录选手，无法计算（请先完成检录）")
     try:
         data = calculate_event(ev)
     except ValueError as e:
@@ -918,9 +929,12 @@ async def staff_page(request: Request):
 
 @app.post("/api/competition-events/{ceid}/checkin")
 async def api_checkin(ceid: int, request: Request = None):
-    """批量检录/撤销检录（主持人或检录长·检录员）。仅接受本场上场名单内的背号。"""
+    """批量检录/撤销检录（主持人或检录长·检录员）。仅接受本场上场名单内的背号。
+    已完成计算的场次不再接受检录变动（补录需先由管理员退回）。"""
     s = require_staff(request)
     ev, comp = _require_active_event(ceid)
+    if ev["status"] in ("calculated", "published"):
+        raise HTTPException(status_code=400, detail="场次已完成计算，检录变动不再生效（如需补录请先退回评分）")
     body = await request.json()
     numbers = [str(x).strip() for x in (body.get("numbers") or [])]
     state = 1 if body.get("state") else 0
@@ -937,6 +951,11 @@ async def api_checkin(ceid: int, request: Request = None):
             "WHERE event_id=? AND competitor_number=?",
             (state, s["role"] if state else None,
              time.strftime("%Y-%m-%d %H:%M:%S") if state else None, ceid, num))
+        # 撤销检录 = 该选手本场退出：其已有评分记录一并作废，保证结果与到场名单一致
+        if not state:
+            conn.execute(
+                "DELETE FROM score_records WHERE event_id=? AND competitor_number=?",
+                (ceid, num))
     conn.commit()
     sse.bus.publish(comp["id"], "checkin_changed",
                     {"event_id": ceid, "count": len(numbers), "state": bool(state)})
