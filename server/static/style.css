@@ -275,3 +275,98 @@ details.card[open] > summary { margin-bottom: .6rem; }
 .lookup-row { display: flex; gap: 10px; margin-bottom: .5rem; }
 .lookup-row input { flex: 1; font-size: 1.05rem; padding: 10px; }
 .lk-head { font-size: 1.05rem; margin-bottom: .4rem; }
+
+/* ================================================================
+   R36 可用性打磨层：交互反馈 / 视觉质感 / 移动端信息密度
+   ================================================================ */
+
+/* ---- 设计令牌升级 ---- */
+:root {
+  --acc-deep: #991b1b;
+  --line-strong: #d8d2c6;
+  --radius-sm: 8px;
+  --shadow-lift: 0 2px 6px rgba(31,41,55,.1), 0 10px 28px rgba(31,41,55,.08);
+}
+
+/* ---- 按钮：渐变主色 + 按压反馈 ---- */
+.btn {
+  background: linear-gradient(180deg, #c4202c, var(--acc));
+  border-color: var(--acc-deep);
+  box-shadow: 0 1px 2px rgba(153,27,27,.25);
+  transition: transform .06s ease, filter .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.btn:hover { filter: brightness(1.07); box-shadow: 0 2px 6px rgba(153,27,27,.28); text-decoration: none; }
+.btn:active { transform: translateY(1px); filter: brightness(.94); box-shadow: none; }
+.btn.secondary, .btn.danger { background: #fff; box-shadow: 0 1px 2px rgba(31,41,55,.08); }
+.btn.secondary:hover { background: #faf8f4; border-color: var(--line-strong); }
+.btn.danger:hover { background: var(--acc-soft); }
+.btn:focus-visible, a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--acc); outline-offset: 2px; text-decoration: none;
+}
+
+/* ---- 卡片：更精致的分层阴影 + 悬停微升（仅可交互列表） ---- */
+.card { transition: box-shadow .2s ease; }
+a .card:hover, .st-event:hover { box-shadow: var(--shadow-lift); }
+
+/* ---- 触控反馈（触屏设备按压态） ---- */
+@media (hover: none) {
+  .btn:active { transform: scale(.97); }
+  .chip:active { transform: scale(.94); }
+  .rank-row:active, .mark-row:not(.off):active, .score-row:active { background: #f3efe8; }
+  .kp-key:active { background: var(--acc-soft); border-color: var(--acc); }
+}
+
+/* ---- 表单聚焦更清晰 ---- */
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--acc);
+  box-shadow: 0 0 0 3px rgba(185,28,28,.12);
+}
+
+/* ---- 导航激活态 ---- */
+header nav a { font-weight: 500; transition: background .15s ease; }
+
+/* ---- 生命周期工具条（控制台） ---- */
+.lifecycle-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 2px; }
+.lifecycle-bar .btn { padding: 6px 14px; font-size: .88rem; }
+
+/* ---- 名次键盘：按压反馈 ---- */
+.judge-sheet .kp-key { transition: background .12s ease, border-color .12s ease; }
+.judge-sheet .kp-key:active { background: var(--acc-soft); border-color: var(--acc); }
+
+/* ---- 检录芯片：过渡与按压 ---- */
+.chip { transition: transform .06s ease, background .15s ease, color .15s ease, border-color .15s ease; }
+
+/* ---- details 展开过渡 ---- */
+details.card .roster-box, details.card p { animation: fade .25s ease; }
+
+/* ---- 移动端信息密度收紧（≤719） ---- */
+@media (max-width: 719px) {
+  main { padding: 10px 10px 16px; }
+  h1 { font-size: 1.15rem; margin: .15em 0 .45em; letter-spacing: 0; }
+  h2 { font-size: .98rem; margin: .9em 0 .4em; }
+  .card { padding: 10px 12px; margin: 9px 0; border-radius: 10px; }
+  .tag { font-size: .74rem; padding: 1.5px 8px; }
+  .muted, .err { font-size: .8rem; }
+  th, td { padding: 6px 5px; }
+  /* h1 与后续内容的间距收紧，信息密度提升 */
+  h1 .tag, h1 .muted { font-size: .78rem; }
+  .card h2 { margin: 0 0 .45em; }
+  .card > p { margin: .35em 0; }
+  /* 工作台/检录台卡片：标题与元信息同排更紧凑 */
+  .st-event h3 { font-size: .95rem; margin: 0 0 6px; }
+  /* 裁判评分行更紧凑 */
+  .judge-sheet .rank-row, .judge-sheet .mark-row, .judge-sheet .score-row { padding: 9px 10px; gap: 10px; margin-bottom: 8px; border-radius: 10px; }
+  .judge-sheet .row-num { min-width: 2.6em; font-size: 1.2rem; }
+  .judge-sheet .rank-badge { width: 36px; height: 36px; font-size: 1.1rem; }
+  .judge-sheet .mode-toggle { margin: .4rem 0; gap: 6px; }
+  .judge-sheet .mt-btn { padding: 7px 10px; font-size: .85rem; }
+  .judge-sheet .submit-bar { padding: 9px 2px; gap: 8px; }
+  /* 查询卡间距 */
+  .lookup-row { gap: 6px; }
+  /* 吸顶工具条不遮内容 */
+  .lifecycle-bar .btn { padding: 6px 12px; }
+}
+@media (max-width: 400px) {
+  .judge-sheet .row-num { min-width: 2.2em; }
+  .judge-sheet .rank-badge { width: 30px; height: 30px; font-size: 1rem; }
+}
