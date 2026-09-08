@@ -21,7 +21,6 @@
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
-<script>
 function inputVal(id) { return document.getElementById(id).value; }
 function showMsg(text, ok) {
   var el = document.getElementById('create-msg');
