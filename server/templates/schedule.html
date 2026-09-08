@@ -9,7 +9,7 @@
 <a href="/events/{{ comp.id }}/results">结果中心</a>
 <a href="/events/{{ comp.id }}/team-standings">团体总分</a>
 <a href="/events/{{ comp.id }}/screen-control">大屏控制</a>
-<a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
 {% endblock %}
 {% block content %}
 <h1>赛程编排 · {{ comp.name }} <span class="muted">{{ tree | length }} 个项目</span></h1>

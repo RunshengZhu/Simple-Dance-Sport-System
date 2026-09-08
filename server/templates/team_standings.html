@@ -6,7 +6,7 @@
 <a href="/events/{{ comp.id }}/results">结果中心</a>
 <a href="/events/{{ comp.id }}/teams">队伍</a>
 <span>{{ comp.name }}</span>
-<a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
 {% endblock %}
 {% block content %}
 <h1>团体总分榜（管理口径：全部已计算场次）</h1>

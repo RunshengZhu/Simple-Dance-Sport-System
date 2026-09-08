@@ -10,7 +10,8 @@
     <option value="host">主持人</option>
     <option value="marshal">检录长 / 检录员</option>
   </select>
-  <div id="pw-box"><label>口令</label><input type="password" id="password"></div>
+  <div id="pw-box"><label id="pw-label">口令</label><input type="password" id="password"></div>
+  <div id="user-box" style="display:none"><label>用户名</label><input id="username" placeholder="由管理员分发"></div>
   <div id="judge-box" style="display:none"><label>裁判 ID</label><input id="judge_id" placeholder="如 J1"></div>
   <p><button class="btn" id="btn">登录</button> <span id="msg" class="err"></span></p>
   <p class="muted">观众无需登录：查看 <a href="/public/schedule">赛程</a> · <a href="/public/results">成绩</a> · <a href="/screen">大屏</a></p>
@@ -22,12 +23,15 @@ var HOME = {admin: '/events', host: '/staff', marshal: '/staff', judge: '/judge'
 function syncRole() {
   var role = document.getElementById('role').value;
   var isJudge = role === 'judge';
+  var isAccount = isAccountRole(role);
   document.getElementById('pw-box').style.display = isJudge ? 'none' : '';
   document.getElementById('judge-box').style.display = isJudge ? '' : 'none';
-  if (!isJudge) document.querySelector('#pw-box label').textContent = PW_ROLES[role];
+  document.getElementById('user-box').style.display = isAccount ? '' : 'none';
+  if (!isJudge) document.getElementById('pw-label').textContent = PW_ROLES[role];
 }
 document.getElementById('role').onchange = syncRole;
 // URL 参数直达：/login?role=judge&judge=J1（裁判手机书签，易用性走查 2026-08-29）
+function isAccountRole(r) { return r === 'host' || r === 'marshal'; }
 (function () {
   var q = new URLSearchParams(location.search);
   var qr = q.get('role');
@@ -43,7 +47,10 @@ document.getElementById('btn').onclick = async function () {
   var role = document.getElementById('role').value;
   var body = {role: role};
   if (role === 'judge') body.judge_id = document.getElementById('judge_id').value.trim();
-  else body.password = document.getElementById('password').value;
+  else {
+    body.password = document.getElementById('password').value;
+    if (isAccountRole(role)) body.username = document.getElementById('username').value.trim();
+  }
   try {
     await api('POST', '/api/login', body);
     location.href = HOME[role] || '/';

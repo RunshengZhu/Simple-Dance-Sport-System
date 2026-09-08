@@ -105,6 +105,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     role TEXT NOT NULL,
     judge_code TEXT DEFAULT '',
+    user_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    pw_hash TEXT NOT NULL,
+    role TEXT NOT NULL,
+    display_name TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_comp_round ON events(competition_id, project_code, round);
@@ -116,7 +126,7 @@ def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
     conn.commit()
-    # 轻量迁移：已存在的库补列（run_seq = 比赛顺序，防连场编排用）
+    # 轻量迁移：已存在的库补列/补表
     ev_cols = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
     if "run_seq" not in ev_cols:
         conn.execute("ALTER TABLE events ADD COLUMN run_seq INTEGER")
@@ -127,6 +137,21 @@ def init_db():
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_in INTEGER DEFAULT 0")  # 检录
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_by TEXT")
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_at TEXT")
+    if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    pw_hash TEXT NOT NULL,
+    role TEXT NOT NULL,
+    display_name TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+""")
+    se_cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
+    if "user_id" not in se_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER")
     conn.commit()
 
 

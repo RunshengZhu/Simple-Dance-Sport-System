@@ -3,7 +3,7 @@
 {% set autorefresh = true %}
 {% block title %}数据导入 · {{ comp.name }}{% endblock %}
 {% block nav %}<a href="/events">赛事</a><a href="/events/{{ comp.id }}/schedule">赛程</a><a href="/events/{{ comp.id }}/results">结果中心</a>
-<a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
 {% endblock %}
 {% block content %}
 <h1>数据导入 · {{ comp.name }}</h1>

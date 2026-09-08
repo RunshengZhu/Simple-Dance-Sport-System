@@ -6,6 +6,8 @@ import asyncio
 import csv
 import io
 import json
+import hashlib
+import hmac
 import os
 import secrets
 import sys
@@ -30,8 +32,6 @@ from server.scoring_service import (
 )
 
 ADMIN_PASSWORD = os.environ.get("DSPORT_ADMIN_PASSWORD", "admin123")
-HOST_PASSWORD = os.environ.get("DSPORT_HOST_PASSWORD", "host123")        # 主持人
-MARSHAL_PASSWORD = os.environ.get("DSPORT_MARSHAL_PASSWORD", "marshal123")  # 检录长/检录员
 SCREEN_CONTROL = {"mode": "auto", "comp_id": None}   # 大屏强制模式（v1 内存态，重启归 auto）
 PORT = int(os.environ.get("DSPORT_PORT", "8321"))
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -46,7 +46,18 @@ def _session(request: Request):
     token = request.cookies.get("session")
     if not token:
         return None
-    return db.rowdict(db.get_db().execute("SELECT * FROM sessions WHERE token=?", (token,)).fetchone())
+    s = db.rowdict(db.get_db().execute("SELECT * FROM sessions WHERE token=?", (token,)).fetchone())
+    if not s:
+        return None
+    if s.get("user_id"):
+        # 账号制会话：联查账号，停用即失效
+        u = db.rowdict(db.get_db().execute(
+            "SELECT username, display_name, active FROM users WHERE id=?", (s["user_id"],)).fetchone())
+        if not u or not u["active"]:
+            return None
+        s["username"] = u["username"]
+        s["display_name"] = u["display_name"] or u["username"]
+    return s
 
 
 def require_admin(request: Request):
@@ -112,16 +123,17 @@ async def api_login(request: Request):
             login_failures_window(ip).append(time.time())
             raise HTTPException(status_code=403, detail="口令错误")
         conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'admin')", (token,))
-    elif role == "host":
-        if body.get("password") != HOST_PASSWORD:
+    elif role in ("host", "marshal"):
+        # 分角色账号制：用户名 + 口令，账号由管理员在「用户管理」页创建/停用
+        username = str(body.get("username") or "").strip() or role   # 留空 = 默认账号（host/marshal）
+        password = str(body.get("password") or "")
+        urow = db.rowdict(conn.execute(
+            "SELECT * FROM users WHERE username=? AND role=?", (username, role)).fetchone())
+        if not urow or not urow["active"] or not _verify_pw(password, urow["pw_hash"]):
             login_failures_window(ip).append(time.time())
-            raise HTTPException(status_code=403, detail="口令错误")
-        conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'host')", (token,))
-    elif role == "marshal":
-        if body.get("password") != MARSHAL_PASSWORD:
-            login_failures_window(ip).append(time.time())
-            raise HTTPException(status_code=403, detail="口令错误")
-        conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'marshal')", (token,))
+            raise HTTPException(status_code=403, detail="用户名或口令错误")
+        conn.execute("INSERT INTO sessions(token, role, user_id) VALUES(?,?,?)",
+                     (token, role, urow["id"]))
     elif role == "judge":
         code = str(body.get("judge_id") or "")
         row = conn.execute("SELECT * FROM judges WHERE code=? ", (code,)).fetchone()
@@ -316,6 +328,78 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         "is_score": scoring_kind(ev) == "score",
         "n": len(roster_list),
     })
+
+
+# ------------------------------------------------------------------ 用户与角色管理（管理员）
+@app.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request):
+    require_admin(request)
+    return templates.TemplateResponse(request, "users.html", {"request": request})
+
+
+@app.get("/api/users")
+async def api_users_list(request: Request = None):
+    require_admin(request)
+    rows = db.rows(db.get_db().execute(
+        "SELECT id, username, role, display_name, active, created_at FROM users "
+        "WHERE role IN ('host','marshal') ORDER BY role, username"))
+    return {"users": rows}
+
+
+@app.post("/api/users")
+async def api_users_create(request: Request = None):
+    require_admin(request)
+    body = await request.json()
+    username = str(body.get("username") or "").strip()
+    password = str(body.get("password") or "")
+    role = str(body.get("role") or "").strip()
+    display_name = str(body.get("display_name") or "").strip()
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="用户名与口令必填")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="口令至少 6 位")
+    if role not in ("host", "marshal"):
+        raise HTTPException(status_code=400, detail="角色须为 host 或 marshal")
+    conn = db.get_db()
+    if conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+        raise HTTPException(status_code=400, detail="用户名已存在")
+    conn.execute(
+        "INSERT INTO users(username, pw_hash, role, display_name) VALUES(?,?,?,?)",
+        (username, _hash_pw(password), role, display_name or username))
+    conn.commit()
+    return {"ok": True, "username": username}
+
+
+@app.post("/api/users/{user_id}/password")
+async def api_users_password(user_id: int, request: Request = None):
+    require_admin(request)
+    body = await request.json()
+    password = str(body.get("password") or "")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="口令至少 6 位")
+    conn = db.get_db()
+    cur = conn.execute("UPDATE users SET pw_hash=? WHERE id=? AND role IN ('host','marshal')",
+                       (_hash_pw(password), user_id))
+    conn.commit()
+    if not cur.rowcount:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    return {"ok": True}
+
+
+@app.post("/api/users/{user_id}/active")
+async def api_users_active(user_id: int, request: Request = None):
+    require_admin(request)
+    body = await request.json()
+    state = 1 if body.get("active") else 0
+    conn = db.get_db()
+    cur = conn.execute("UPDATE users SET active=? WHERE id=? AND role IN ('host','marshal')",
+                       (state, user_id))
+    if not cur.rowcount:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    if not state:
+        conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))   # 停用即踢下线
+    conn.commit()
+    return {"ok": True, "active": bool(state)}
 
 
 @app.get("/manual", response_class=HTMLResponse)
@@ -899,6 +983,7 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
 async def staff_page(request: Request):
     """主持台/检录台共用页：赛程 + 逐场检录 + 已完成场次成绩与播报标记。"""
     s = require_staff(request)
+    who = s.get("display_name") or s.get("username") or s["role"]
     comp = _active_competition()
     conn = db.get_db()
     items, done = [], []
@@ -931,7 +1016,8 @@ async def staff_page(request: Request):
             else:
                 items.append(item)
     return templates.TemplateResponse(request, "staff.html", {
-        "request": request, "comp": comp, "items": items, "done": done, "role": s["role"]})
+        "request": request, "comp": comp, "items": items, "done": done, "role": s["role"],
+        "who": who})
 
 
 @app.post("/api/competition-events/{ceid}/checkin")
@@ -952,11 +1038,12 @@ async def api_checkin(ceid: int, request: Request = None):
     if bad:
         raise HTTPException(status_code=400, detail="背号不在本场上场名单内: " + ",".join(bad[:5]))
     conn = db.get_db()
+    who = s.get("display_name") or s.get("username") or s["role"]
     for num in numbers:
         conn.execute(
             "UPDATE event_competitors SET checked_in=?, checked_by=?, checked_at=? "
             "WHERE event_id=? AND competitor_number=?",
-            (state, s["role"] if state else None,
+            (state, who if state else None,
              time.strftime("%Y-%m-%d %H:%M:%S") if state else None, ceid, num))
         # 撤销检录 = 该选手本场退出：其已有评分记录一并作废，保证结果与到场名单一致
         if not state:
@@ -1561,6 +1648,37 @@ async def api_backup(request: Request = None):
 
 
 # ------------------------------------------------------------------ startup
+def _hash_pw(pw: str, salt: str = None) -> str:
+    salt = salt or secrets.token_hex(8)
+    h = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), bytes.fromhex(salt), 600_000)
+    return salt + "$" + h.hex()
+
+
+def _verify_pw(pw: str, stored: str) -> bool:
+    try:
+        salt, _ = stored.split("$", 1)
+        return hmac.compare_digest(_hash_pw(pw, salt), stored)
+    except ValueError:
+        return False
+
+
+def _seed_default_accounts():
+    """首次启动播种：host/marshal 角色至少各有一个默认账号（口令取环境变量），
+    使旧部署在切换到账号制后仍可登录。管理员保持环境变量超管口令，不入表。"""
+    conn = db.get_db()
+    for role, username, env_key, default in (
+        ("host", "host", "DSPORT_HOST_PASSWORD", "host123"),
+        ("marshal", "marshal", "DSPORT_MARSHAL_PASSWORD", "marshal123"),
+    ):
+        if not conn.execute("SELECT 1 FROM users WHERE role=? LIMIT 1", (role,)).fetchone():
+            conn.execute(
+                "INSERT OR IGNORE INTO users(username, pw_hash, role, display_name) VALUES(?,?,?,?)",
+                (username, _hash_pw(os.environ.get(env_key, default)), role,
+                 "主持人（默认）" if role == "host" else "检录长（默认）"))
+    conn.commit()
+
+
 @app.on_event("startup")
 async def _startup():
     db.init_db()
+    _seed_default_accounts()

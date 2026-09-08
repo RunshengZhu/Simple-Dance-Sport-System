@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}场次控制台 · {{ ev.name }}{% endblock %}
 {% block nav %}<a href="/events/{{ comp.id }}/schedule">← 赛程</a>
-<a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
 {% endblock %}
 {% block content %}
 {% macro roster_card() %}

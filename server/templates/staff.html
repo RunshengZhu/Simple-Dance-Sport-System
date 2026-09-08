@@ -8,6 +8,7 @@
 {% block content %}
 <h1>{% if comp %}{{ comp.name }} · {% endif %}{{ '主持台' if role == 'host' else '检录台' }}
   <span class="tag acc">{{ '主持人' if role == 'host' else '检录长/检录员' }}</span>
+  <span class="muted">当前身份：{{ who or '—' }}</span>
   <span class="muted">{{ '赛程 · 检录 · 播报' }}</span></h1>
 {% if not comp %}<div class="card"><p class="muted">暂无激活赛事。</p></div>{% endif %}
 

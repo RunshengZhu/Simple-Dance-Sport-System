@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}用户与角色{% endblock %}
+{% block nav %}<a href="/events">赛事</a>{% endblock %}
+{% block content %}
+<h1>用户与角色管理 <span class="muted">账号由管理员分发，无自注册</span></h1>
+
+<div class="card">
+  <h2>角色说明</h2>
+  <table>
+    <tr><th>角色</th><th>登录方式</th><th>职责</th></tr>
+    <tr><td>管理员</td><td>环境变量超管口令（不入库）</td><td>赛事全生命周期控制、账号管理</td></tr>
+    <tr><td>主持人 (host)</td><td>用户名 + 口令</td><td>开场前补检录、成绩播报标记</td></tr>
+    <tr><td>检录长/检录员 (marshal)</td><td>用户名 + 口令</td><td>检录处逐场检录</td></tr>
+    <tr><td>裁判 (judge)</td><td>免口令直达链接（D10）</td><td>评分（名单由赛事导入产生，无独立账号）</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>创建账号</h2>
+  <div class="grid c2">
+    <div>
+      <label>用户名（登录用，唯一）</label><input id="u-username" placeholder="如 marshal-wang">
+      <label>显示名（检录记录署名）</label><input id="u-display" placeholder="如 检录员-王老师">
+    </div>
+    <div>
+      <label>角色</label>
+      <select id="u-role">
+        <option value="marshal">检录长/检录员</option>
+        <option value="host">主持人</option>
+      </select>
+      <label>初始口令</label><input id="u-password" type="password" placeholder="至少 6 位">
+    </div>
+  </div>
+  <p><button class="btn" onclick="createUser()">创建账号</button> <span id="u-msg"></span></p>
+</div>
+
+<h2>主持 / 检录账号</h2>
+<div class="card">
+  <table>
+    <tr><th>用户名</th><th>显示名</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+    <tbody id="user-rows"></tbody>
+  </table>
+  <p class="muted">停用立即失效其全部会话；重置口令后请通知本人。</p>
+</div>
+{% endblock %}
+{% block scripts %}
+function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+function loadUsers() {
+  api('GET', '/api/users').then(function (d) {
+    var rows = '';
+    d.users.forEach(function (u) {
+      rows += '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.display_name) + '</td>' +
+        '<td>' + (u.role === 'host' ? '主持人' : '检录长/检录员') + '</td>' +
+        '<td>' + (u.active ? '<span class="tag ok">启用</span>' : '<span class="tag gray">停用</span>') + '</td>' +
+        '<td class="muted">' + esc(u.created_at) + '</td>' +
+        '<td>' +
+        '<button class="btn secondary" onclick="resetPw(' + u.id + ')">重置口令</button> ' +
+        '<button class="btn ' + (u.active ? 'danger' : 'secondary') + '" onclick="toggleUser(' + u.id + ',' + (u.active ? 0 : 1) + ')">' + (u.active ? '停用' : '启用') + '</button>' +
+        '</td></tr>';
+    });
+    document.getElementById('user-rows').innerHTML = rows || '<tr><td colspan="6" class="muted">暂无账号</td></tr>';
+  }).catch(function (e) { alert(e.message); });
+}
+function createUser() {
+  var body = {
+    username: document.getElementById('u-username').value.trim(),
+    display_name: document.getElementById('u-display').value.trim(),
+    role: document.getElementById('u-role').value,
+    password: document.getElementById('u-password').value
+  };
+  var msg = document.getElementById('u-msg');
+  api('POST', '/api/users', body).then(function () {
+    msg.textContent = '已创建';
+    document.getElementById('u-username').value = '';
+    document.getElementById('u-display').value = '';
+    document.getElementById('u-password').value = '';
+    loadUsers();
+  }).catch(function (e) { msg.textContent = e.message; });
+}
+function resetPw(id) {
+  var pw = prompt('输入新口令（至少 6 位）');
+  if (pw === null) return;
+  api('POST', '/api/users/' + id + '/password', {password: pw}).then(loadUsers).catch(function (e) { alert(e.message); });
+}
+function toggleUser(id, active) {
+  api('POST', '/api/users/' + id + '/active', {active: !!active}).then(loadUsers).catch(function (e) { alert(e.message); });
+}
+loadUsers();
+{% endblock %}
