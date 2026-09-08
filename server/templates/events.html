@@ -30,10 +30,10 @@ function showMsg(text, ok) {
 async function refresh() {
   var data = await api('GET', '/api/events');
   var t = document.getElementById('tbl');
-  t.innerHTML = '<tr><th>ID</th><th>名称</th><th>日期</th><th>地点</th><th>状态</th><th>操作</th></tr>';
+  t.innerHTML = '<tr><th>ID</th><th>名称</th><th class="hm">日期</th><th class="hm">地点</th><th>状态</th><th>操作</th></tr>';
   data.events.forEach(function (c) {
     var tr = t.insertRow();
-    tr.innerHTML = '<td>' + c.id + '</td><td>' + c.name + '</td><td>' + c.date + '</td><td>' + c.location + '</td>'
+    tr.innerHTML = '<td>' + c.id + '</td><td>' + c.name + '</td><td class="hm">' + c.date + '</td><td class="hm">' + c.location + '</td>'
       + '<td>' + (c.active ? '<span class="ok">激活中</span>' : '未激活') + '</td><td>'
       + '<a class="btn secondary" href="/events/' + c.id + '/import">导入</a> '
       + '<a class="btn secondary" href="/events/' + c.id + '/schedule">赛程</a> '

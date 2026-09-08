@@ -245,7 +245,7 @@ details.card > summary::before { content: "▸ "; color: #b91c1c; }
 details.card[open] > summary::before { content: "▾ "; }
 details.card[open] > summary { margin-bottom: .6rem; }
 .judge-sheet .rank-row.off .rank-hint, .judge-sheet .mark-row.off .mark-hint, .judge-sheet .score-row.off .mark-hint { color: #b91c1c; font-weight: 700; }
-.lookup-row { gap: 8px; padding-right: 2px; }
+.lookup-row { gap: 10px; padding-right: 2px; }
 .lookup-row input { min-width: 0; }
 
 /* ---- 检录/播报台（staff） ---- */
@@ -337,7 +337,7 @@ header nav a { font-weight: 500; transition: background .15s ease; }
 .chip { transition: transform .06s ease, background .15s ease, color .15s ease, border-color .15s ease; }
 
 /* ---- details 展开过渡 ---- */
-details.card .roster-box, details.card p { animation: fade .25s ease; }
+#roster-box, details.card > p { animation: fade .25s ease; }
 
 /* ---- 移动端信息密度收紧（≤719） ---- */
 @media (max-width: 719px) {
