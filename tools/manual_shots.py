@@ -27,6 +27,9 @@ results = []
 
 
 def shot(page, name, full=False):
+    # fullPage 截图时降级 sticky header，避免合成面错位（R38 走查发现）
+    if full:
+        page.add_style_tag(content="header{position:static!important}")
     page.screenshot(path=str(OUT / name), full_page=full)
     results.append(name)
     print("shot:", name)
@@ -129,6 +132,25 @@ with sync_playwright() as p:
         page.goto(BASE + path)
         settle(page)
         shot(page, name)
+    ctx.close()
+
+    # ============ 检录长/主持人移动端 375×812（R38 手风琴新交互） ============
+    ctx = browser.new_context(viewport={"width": 375, "height": 812},
+                              is_mobile=True, has_touch=True, locale="zh-CN")
+    page = ctx.new_page()
+    page.goto(BASE + "/login?role=marshal")
+    settle(page)
+    shot(page, "st-login-marshal.png")
+    api_login(ctx, "marshal", password=MARSHAL_PW)
+    page.goto(BASE + "/staff")
+    settle(page)
+    shot(page, "st-staff-checkin.png", full=True)
+    # 展开首个已完成场次（手风琴原位展开）
+    page.evaluate("(() => { const b = document.querySelector('.toggle-done'); if (b) b.click(); })()")
+    page.wait_for_timeout(500)
+    page.evaluate("(() => { const c = document.querySelector('.done-card'); if (c) c.scrollIntoView(); })()")
+    page.wait_for_timeout(400)
+    shot(page, "st-staff-announce.png", full=True)
     ctx.close()
 
     # ============ 大屏 1920×1080（四态强制） ============
