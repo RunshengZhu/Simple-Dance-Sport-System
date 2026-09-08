@@ -49,6 +49,9 @@ def _session(request: Request):
     s = db.rowdict(db.get_db().execute("SELECT * FROM sessions WHERE token=?", (token,)).fetchone())
     if not s:
         return None
+    # 员工角色（host/marshal）只接受账号制会话：迁移前的无 user_id 会话一律失效
+    if s["role"] in ("host", "marshal") and not s.get("user_id"):
+        return None
     if s.get("user_id"):
         # 账号制会话：联查账号，停用即失效
         u = db.rowdict(db.get_db().execute(
@@ -129,7 +132,11 @@ async def api_login(request: Request):
         password = str(body.get("password") or "")
         urow = db.rowdict(conn.execute(
             "SELECT * FROM users WHERE username=? AND role=?", (username, role)).fetchone())
-        if not urow or not urow["active"] or not _verify_pw(password, urow["pw_hash"]):
+        if not urow or not _verify_pw(password, urow["pw_hash"]):
+            _hash_pw(password)   # 时序抹平：不存在的用户名也执行一次等价哈希
+            login_failures_window(ip).append(time.time())
+            raise HTTPException(status_code=403, detail="用户名或口令错误")
+        if not urow["active"]:
             login_failures_window(ip).append(time.time())
             raise HTTPException(status_code=403, detail="用户名或口令错误")
         conn.execute("INSERT INTO sessions(token, role, user_id) VALUES(?,?,?)",
@@ -349,7 +356,10 @@ async def api_users_list(request: Request = None):
 @app.post("/api/users")
 async def api_users_create(request: Request = None):
     require_admin(request)
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="请求体须为 JSON")
     username = str(body.get("username") or "").strip()
     password = str(body.get("password") or "")
     role = str(body.get("role") or "").strip()
@@ -358,11 +368,13 @@ async def api_users_create(request: Request = None):
         raise HTTPException(status_code=400, detail="用户名与口令必填")
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="口令至少 6 位")
+    if len(username) > 64 or len(display_name) > 64:
+        raise HTTPException(status_code=400, detail="用户名/显示名最长 64 字符")
     if role not in ("host", "marshal"):
         raise HTTPException(status_code=400, detail="角色须为 host 或 marshal")
     conn = db.get_db()
-    if conn.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
-        raise HTTPException(status_code=400, detail="用户名已存在")
+    if conn.execute("SELECT 1 FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
+        raise HTTPException(status_code=400, detail="用户名已存在（不区分大小写）")
     conn.execute(
         "INSERT INTO users(username, pw_hash, role, display_name) VALUES(?,?,?,?)",
         (username, _hash_pw(password), role, display_name or username))
@@ -373,13 +385,17 @@ async def api_users_create(request: Request = None):
 @app.post("/api/users/{user_id}/password")
 async def api_users_password(user_id: int, request: Request = None):
     require_admin(request)
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="请求体须为 JSON")
     password = str(body.get("password") or "")
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="口令至少 6 位")
     conn = db.get_db()
     cur = conn.execute("UPDATE users SET pw_hash=? WHERE id=? AND role IN ('host','marshal')",
                        (_hash_pw(password), user_id))
+    conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))   # 重置口令即踢下线
     conn.commit()
     if not cur.rowcount:
         raise HTTPException(status_code=404, detail="账号不存在")
@@ -389,7 +405,10 @@ async def api_users_password(user_id: int, request: Request = None):
 @app.post("/api/users/{user_id}/active")
 async def api_users_active(user_id: int, request: Request = None):
     require_admin(request)
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="请求体须为 JSON")
     state = 1 if body.get("active") else 0
     conn = db.get_db()
     cur = conn.execute("UPDATE users SET active=? WHERE id=? AND role IN ('host','marshal')",
@@ -1682,3 +1701,6 @@ def _seed_default_accounts():
 async def _startup():
     db.init_db()
     _seed_default_accounts()
+    db.get_db().execute(
+        "DELETE FROM sessions WHERE created_at < datetime('now','localtime','-30 days')")
+    db.get_db().commit()
