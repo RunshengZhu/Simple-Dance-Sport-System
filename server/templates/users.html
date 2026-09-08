@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}用户与角色{% endblock %}
-{% block nav %}<a href="/events">赛事</a>{% endblock %}
+{% block nav %}<a href="/events">赛事</a><a href="#" id="logout-link">退出</a>{% endblock %}
 {% block content %}
 <h1>用户与角色管理 <span class="muted">账号由管理员分发，无自注册</span></h1>
 
-<div class="card">
+<div class="card table-fit">
   <h2>角色说明</h2>
   <table>
     <tr><th>角色</th><th>登录方式</th><th>职责</th></tr>
@@ -44,6 +44,11 @@
 </div>
 {% endblock %}
 {% block scripts %}
+document.getElementById('logout-link').addEventListener('click', async function (e) {
+  e.preventDefault();
+  await api('POST', '/api/logout');
+  location.href = '/login';
+});
 function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
 function loadUsers() {
   api('GET', '/api/users').then(function (d) {
