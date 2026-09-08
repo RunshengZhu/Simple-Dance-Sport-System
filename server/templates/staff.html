@@ -2,7 +2,6 @@
 {% block cid %}{{ comp.id if comp else 0 }}{% endblock %}
 {% block title %}{{ '主持台' if role == 'host' else '检录台' }}{% endblock %}
 {% block nav %}
-<a href="/manual">操作手册</a>
 <a href="#" id="logout">退出</a>
 {% endblock %}
 {% block content %}
