@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#b91c1c">
 <title>{% block title %}体育舞蹈评分系统{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css?v=r36">
+<link rel="stylesheet" href="/static/style.css?v=r37">
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
 <header>
@@ -22,7 +22,7 @@
 <script>window.CID = {% block cid %}0{% endblock %};</script>
 <script src="/static/app.js"></script>
 {% if autorefresh %}<script>
-if (window.CID) { connectSSE('/api/events/' + window.CID + '/stream', {results_published: function(){location.reload();}, competition_event_opened: function(){location.reload();}, competition_event_closed: function(){location.reload();}, schedule_changed: function(){location.reload();}, score_submitted: function(){location.reload();}, calculation_done: function(){location.reload();}, screen_state_changed: function(){location.reload();}, checkin_changed: function(){location.reload();}}, function(){location.reload();}, 3000); }
+if (window.CID) { connectSSE('/api/events/' + window.CID + '/stream', {results_published: softReload, competition_event_opened: softReload, competition_event_closed: softReload, schedule_changed: softReload, score_submitted: softReload, calculation_done: softReload, screen_state_changed: softReload, checkin_changed: softReload}, softReload, 8000); }
 </script>{% endif %}
 <script>
 {% block scripts %}{% endblock %}

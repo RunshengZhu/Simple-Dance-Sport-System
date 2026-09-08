@@ -9,7 +9,7 @@
     <input id="lookup-num" inputmode="numeric" placeholder="输入背番号，如 101">
     <button class="btn" id="lookup-go" type="button">查询</button>
   </div>
-  <div id="lookup-result" class="muted">输入背番号查询选手公示信息（姓名/单位）与已发布成绩；表格可左右滑动查看。</div>
+  <div id="lookup-result" class="muted">输入背番号查询选手公示信息（姓名/单位）与已发布成绩。</div>
 </div>
 {% if standings and standings.standings %}
 <div class="card">
@@ -55,6 +55,6 @@ function doLookup() {
 document.getElementById('lookup-go').addEventListener('click', doLookup);
 document.getElementById('lookup-num').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLookup(); });
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
-  results_published: function () { location.reload(); }
-}, function () { location.reload(); }, 5000);
+  results_published: function () { softReload(); }
+}, function () { softReload(); }, 8000);
 {% endblock %}

@@ -370,3 +370,18 @@ header nav a { font-weight: 500; transition: background .15s ease; }
   .judge-sheet .row-num { min-width: 2.2em; }
   .judge-sheet .rank-badge { width: 30px; height: 30px; font-size: 1rem; }
 }
+
+/* ===== R38：检录台已完成场次手风琴 + 搜索定位高亮 ===== */
+.done-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+.done-head h3 { margin: 0; flex: 1 1 100%; }
+.done-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.done-body { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.st-event.flash { animation: stflash 1.6s ease; }
+@keyframes stflash {
+  0% { box-shadow: 0 0 0 3px rgba(185, 28, 28, .55); }
+  100% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0); }
+}
+@media (max-width: 719px) {
+  .done-actions { width: 100%; }
+  .done-actions .btn { flex: 1; }
+}

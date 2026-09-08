@@ -27,7 +27,8 @@
 </details>
 {% endmacro %}
 <h1>场次控制台 · {{ ev.name }} <span class="muted">{{ ev.code }} / {{ ev.project_code }} 第{{ ev.round }}轮 / {{ ev.scoring_type }}</span></h1>
-<p>状态：<b id="status">{{ ev.status }}</b>{% if ev.published %} <span class="ok">已发布</span>{% endif %}
+{% set st_names = {"pending": "待开始", "scoring": "评分中", "calculated": "已计算", "published": "已发布"} %}
+<p>状态：<b id="status">{{ st_names.get(ev.status, ev.status) }}</b>{% if ev.published %} <span class="ok">已发布</span>{% endif %}
  　舞种：{{ dances|join("、") }}
  {% if checked_n < total %}· <span class="err">检录 {{ checked_n }}/{{ total }}（未检录背号裁判无法评分）</span>{% else %}· <span class="ok">检录 {{ checked_n }}/{{ total }}</span>{% endif %}</p>
 {% if ev.status in ('scoring', 'calculated') %}
@@ -77,25 +78,26 @@ async function openEvent(reset) {
   try {
     var r = await api('POST', '/api/competition-events/' + CEID + '/open', {roster: roster, reset: reset});
     if (r.reset_scores) alert('已清空本场次已有评分数据');
-    location.reload();
+    softReload();
   } catch (e) { alert(e.message); }
 }
-async function closeEvent() { await api('POST', '/api/competition-events/' + CEID + '/close'); location.reload(); }
+async function closeEvent() { await api('POST', '/api/competition-events/' + CEID + '/close'); softReload(); }
 async function returnScores() {
   if (!confirm('退回将清空本场全部评分与结果，裁判需重新提交，确认？')) return;
-  try { await api('POST', '/api/competition-events/' + CEID + '/return-scores', {}); location.reload(); }
+  try { await api('POST', '/api/competition-events/' + CEID + '/return-scores', {}); softReload(); }
   catch (e) { alert(e.message); }
 }
 async function calc() {
-  try { await api('POST', '/api/competition-events/' + CEID + '/calculate'); location.reload(); }
+  try { await api('POST', '/api/competition-events/' + CEID + '/calculate'); softReload(); }
   catch (e) { document.getElementById('calc-msg').textContent = e.message; }
 }
-async function publish() { await api('POST', '/api/competition-events/' + CEID + '/publish'); location.reload(); }
-async function unpublish() { await api('POST', '/api/competition-events/' + CEID + '/unpublish'); location.reload(); }
+async function publish() { await api('POST', '/api/competition-events/' + CEID + '/publish'); softReload(); }
+async function unpublish() { await api('POST', '/api/competition-events/' + CEID + '/unpublish'); softReload(); }
 
+var ST_NAMES = {pending: '待开始', scoring: '评分中', calculated: '已计算', published: '已发布'};
 async function refreshProgress() {
   var p = await api('GET', '/api/competition-events/' + CEID + '/progress');
-  document.getElementById('status').textContent = p.status;
+  document.getElementById('status').textContent = ST_NAMES[p.status] || p.status;
   var t = document.getElementById('matrix');
   t.innerHTML = '<tr><th>裁判</th>' + DANCES.map(function (d) { return '<th>' + d + '</th>'; }).join('') + '</tr>';
   JUDGES.forEach(function (j) {
@@ -111,9 +113,9 @@ async function refreshProgress() {
 refreshProgress();
 connectSSE('/api/events/' + CID + '/stream', {
   score_submitted: refreshProgress,
-  checkin_changed: function () { location.reload(); },   // 整页刷新：页头检录计数与徽章均为服务端渲染
-  calculation_done: function () { location.reload(); },
-  results_published: function () { location.reload(); },
-  schedule_changed: function () { location.reload(); }
-}, refreshProgress, 3000);
+  checkin_changed: softReload,   // 页头检录徽章为服务端渲染；softReload 保持滚动位置
+  calculation_done: softReload,
+  results_published: softReload,
+  schedule_changed: softReload
+}, refreshProgress, 8000);
 {% endblock %}

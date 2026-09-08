@@ -18,7 +18,7 @@
     <button class="sf-btn" data-f="need">待检录</button>
     <button class="sf-btn" data-f="done">已完成</button>
   </div>
-  <input id="staff-search" placeholder="按场次编号/名称过滤，如 S11 或 F2" style="margin-top:8px">
+  <input id="staff-search" placeholder="按场次编号/名称过滤，回车定位首个匹配" style="margin-top:8px">
 </div>
 
 <h2>待赛 / 评分中场次 · 检录</h2>
@@ -46,32 +46,40 @@
 <p class="muted" id="staff-empty" style="display:none">该筛选条件下没有场次。</p>
 
 <h2>已完成场次 · 成绩与播报</h2>
-<p class="muted">「已播报」为备忘标记，可随时标/取消，不影响赛程与计算逻辑。</p>
+<p class="muted">点「查看成绩」在本卡内原位展开成绩公告，再点收起；一次展开一场，互不堆叠。</p>
 {% for ev in done %}
-<div class="card st-event" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}">
-  <h3>{{ ev.code }} {{ ev.name }}
-    <span class="tag {{ 'ok' if ev.status == 'published' else 'acc' }}">{{ '已发布' if ev.status == 'published' else '已计算' }}</span>
-    <button type="button" class="btn secondary ann-btn" data-ceid="{{ ev.id }}" data-state="{{ 0 if ev.announced else 1 }}">
-      {{ '已播报 ✓（点击取消）' if ev.announced else '标记为已播报' }}
-    </button>
-  </h3>
-  {% if ev.results %}
-  {% with rows = ev.results, names = ev.names %}{% include "_announce_table.html" %}{% endwith %}
-  <p><a class="btn secondary" href="/api/events/{{ ev.competition_id }}/exports?format=markdown&code={{ ev.code }}">下载本场成绩单 (.md)</a></p>
-  {% else %}<p class="muted">无结果数据。</p>{% endif %}
+<div class="card st-event done-card" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}">
+  <div class="done-head">
+    <h3>{{ ev.code }} {{ ev.name }}
+      <span class="tag {{ 'ok' if ev.status == 'published' else 'acc' }}">{{ '已发布' if ev.status == 'published' else '已计算' }}</span>
+      <span class="tag {{ 'ok' if ev.announced else 'gray' }}">{{ '已播报 ✓' if ev.announced else '未播报' }}</span>
+    </h3>
+    <div class="done-actions">
+      <button type="button" class="btn secondary ann-btn" data-ceid="{{ ev.id }}" data-state="{{ 0 if ev.announced else 1 }}">
+        {{ '取消播报' if ev.announced else '标记已播报' }}
+      </button>
+      <button type="button" class="btn toggle-done" data-ceid="{{ ev.id }}" aria-expanded="false">查看成绩 ▾</button>
+    </div>
+  </div>
+  <div class="done-body" id="done-body-{{ ev.id }}" hidden>
+    {% if ev.results %}
+    {% with rows = ev.results, names = ev.names %}{% include "_announce_table.html" %}{% endwith %}
+    <p><a class="btn secondary" href="/api/events/{{ ev.competition_id }}/exports?format=markdown&code={{ ev.code }}">下载本场成绩单 (.md)</a></p>
+    {% else %}<p class="muted">无结果数据。</p>{% endif %}
+  </div>
 </div>
 {% endfor %}
 {% if not done %}<div class="card"><p class="muted">暂无已完成场次。</p></div>{% endif %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
-/* 场次筛选（S1）：待检录优先 */
+/* ---------- 场次筛选 + 搜索定位（首个匹配滚入视口并高亮） ---------- */
 (function () {
   var chips = document.querySelectorAll('.status-filter .sf-btn');
   var search = document.getElementById('staff-search');
-  var mode = 'all', kw = '';
-  function apply() {
-    var shown = 0;
+  var mode = 'all', kw = '', settleTimer = null;
+  function visibleCards() {
+    var out = [];
     document.querySelectorAll('.st-event').forEach(function (card) {
       var st = card.dataset.status;
       var okMode = mode === 'all' ||
@@ -80,10 +88,27 @@ var CID = {{ comp.id if comp else 0 }};
       var okKw = !kw || (card.dataset.code + ' ' + card.dataset.name).toLowerCase().indexOf(kw.toLowerCase()) >= 0;
       var vis = okMode && okKw;
       card.style.display = vis ? '' : 'none';
-      if (vis) shown += 1;
+      if (vis) out.push(card);
     });
+    return out;
+  }
+  function apply() {
+    var shown = visibleCards().length;
     var empty = document.getElementById('staff-empty');
     if (empty) empty.style.display = shown ? 'none' : '';
+  }
+  function locate() {
+    if (!kw) return;
+    var first = visibleCards()[0];
+    if (!first) return;
+    var r = first.getBoundingClientRect();
+    if (r.top < 0 || r.top > window.innerHeight * 0.4) {
+      first.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    first.classList.remove('flash');
+    void first.offsetWidth; /* 重启动画 */
+    first.classList.add('flash');
+    setTimeout(function () { first.classList.remove('flash'); }, 1700);
   }
   chips.forEach(function (b) {
     b.addEventListener('click', function () {
@@ -93,57 +118,125 @@ var CID = {{ comp.id if comp else 0 }};
       apply();
     });
   });
-  if (search) search.addEventListener('input', function () { kw = search.value.trim().toUpperCase(); apply(); });
+  if (search) {
+    search.addEventListener('input', function () {
+      kw = search.value.trim();
+      apply();
+      clearTimeout(settleTimer);
+      if (kw) settleTimer = setTimeout(locate, 700);
+    });
+    search.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(settleTimer); locate(); }
+    });
+  }
   window.__staffApply = apply;
 })();
+
 document.getElementById('logout').onclick = async function () {
   await api('POST', '/api/logout', {});
   location.href = '/login';
 };
+
+/* ---------- 检录状态轻刷新（不重载、不移动视口） ---------- */
 function progText(ceid, n, total) {
   var el = document.getElementById('prog-' + ceid);
   if (el) el.textContent = '检录 ' + n + ' / ' + total;
 }
+function paintEvent(ceid, checkedArr, n, total) {
+  var set = {};
+  (checkedArr || []).forEach(function (x) { set[String(x)] = 1; });
+  document.querySelectorAll('.chip[data-ceid="' + ceid + '"]').forEach(function (c) {
+    var on = !!set[String(c.dataset.num)];
+    c.classList.toggle('on', on);
+    c.classList.toggle('off', !on);
+    c.title = on ? '已检录' : '未检录';
+  });
+  var card = document.querySelector('.st-event[data-ceid="' + ceid + '"]');
+  if (card && card.dataset.need !== undefined) card.dataset.need = (n < total) ? '1' : '0';
+  progText(ceid, n, total);
+}
+function refreshEvent(ceid) {
+  api('GET', '/api/competition-events/' + ceid + '/checkin').then(function (d) {
+    paintEvent(ceid, d.checked, d.checked_n, d.total);
+  }).catch(function () {});
+}
+function refreshAllOpen() {
+  document.querySelectorAll('.st-event:not(.done-card)').forEach(function (card) {
+    refreshEvent(card.dataset.ceid);
+  });
+}
+
+/* ---------- 事件委托：动态区域统一在 document 上分发 ---------- */
 function postCheckin(ceid, numbers, state) {
   return api('POST', '/api/competition-events/' + ceid + '/checkin', {numbers: numbers, state: state});
 }
-document.querySelectorAll('.chip').forEach(function (chip) {
-  chip.addEventListener('click', function () {
+function currentChecked(ceid, num, state) {
+  var out = [];
+  document.querySelectorAll('.chip[data-ceid="' + ceid + '"]').forEach(function (c) {
+    var on = c.classList.contains('on');
+    if (c.dataset.num === num) on = state;
+    if (on) out.push(c.dataset.num);
+  });
+  return out;
+}
+function toggleDone(btn) {
+  var ceid = btn.dataset.ceid;
+  var body = document.getElementById('done-body-' + ceid);
+  var wasOpen = !body.hidden;
+  document.querySelectorAll('.done-card .done-body').forEach(function (b) { b.hidden = true; });
+  document.querySelectorAll('.toggle-done').forEach(function (b) {
+    b.setAttribute('aria-expanded', 'false');
+    b.textContent = '查看成绩 ▾';
+    b.classList.remove('secondary');
+  });
+  if (!wasOpen) {
+    body.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    btn.textContent = '收起 ▴';
+    btn.classList.add('secondary');   /* 展开后收起动作降为次级视觉权重 */
+  }
+}
+document.addEventListener('click', function (e) {
+  var chip = e.target.closest('.chip');
+  if (chip) {
     var ceid = chip.dataset.ceid, num = chip.dataset.num;
     var state = !chip.classList.contains('on');
     postCheckin(ceid, [num], state).then(function (d) {
-      chip.classList.toggle('on', state);
-      chip.classList.toggle('off', !state);
-      progText(ceid, d.checked_n, d.total);
-    }).catch(function (e) { alert(e.message); });
-  });
-});
-document.querySelectorAll('[data-all]').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    var ceid = btn.dataset.all, state = btn.dataset.state === '1';
+      paintEvent(ceid, currentChecked(ceid, num, state), d.checked_n, d.total);
+    }).catch(function (err) { alert(err.message); refreshEvent(ceid); });
+    return;
+  }
+  var allBtn = e.target.closest('[data-all]');
+  if (allBtn) {
+    var ceid2 = allBtn.dataset.all, state2 = allBtn.dataset.state === '1';
     var nums = Array.prototype.map.call(
-      document.querySelectorAll('.chip[data-ceid="' + ceid + '"]'), function (c) { return c.dataset.num; });
-    postCheckin(ceid, nums, state).then(function (d) {
-      document.querySelectorAll('.chip[data-ceid="' + ceid + '"]').forEach(function (c) {
-        c.classList.toggle('on', state); c.classList.toggle('off', !state);
-      });
-      progText(ceid, d.checked_n, d.total);
-    }).catch(function (e) { alert(e.message); });
-  });
+      document.querySelectorAll('.chip[data-ceid="' + ceid2 + '"]'), function (c) { return c.dataset.num; });
+    postCheckin(ceid2, nums, state2).then(function (d) {
+      paintEvent(ceid2, state2 ? nums : [], d.checked_n, d.total);
+    }).catch(function (err) { alert(err.message); refreshEvent(ceid2); });
+    return;
+  }
+  var ann = e.target.closest('.ann-btn');
+  if (ann) {
+    var ceid3 = ann.dataset.ceid, state3 = ann.dataset.state === '1';
+    api('POST', '/api/competition-events/' + ceid3 + '/announce', {announced: state3}).then(function () {
+      ann.dataset.state = state3 ? '0' : '1';
+      ann.textContent = state3 ? '取消播报' : '标记已播报';
+      var head = ann.closest('.done-head');
+      var tag = head ? head.querySelector('h3 .tag:nth-of-type(2)') : null;
+      if (tag) { tag.textContent = state3 ? '已播报 ✓' : '未播报';
+                 tag.classList.toggle('ok', state3); tag.classList.toggle('gray', !state3); }
+    }).catch(function (err) { alert(err.message); });
+    return;
+  }
+  var tg = e.target.closest('.toggle-done');
+  if (tg) toggleDone(tg);
 });
-document.querySelectorAll('.ann-btn').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    var ceid = btn.dataset.ceid, state = btn.dataset.state === '1';
-    api('POST', '/api/competition-events/' + ceid + '/announce', {announced: state}).then(function () {
-      btn.dataset.state = state ? '0' : '1';
-      btn.textContent = state ? '已播报 ✓（点击取消）' : '标记为已播报';
-    }).catch(function (e) { alert(e.message); });
-  });
-});
+
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
-  checkin_changed: function () { location.reload(); },
-  calculation_done: function () { location.reload(); },
-  competition_event_opened: function () { location.reload(); },
-  results_published: function () { location.reload(); }
-}, function () { location.reload(); }, 5000);
+  checkin_changed: function (p) { if (p && p.event_id) refreshEvent(p.event_id); },
+  calculation_done: softReload,
+  competition_event_opened: softReload,
+  results_published: softReload
+}, refreshAllOpen, 8000);
 {% endblock %}

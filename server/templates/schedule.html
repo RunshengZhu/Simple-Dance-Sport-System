@@ -177,7 +177,7 @@ async function saveEvent() {
       await api('POST', '/api/events/' + window.CID + '/schedule/add', body);
     }
     msg.className = 'ok-text'; msg.textContent = '已保存，刷新中…';
-    setTimeout(function () { location.reload(); }, 400);
+    setTimeout(softReload, 400);
   } catch (e) { msg.className = 'err'; msg.textContent = e.message; }
 }
 async function delEvent(code) {
@@ -186,7 +186,7 @@ async function delEvent(code) {
   if (!ceid) { alert('未找到场次'); return; }
   try {
     await api('DELETE', '/api/competition-events/' + ceid, {});
-    location.reload();
+    softReload();
   } catch (e) { alert(e.message); }
 }
 
@@ -252,12 +252,12 @@ document.getElementById('ro-save').addEventListener('click', function () {
   var msg = document.getElementById('ro-msg');
   if (!roItems.length) { msg.textContent = '请先生成或加载顺序'; return; }
   api('POST', '/api/events/' + window.CID + '/run-order', {order: roItems.map(function (it) { return it.ceid; })})
-    .then(function () { msg.textContent = '已保存'; setTimeout(function () { location.reload(); }, 500); })
+    .then(function () { msg.textContent = '已保存'; setTimeout(softReload, 500); })
     .catch(function (e) { msg.textContent = e.message; });
 });
 document.getElementById('ro-clear').addEventListener('click', function () {
   api('POST', '/api/events/' + window.CID + '/run-order', {order: []})
-    .then(function () { location.reload(); })
+    .then(softReload)
     .catch(function (e) { alert(e.message); });
 });
 api('GET', '/api/events/' + window.CID + '/run-order').then(function (d) {

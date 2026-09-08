@@ -9,7 +9,7 @@
 {% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
 
 {% if is_mark %}
-<p class="muted">滑冰制预赛：点击选手行给予 <b>Mark</b>（通常为晋级名额数量）；再点一次取消。已选 <span id="mark-count">0</span> / {{ checked|length }}</p>
+<p class="muted">Mark 制（预赛晋级票）：点击选手行给予 <b>Mark</b>（通常为晋级名额数量）；再点一次取消。已选 <span id="mark-count">0</span> / <span id="mark-cap">{{ checked|length }}</span></p>
 <div class="mark-list">
   {% for num in roster %}
   {% set ok = num in checked %}
@@ -246,10 +246,37 @@ async function submitSheet() {
 }
 
 var CID = {{ ev.competition_id }};
+/* 检录变化 → 就地更新置灰与 Mark 上限，不重载（保护正在输入的分值） */
+function refreshOffState() {
+  api('GET', '/api/competition-events/' + CEID + '/checkin').then(function (d) {
+    var set = {};
+    (d.checked || []).forEach(function (x) { set[String(x)] = 1; });
+    document.querySelectorAll('.mark-row, .rank-row, .score-row').forEach(function (row) {
+      var ok = !!set[String(row.dataset.num)];
+      row.classList.toggle('off', !ok);
+      row.querySelectorAll('input, select, button').forEach(function (el) {
+        if (el.type === 'hidden') return;   /* rank-row 的 .val 为 hidden，点击拦截由 off 类负责 */
+        el.disabled = !ok;
+      });
+      var hint = row.querySelector('.mark-hint, .rank-hint');
+      if (hint) {
+        if (!ok) hint.textContent = '🔒 未检录';
+        else if (hint.textContent === '🔒 未检录') hint.textContent = row.classList.contains('rank-row') ? '点击排名' : (row.classList.contains('mark-row') ? '点击给 Mark' : '');
+      }
+    });
+    var cap = document.getElementById('mark-cap');
+    if (cap) cap.textContent = d.checked_n;
+    var note = document.getElementById('roster-note');
+    if (note) note.textContent = (SCORE ? '上场 ' + N + ' 支队伍' : '上场 ' + N + ' 名选手') +
+      ' · 盲评原则：评分页仅显示背番号' +
+      (N - d.checked_n > 0 ? ' · 未检录 ' + (N - d.checked_n) + ' 人置灰不可评' : '');
+    CHECKED = d.checked_n;
+  }).catch(function () {});
+}
 connectSSE('/api/events/' + CID + '/stream', {
-  competition_event_opened: function () { location.reload(); },
-  roster_changed: function () { location.reload(); },
-  score_returned: function () { location.reload(); },
-  checkin_changed: function () { location.reload(); }   // 检录变化 → 置灰状态更新
-}, function () { location.reload(); }, 2000);
+  competition_event_opened: softReload,
+  roster_changed: softReload,
+  score_returned: softReload,
+  checkin_changed: refreshOffState
+}, refreshOffState, 6000);
 {% endblock %}

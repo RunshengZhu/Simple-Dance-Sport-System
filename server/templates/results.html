@@ -51,11 +51,11 @@
 async function doPub(btn, ceid, publish) {
   try {
     await api('POST', '/api/competition-events/' + ceid + '/' + (publish ? 'publish' : 'unpublish'), {});
-    location.reload();
+    softReload();
   } catch (e) { alert(e.message); }
 }
 async function doCalc(btn, ceid) {
-  try { await api('POST', '/api/competition-events/' + ceid + '/calculate', {}); location.reload(); }
+  try { await api('POST', '/api/competition-events/' + ceid + '/calculate', {}); softReload(); }
   catch (e) { alert(e.message); }
 }
 async function toggleDetail(btn, ceid) {

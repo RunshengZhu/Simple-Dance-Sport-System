@@ -39,10 +39,10 @@ var CID = {{ comp.id if comp else 0 }};
   }
 })();
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
-  competition_event_opened: function () { location.reload(); },
-  competition_event_closed: function () { location.reload(); },
-  roster_changed: function () { location.reload(); },
-  score_submitted: function () { location.reload(); },
-  score_returned: function () { location.reload(); }
-}, function () { location.reload(); }, 2000);
+  competition_event_opened: softReload,
+  competition_event_closed: softReload,
+  roster_changed: softReload,
+  score_submitted: softReload,
+  score_returned: softReload
+}, softReload, 6000);
 {% endblock %}

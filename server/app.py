@@ -643,10 +643,16 @@ async def api_open(ceid: int, request: Request = None):
     had_scores = bool(db.get_db().execute(
         "SELECT 1 FROM score_records WHERE event_id=? LIMIT 1", (ceid,)).fetchone())
     conn = db.get_db()
-    conn.execute("DELETE FROM event_competitors WHERE event_id=?", (ceid,))
     if had_scores or body.get("reset"):
+        # 重开（清空评分）= 全部重来，检录状态一并重置
+        conn.execute("DELETE FROM event_competitors WHERE event_id=?", (ceid,))
         conn.execute("DELETE FROM score_records WHERE event_id=?", (ceid,))
         conn.execute("DELETE FROM results WHERE event_id=?", (ceid,))
+    else:
+        # 普通开启保留已有检录（检录员的确认不因主持人开场而作废），仅移除出名单者
+        ph = ",".join("?" * len(roster_list))
+        conn.execute(f"DELETE FROM event_competitors WHERE event_id=? AND competitor_number NOT IN ({ph})",
+                     [ceid] + roster_list)
     for num in roster_list:
         conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)", (ceid, num))
     conn.execute("UPDATE events SET status='scoring' WHERE id=?", (ceid,))
@@ -1037,6 +1043,19 @@ async def staff_page(request: Request):
     return templates.TemplateResponse(request, "staff.html", {
         "request": request, "comp": comp, "items": items, "done": done, "role": s["role"],
         "who": who})
+
+
+@app.get("/api/competition-events/{ceid}/checkin")
+async def api_checkin_state(ceid: int, request: Request = None):
+    """检录状态快照（staff/judge/admin 只读）。供检录台、裁判评分页、控制台做轻量局部
+    刷新，避免为一次检录变动整页重载。"""
+    s = _session(request)
+    if not s or s["role"] not in ("host", "marshal", "judge", "admin"):
+        raise HTTPException(status_code=401, detail="需要工作人员或裁判登录")
+    ev, comp = _require_active_event(ceid)
+    checked = checked_roster(ceid)
+    return {"event_id": ceid, "checked": checked,
+            "checked_n": len(checked), "total": len(roster(ceid))}
 
 
 @app.post("/api/competition-events/{ceid}/checkin")
