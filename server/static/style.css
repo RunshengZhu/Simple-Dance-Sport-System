@@ -140,9 +140,14 @@ body.judge-sheet .btn.big { width: 100%; margin-top: 14px; }
   header nav a { white-space: nowrap; padding: 8px 12px; }   /* 触控目标 ≥40px */
   header nav span { white-space: nowrap; }                    /* N3：角色/代码标签不逐字换行 */
   .card { padding: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { min-width: 520px; font-size: .86rem; }
-  th, td { padding: 7px 8px; }
+  /* R34：移动端表格自适应收窄换行，不再强制 520px 横滑 */
+  table { width: 100%; font-size: .86rem; }
+  th, td { padding: 6px 6px; overflow-wrap: anywhere; }
   .card.table-fit table { min-width: 0; }
+  /* 裁判×舞种进度矩阵：唯一保留横滑的例外（dense tabular） */
+  #matrix { min-width: 420px; }
+  /* R34：次要信息列窄屏隐藏（防连场面板/赛事列表等） */
+  .hm { display: none !important; }
   /* 触控目标与防 iOS 聚焦缩放 */
   .btn { padding: 10px 16px; font-size: .95rem; }
   .btn.big { padding: 14px 20px; font-size: 1.1rem; width: 100%; }

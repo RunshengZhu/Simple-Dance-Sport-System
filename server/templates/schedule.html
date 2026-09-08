@@ -56,16 +56,16 @@
     {% if r.all_done %}<span class="tag ok">已全部计算</span>{% else %}<span class="tag warn">进行中/待开始</span>{% endif %}
   </h3>
   <table>
-    <tr><th>场次</th><th>名称</th><th>舞种</th><th>类型</th><th class="num">晋级</th><th>状态</th><th class="num">人数</th><th>顺</th><th>操作</th></tr>
+    <tr><th>场次</th><th>名称</th><th class="hm">舞种</th><th class="hm">类型</th><th class="num hm">晋级</th><th>状态</th><th class="num hm">人数</th><th>顺</th><th>操作</th></tr>
     {% for ev in r.events %}
     <tr data-code="{{ ev.code }}" data-status="{{ ev.status }}">
-      <td>{{ ev.code }}</td><td>{{ ev.name }}</td><td>{{ ev.dances | join("、") }}</td><td>{{ ev.scoring_type }}</td>
-      <td class="num">{{ ev.advancement_count }}</td>
+      <td>{{ ev.code }}</td><td>{{ ev.name }}</td><td class="hm">{{ ev.dances | join("、") }}</td><td class="hm">{{ ev.scoring_type }}</td>
+      <td class="num hm">{{ ev.advancement_count }}</td>
       <td>{% if ev.status == 'published' %}<span class="tag ok">已发布</span>
           {% elif ev.status == 'calculated' %}<span class="tag acc">已计算</span>
           {% elif ev.status == 'scoring' %}<span class="tag warn">评分中</span>
           {% else %}<span class="tag gray">待开始</span>{% endif %}</td>
-      <td class="num">{{ ev.roster_n }}</td>
+      <td class="num hm">{{ ev.roster_n }}</td>
       <td>{% if ev.run_seq %}<span class="tag">{{ ev.run_seq }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
       <td>
         <a class="btn secondary" href="/events/{{ comp.id }}/console/{{ ev.id }}">控制台</a>
