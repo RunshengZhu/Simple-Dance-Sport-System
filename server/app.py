@@ -715,15 +715,7 @@ async def api_schedule_add(competition_id: int, request: Request = None):
     conn = db.get_db()
     if conn.execute("SELECT 1 FROM events WHERE competition_id=? AND code=?", (competition_id, code)).fetchone():
         raise HTTPException(status_code=400, detail="场次编号已存在")
-    cur = conn.execute(
-        "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, status) "
-        "VALUES(?,?,?,?,?,?,?,'pending')",
-        (competition_id, code, str(body.get("name") or code), proj, rnd, typ_map[typ],
-         int(body.get("adv") or 0)))
-    ev_id = cur.lastrowid
-    dances = [x.strip() for x in str(body.get("dances") or "华尔兹").replace("，", ",").split(",") if x.strip()]
-    for k, dname in enumerate(dances):
-        conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ev_id, dname, k))
+    # 全部校验前置：roster 校验失败时不得留下任何已插入的行（R39 复审 P2：幽灵场次）
     roster = [x.strip() for x in str(body.get("roster") or "").replace("，", ",").split(",") if x.strip()]
     # 任意轮次均可预填上场名单（晋级轮回填场景同样需要）；开场(open)前可随时调整
     if roster:
@@ -733,8 +725,17 @@ async def api_schedule_add(competition_id: int, request: Request = None):
         if unknown:
             raise HTTPException(status_code=400,
                                 detail="背号不在选手库中: " + ",".join(unknown[:5]))
-        for num in roster:
-            conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)", (ev_id, num))
+    cur = conn.execute(
+        "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, status) "
+        "VALUES(?,?,?,?,?,?,?,'pending')",
+        (competition_id, code, str(body.get("name") or code), proj, rnd, typ_map[typ],
+         int(body.get("adv") or 0)))
+    ev_id = cur.lastrowid
+    dances = [x.strip() for x in str(body.get("dances") or "华尔兹").replace("，", ",").split(",") if x.strip()]
+    for k, dname in enumerate(dances):
+        conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ev_id, dname, k))
+    for num in roster:
+        conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)", (ev_id, num))
     conn.commit()
     sse.bus.publish(comp["id"], "schedule_changed", {"added": code})
     return {"ok": True, "event_id": ev_id, "code": code}
