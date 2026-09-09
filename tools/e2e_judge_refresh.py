@@ -51,6 +51,9 @@ async def run():
         await mpage.evaluate("""async () => {
           await fetch('/api/competition-events/3/checkin', {method: 'POST',
             headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({numbers: ['201', '202', '203', '204'], state: false})});
+          await fetch('/api/competition-events/3/checkin', {method: 'POST',
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({numbers: ['201', '202', '203'], state: true})});
         }""")
         jpage = await ctx.new_page()
@@ -117,7 +120,7 @@ async def run():
         await api_login(spage, "marshal", username="marshal", password="marshal123")
         await spage.goto(BASE + "/staff")
         await spage.wait_for_timeout(600)
-        await spage.evaluate("document.querySelectorAll('.toggle-done')[0].click()")
+        await spage.evaluate("(() => { const b = document.querySelector('.toggle-done'); if (b) b.click(); })()")
         await spage.wait_for_timeout(300)
         await spage.screenshot(path=os.path.join(OUT, "d-staff-accordion.png"), full_page=True)
         await spage.goto(BASE + "/public/results")

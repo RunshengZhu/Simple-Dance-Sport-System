@@ -71,17 +71,18 @@ async def run():
         await jpage.goto(BASE + "/judge/competition-events/3/dances/%E7%8E%B0%E4%BB%A3%E8%88%9E")
         await jpage.wait_for_timeout(800)
         await jpage.evaluate("window.__alive = 'judge'")
-        # 勾选 201 Mark（模拟真实点击行——行处理器单次翻转）
+        # 点击 201 行翻转 Mark（状态无关：无论回显与否，断言翻转成功）
+        pre = await jpage.evaluate("document.querySelector('.mark-row[data-num=\\'201\\'] input.val').checked")
         await jpage.evaluate("document.querySelector('.mark-row[data-num=\\'201\\']').click()")
         await jpage.wait_for_timeout(300)
-        pre = await jpage.evaluate("document.querySelector('.mark-row[data-num=\\'201\\'] input.val').checked")
-        record("OFF2a 行点击勾选生效", pre is True, f"pre-checked={pre}")
+        post = await jpage.evaluate("document.querySelector('.mark-row[data-num=\\'201\\'] input.val').checked")
+        record("OFF2a 行点击翻转生效", post != pre, f"pre={pre} post={post}")
         await jpage.wait_for_timeout(7000)  # 覆盖 6s 轻刷新轮询
         st2 = await jpage.evaluate("""() => ({
           alive: window.__alive || '(RELOADED)',
           checked: document.querySelector('.mark-row[data-num=\\'201\\'] input.val').checked })""")
         record("OFF2 judge 断线不重载+输入不丢",
-               st2["alive"] == "judge" and st2["checked"] is True, json.dumps(st2))
+               st2["alive"] == "judge" and st2["checked"] == post, json.dumps(st2) + f" post={post}")
         await jpage.close()
         await ctx2.close()
 

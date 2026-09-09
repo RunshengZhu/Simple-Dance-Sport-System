@@ -36,10 +36,14 @@
             title="{{ '检录人: ' + r.by if r.by else '未检录' }}">{{ r.number }}</button>
     {% endfor %}
   </div>
+  {% if ev.total %}
   <p>
     <button class="btn secondary" data-all="{{ ev.id }}" data-state="1">全部检录</button>
     <button class="btn secondary" data-all="{{ ev.id }}" data-state="0">全清</button>
   </p>
+  {% else %}
+  <p class="muted">暂无上场名单，请由管理员在控制台勾选。</p>
+  {% endif %}
 </div>
 {% endfor %}
 {% if not items %}<div class="card"><p class="muted">暂无待赛/评分中场次。</p></div>{% endif %}

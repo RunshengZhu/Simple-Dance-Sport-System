@@ -61,7 +61,7 @@ table { border-collapse: collapse; width: 100%; margin: .5em 0; background: var(
 th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; font-size: .93rem; }
 th { color: var(--muted); font-weight: 600; font-size: .85rem; white-space: nowrap; }
 tbody tr:hover { background: #faf8f4; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tr.rank-1 td { background: var(--warn-soft); font-weight: 600; }
 
 /* ---- 按钮 / 表单 ---- */
@@ -385,3 +385,6 @@ header nav a { font-weight: 500; transition: background .15s ease; }
   .done-actions { width: 100%; }
   .done-actions .btn { flex: 1; }
 }
+
+/* ===== R39：h1 头部标签不拆字换行 ===== */
+h1 .tag, h1 .muted { white-space: nowrap; display: inline-block; }

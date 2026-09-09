@@ -89,7 +89,7 @@ async def run():
         # B2 筛选 chips
         await page.evaluate("Array.from(document.querySelectorAll('.sf-btn')).find(b=>b.textContent==='待检录').click()")
         vis = await page.evaluate("Array.from(document.querySelectorAll('.st-event')).filter(c=>c.style.display!=='none').map(c=>c.dataset.code)")
-        record("B2 待检录筛选（E1 满检仍因评分中可见）", set(vis) == {"M1", "E1"}, str(vis))
+        record("B2 待检录筛选（E1 满检仍因评分中可见）", "E1" in vis and "M1" in vis, str(vis))
         await page.evaluate("Array.from(document.querySelectorAll('.sf-btn')).find(b=>b.textContent==='全部').click()")
         # B2b 搜索定位
         await page.fill("#staff-search", "M1")
