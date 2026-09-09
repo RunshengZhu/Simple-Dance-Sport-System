@@ -725,7 +725,14 @@ async def api_schedule_add(competition_id: int, request: Request = None):
     for k, dname in enumerate(dances):
         conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ev_id, dname, k))
     roster = [x.strip() for x in str(body.get("roster") or "").replace("，", ",").split(",") if x.strip()]
-    if roster and rnd == 1:
+    # 任意轮次均可预填上场名单（晋级轮回填场景同样需要）；开场(open)前可随时调整
+    if roster:
+        known = {c["number"] for c in db.rows(conn.execute(
+            "SELECT number FROM competitors WHERE competition_id=?", (competition_id,)))}
+        unknown = [n for n in roster if n not in known]
+        if unknown:
+            raise HTTPException(status_code=400,
+                                detail="背号不在选手库中: " + ",".join(unknown[:5]))
         for num in roster:
             conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)", (ev_id, num))
     conn.commit()

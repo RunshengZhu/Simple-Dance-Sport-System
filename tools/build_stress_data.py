@@ -6,7 +6,7 @@
   先用该 DB 起服务（DSPORT_PORT=8302），再跑本脚本完成数据铺排。
 
 数据规模与边界设计：
-- 1 赛事 / 13 单位（含超长单位名）/ 110 选手 / 9 裁判 / 30+ 场次
+- 1 赛事 / 13 单位（含超长单位名）/ 101 选手 / 9 裁判 / 12 场次
 - 项目：W1 标准舞（顺位法 48 人 R1×4 组→R2 24→F6，双舞种华尔兹+探戈）
         L1 拉丁（Mark 制 32 人 R1×2 组→F）、S1 集体舞（评分制 12 队）、T1 团体（顺位法 6 队）
 - 检录边界：全检 / 部分 7/12（灰行）/ 0 检录 / 决赛缺席（晋级后未到场）
@@ -176,11 +176,11 @@ def qualified_of(ceid, dance, n):
     return out
 
 
-def run_skating_group(ceid, nums, judges, tie=False, publish_after=True, checkin_skip=()):
-    """顺位法组：全检或部分检录 → 每裁判提交顺位 → 计算(自动) → 发布。
-    tie=True 时构造前两名 majority 全平（并列边界）。"""
+def run_skating_group(ceid, nums, judges, tie=False):
+    """顺位法组：全检录 → 每裁判提交顺位 → 计算（收齐自动/手动兜底）。
+    tie=True 时构造前两名 2v2 对称顺位（complete majority tie，系统按编号序确定性打破）。"""
     must(*open_ev(ceid, nums), f"{ceid} open")
-    must(*checkin(ceid, [n for n in nums if str(n) not in set(map(str, checkin_skip))]), f"{ceid} checkin")
+    must(*checkin(ceid, nums), f"{ceid} checkin")
     base = list(map(int, nums))
     for k, j in enumerate(judges):
         judge_login(j)
@@ -202,12 +202,12 @@ run_skating_group(W1R1[0], range(101, 113), JUDGES[:4], tie=True)   # 4 裁判 2
 publish(W1R1[0])
 run_skating_group(W1R1[1], range(113, 125), JUDGES[:5])
 publish(W1R1[1])
-run_skating_group(W1R1[2], range(125, 137), JUDGES[:5], publish_after=False)
+run_skating_group(W1R1[2], range(125, 137), JUDGES[:5])
 
 # D 组：12 人中 5 人未检录（灰行），5 裁判仅对已检录 7 人提交，scoring 停在部分提交
 ceid_d = W1R1[3]
-open_ev(ceid_d, range(137, 149))
-checkin(ceid_d, range(137, 144))            # 137-143 共 7 人检录，144-148 未检录
+must(*open_ev(ceid_d, range(137, 149)), "D组 open")
+must(*checkin(ceid_d, range(137, 144)), "D组 checkin 7/12")   # 137-143 检录，144-148 灰行
 for k, j in enumerate(JUDGES[:5]):
     judge_login(j)
     vals = {str(n): i + 1 for i, n in enumerate(range(137, 144))}
@@ -221,22 +221,25 @@ for ceid in W1R1[:2]:
 must(*req("POST", "/api/login", {"role": "admin", "password": "admin123"}), "admin 重登")
 must(*open_ev(W1R2, q), f"W1R2 open roster={q}")
 must(*checkin(W1R2, q), "W1R2 checkin")
-w2_vals = {}
-for k, j in enumerate(JUDGES[:4]):
+for j in JUDGES[4:]:
     judge_login(j)
     for dance in ("华尔兹", "探戈"):
         vals = {str(n): i + 1 for i, n in enumerate(q)}
         must(*submit(W1R2, dance, j, vals), f"W1R2 {j} {dance}")
-print(f"W1R2 铺排完成（晋级 {len(q)} 人，双舞种 4/9 裁判提交）")
+must(*calc(W1R2), "W1R2 计算")
+q2 = qualified_of(W1R2, "华尔兹", 6)
+# 退回评分：W1R2 回到 scoring（评分清空、检录保留）供裁判续评走查；W1F 名单已由真实 R2 结果驱动
+must(*req("POST", f"/api/competition-events/{W1R2}/return-scores", {}, sess="admin"), "W1R2 退回评分")
+print(f"W1R2 铺排完成（{len(q)} 人收齐→计算→退回 scoring；晋级 {len(q2)} → W1F）")
 
-# ---------- 7. W1F：6 人 1 人缺席（晋级但未检录），双舞种部分提交 ----------
+# ---------- 7. W1F：R2 晋级 6 人中 1 人缺席（晋级但未检录），双舞种 3/9 提交 ----------
 must(*req("POST", "/api/login", {"role": "admin", "password": "admin123"}), "admin 重登")
-open_ev(W1F, q[:6])
-checkin(W1F, q[1:6])          # 第 1 名缺席
-for k, j in enumerate(JUDGES[:3]):
+must(*open_ev(W1F, q2), "W1F open")
+must(*checkin(W1F, q2[1:6]), "W1F checkin（首位缺席）")
+for j in JUDGES[:3]:
     judge_login(j)
     for dance in ("华尔兹", "探戈"):
-        vals = {str(n): i + 1 for i, n in enumerate(q[1:6])}
+        vals = {str(n): i + 1 for i, n in enumerate(q2[1:6])}
         must(*submit(W1F, dance, j, vals), f"W1F {j} {dance}")
 print("W1F 铺排完成（5/6 到场，双舞种 3/9 提交）")
 
@@ -244,8 +247,8 @@ print("W1F 铺排完成（5/6 到场，双舞种 3/9 提交）")
 must(*req("POST", "/api/login", {"role": "admin", "password": "admin123"}), "admin 重登")
 for idx, ceid in enumerate(L1R1):
     nums = list(range(201 + 16 * idx, 217 + 16 * idx))
-    open_ev(ceid, nums)
-    checkin(ceid, nums if idx == 0 else nums[:12])   # B 组 12/16 检录（4 灰）
+    must(*open_ev(ceid, nums), f"L1R1{idx} open")
+    must(*checkin(ceid, nums if idx == 0 else nums[:12]), f"L1R1{idx} checkin")   # B 组 12/16（4 灰）
     for j in JUDGES[2:7]:                            # 5 裁判
         judge_login(j)
         vals = {str(n): (i < 8) for i, n in enumerate(nums[:12])}
@@ -255,8 +258,8 @@ publish(L1R1[0])
 print("L1R1 A/B 铺排完成")
 
 # ---------- 9. S1F 评分制：全检录、3/9 裁判提交、构造两队同分 8.5 ----------
-open_ev(S1F, range(301, 313))
-checkin(S1F, range(301, 313))
+must(*open_ev(S1F, range(301, 313)), "S1F open")
+must(*checkin(S1F, range(301, 313)), "S1F checkin")
 for j in JUDGES[:3]:
     judge_login(j)
     vals = {}
@@ -264,7 +267,8 @@ for j in JUDGES[:3]:
         v = 8.5 if i in (0, 1) else round(6.0 + (i - 2) * 0.4, 1)   # 301/302 三裁判全同分
         vals[str(n)] = v
     must(*submit(S1F, "集体舞", j, vals), f"S1F {j}")
-print("S1F 铺排完成（301/302 平分边界）")
+must(*calc(S1F), "S1F 计算（平分并列 4,4）")
+print("S1F 铺排完成（calculated，301/302 平分并列边界，待走查发布）")
 
 # ---------- 10. 汇总 ----------
 c2, o2 = req("GET", f"/api/public/events/{cid}/schedule")

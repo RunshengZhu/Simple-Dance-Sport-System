@@ -115,10 +115,12 @@ async def run():
         await page.wait_for_timeout(300)
         ann = await page.evaluate("""() => {
           const card = Array.from(document.querySelectorAll('.done-card')).find(c => c.dataset.code === 'W1R1A');
-          const rows = Array.from(card.querySelectorAll('table tr')).map(tr => tr.textContent.replace(/\\s+/g, ' ').trim());
-          return rows.slice(0, 4);
+          return Array.from(card.querySelectorAll('table tr')).map(tr =>
+            Array.from(tr.children).map(td => td.textContent.trim()));
         }""")
-        record("S7 W1R1A 公告表渲染", len(ann) >= 3 and any("10" in r for r in ann), json.dumps(ann, ensure_ascii=False))
+        record("S7 W1R1A 公告表渲染",
+               len(ann) == 13 and ann[0][0] == "名次" and ann[1][0] == "1" and len(ann[1]) == 4,
+               f"rows={len(ann)} head={ann[0]} first={ann[1]}")
         await page.screenshot(path=os.path.join(OUT, "s7-staff-accordion.png"))
         await page.close()
         await ctx.close()
@@ -220,7 +222,7 @@ async def run():
           const el = document.getElementById('lookup-result');
           return el ? el.textContent : document.body.textContent.slice(0, 80);
         }""")
-        record("P2 查询命中与未命中文案", hit and ("未" in miss or "无" in miss or miss.strip()),
+        record("P2 查询命中与未命中文案", hit and "未找到" in miss,
                f"miss={miss[:80]}")
         await page.screenshot(path=os.path.join(OUT, "p2-lookup-miss.png"))
         # P3 S1F 发布 → 公示并列
@@ -233,10 +235,19 @@ async def run():
         await page.goto(BASE + "/public/results")
         await page.wait_for_timeout(900)
         tie = await page.evaluate("""() => {
-          const txt = document.body.textContent;
-          return { has855: txt.includes('8.5') || txt.includes('25.5'), has301: txt.includes('301'), has302: txt.includes('302') };
+          const card = Array.from(document.querySelectorAll('.card')).find(c => {
+            const h = c.querySelector('h2');
+            return h && h.textContent.includes('集体舞');
+          });
+          if (!card || !card.querySelector('table')) return { found: false };
+          const rows = Array.from(card.querySelectorAll('table tr')).map(tr =>
+            Array.from(tr.children).map(td => td.textContent.trim()));
+          const r301 = rows.find(r => r[0] === '4' && r[1] === '301');
+          const r302 = rows.find(r => r[0] === '4' && r[1] === '302');
+          return { found: true, tie301: !!r301, tie302: !!r302, sample: rows[1] };
         }""")
-        record("P3 评分制平分公示", tie["has301"] and tie["has302"], json.dumps(tie))
+        record("P3 评分制平分公示（301/302 并列名次 4）",
+               tie.get("found") and tie.get("tie301") and tie.get("tie302"), json.dumps(tie, ensure_ascii=False))
         await page.screenshot(path=os.path.join(OUT, "p3-tie-publish.png"), full_page=False)
         await spage.close()
         await page.close()
