@@ -117,7 +117,8 @@ async def visitor(client, base, cid, page_path, duration, ramp_delay, agg, stats
             # ---- 手动刷新：HTML 条件请求（304 秒回）+ 静态资源缓存 ----
             manual_refreshes += 1
             t2 = time.time()
-            r2 = await client.get(base + page_path)
+            page_cond = cache.get("__page__", {})
+            r2 = await client.get(base + page_path, headers=dict(page_cond))
             agg.html.append(time.time() - t2)
             agg.bytes_total += len(r2.content)
             if r2.status_code == 304:
@@ -126,7 +127,7 @@ async def visitor(client, base, cid, page_path, duration, ramp_delay, agg, stats
             elif r2.status_code == 200:
                 agg.hit304[1] += 1
                 fp = r2.headers.get("etag")
-                if fp and manual_refreshes == 1:
+                if fp:
                     cache["__page__"] = {"if-none-match": fp}
             else:
                 agg.errors += 1

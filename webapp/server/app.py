@@ -452,16 +452,26 @@ def _public_fingerprint(competition_id):
     return f'W/"{row["pub"]}-{row["n"]}-{row["m"]}"'
 
 
-def _etag_page(request: Request, fingerprint: str, render):
-    """公开页条件请求（R41）：指纹在渲染前计算，观众手动刷新且无新内容时
-    直接 304（跳过模板渲染与查询），返回 200 时携带 ETag 供下次比对。"""
+_PUBLIC_PAGE_CACHE = {}   # (cid, page) -> (fingerprint, html_bytes)；单 worker 内存态
+
+
+def _etag_page(request: Request, cid: int, page: str, fingerprint: str, render):
+    """公开页条件请求 + 渲染缓存（R41 压测优化）：观众页内容只随指纹变化——
+    1) If-None-Match 命中指纹 → 304（免渲染免传输）；
+    2) 指纹未变但无条件头 → 直发上次渲染的 HTML（免渲染免查询，300 并发同指纹只渲染一次）；
+    3) 指纹变化 → 渲染一次并更新缓存。压测背景：单 worker 下每请求全量渲染 Jinja 是
+       300 观众突发期 HTML P95 5s 的 CPU 瓶颈。"""
     inm = request.headers.get("if-none-match")
     if inm and inm.strip() == fingerprint:
         return Response(status_code=304, headers={"ETag": fingerprint, "Cache-Control": "no-cache"})
-    resp = render()
-    resp.headers["ETag"] = fingerprint
-    resp.headers["Cache-Control"] = "no-cache"
-    return resp
+    entry = _PUBLIC_PAGE_CACHE.get((cid, page))
+    if entry and entry[0] == fingerprint:
+        html = entry[1]
+    else:
+        resp = render()
+        html = resp.body if isinstance(resp.body, bytes) else str(resp.body).encode()
+        _PUBLIC_PAGE_CACHE[(cid, page)] = (fingerprint, html)
+    return HTMLResponse(html, headers={"ETag": fingerprint, "Cache-Control": "no-cache"})
 
 
 @app.api_route("/public/schedule", methods=["GET", "HEAD"], response_class=HTMLResponse)
@@ -473,7 +483,7 @@ async def public_schedule(request: Request):
             "SELECT code,name,project_code,round,status FROM events WHERE competition_id=? ORDER BY project_code, round, code",
             (comp["id"],)))
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
-    return _etag_page(request, fp, lambda: templates.TemplateResponse(
+    return _etag_page(request, comp["id"] if comp else 0, "schedule", fp, lambda: templates.TemplateResponse(
         request, "public_schedule.html", {"request": request, "comp": comp, "events": evs}))
 
 
@@ -492,7 +502,7 @@ async def public_results(request: Request):
                 payload.append({"ev": ev, "results": res, "names": name_by_number})
     standings = _team_standings(comp["id"], published_only=True) if comp else {"standings": []}
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
-    return _etag_page(request, fp, lambda: templates.TemplateResponse(
+    return _etag_page(request, comp["id"] if comp else 0, "results", fp, lambda: templates.TemplateResponse(
         request, "public_results.html",
         {"request": request, "comp": comp, "payload": payload, "standings": standings}))
 
@@ -1318,10 +1328,11 @@ async def team_standings_public_page(request: Request):
     comp = _active_competition()
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
     if not comp:
-        return _etag_page(request, fp, lambda: templates.TemplateResponse(
+        return _etag_page(request, 0, "standings", fp, lambda: templates.TemplateResponse(
             request, "public_team_standings.html",
             {"request": request, "comp": None, "standings": {"standings": []}}))
-    return _etag_page(request, fp, lambda: templates.TemplateResponse(request, "public_team_standings.html", {
+    return _etag_page(request, comp["id"], "standings", fp, lambda: templates.TemplateResponse(
+        request, "public_team_standings.html", {
         "request": request, "comp": comp,
         "standings": _team_standings(comp["id"], published_only=True)}))
 
