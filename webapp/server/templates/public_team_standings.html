@@ -19,7 +19,6 @@
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
-if (CID) connectSSE('/api/events/' + CID + '/stream', {
-  results_published: function () { softReload(); }
-}, function () { softReload(); }, 8000);
+/* R41：观众页不使用 SSE（长连接留给工作人员端），发布/变更由 8s 轮询刷新（上限 8s 延迟，观众场景足够） */
+if (window.CID) setInterval(function () { if (!document.hidden) softReload(); }, 8000);
 {% endblock %}
