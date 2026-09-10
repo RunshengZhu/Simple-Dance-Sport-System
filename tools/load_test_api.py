@@ -73,7 +73,9 @@ async def vu_reader(client, base, stats, stop_at, bucket):
 async def vu_judge(client, base, ids, jid, stats, stop_at, bucket):
     """场景 B：裁判循环提交 F1 sheet。"""
     values = {str(n): round(random.uniform(6.0, 10.0), 1) for n in range(1001, 1009)}
-    await client.post(base + "/api/login", json={"role": "judge", "judge_id": jid})
+    jr = await client.post(base + "/api/login", json={"role": "judge", "judge_id": jid})
+    if jr.status_code != 200:
+        stats.add(f"B judge login {jid} {jr.status_code}", 0, jr.status_code)
     while time.time() < stop_at:
         t0 = time.time()
         try:
@@ -90,9 +92,13 @@ async def vu_judge(client, base, ids, jid, stats, stop_at, bucket):
 
 async def vu_checkin(client, base, ids, group, stats, stop_at, bucket):
     """场景 C：marshal 循环批量检录/撤销（组内 12 人）。"""
-    await client.post(base + "/api/login", json={"role": "marshal", "username": "marshal",
-                                                 "password": "marshal123"})
-    nums = [str(n) for n in range(group[0], group[1] + 1)]
+    import os
+    lr = await client.post(base + "/api/login", json={"role": "marshal", "username": "marshal",
+                                                      "password": os.environ.get("DSPORT_MARSHAL_PASSWORD", "marshal123")})
+    if lr.status_code != 200:
+        print(f"!! marshal 登录失败 {lr.status_code}：{str(lr.json().get('detail', ''))[:80]} —— 口令环境变量未就绪或服务端拒绝，中止")
+        sys.exit(2)
+    nums = [str(n) for n in range(int(group[0]), int(group[1]) + 1)]
     state = True
     ceid = ids[group[2]]
     while time.time() < stop_at:
@@ -100,7 +106,11 @@ async def vu_checkin(client, base, ids, group, stats, stop_at, bucket):
         try:
             r = await client.post(base + f"/api/competition-events/{ceid}/checkin",
                                   json={"numbers": nums, "state": state})
-            stats.add(f"C checkin {group[2]} {'on' if state else 'off'}", time.time() - t0, r.status_code)
+            if r.status_code >= 400:
+                stats.add(f"C checkin {group[2]} {'on' if state else 'off'} ERR {r.status_code} "
+                          + str(r.json().get('detail', ''))[:80], time.time() - t0, r.status_code)
+            else:
+                stats.add(f"C checkin {group[2]} {'on' if state else 'off'}", time.time() - t0, r.status_code)
             bucket.append(1 if r.status_code >= 500 else 0)
             state = not state
         except Exception:
@@ -165,7 +175,7 @@ async def main():
     t_start = time.time()
 
     async with httpx.AsyncClient(limits=limits, timeout=timeout) as client:
-        if args.scenario in ("A", "D"):
+        if args.scenario == "A":
             n = 50 if args.scenario == "D" else args.vus
             await asyncio.gather(*[vu_reader(client, args.base, stats, stop_at, bucket)
                                    for _ in range(n)])
@@ -173,14 +183,14 @@ async def main():
             await asyncio.gather(*[vu_judge(client, args.base, ids, f"J{i}", stats, stop_at, bucket)
                                    for i in range(1, 14)])
         elif args.scenario == "C":
-            groups = [("1009", "1020", "W1A"), ("1021", "1032", "W1B"),
-                      ("1033", "1044", "W1C"), ("1045", "1056", "W1D")]
+            groups = [(1009, 1020, "W1A"), (1021, 1032, "W1B"),
+                      (1033, 1044, "W1C"), (1045, 1056, "W1D")]
             n = min(args.vus, 20)
             await asyncio.gather(*[vu_checkin(client, args.base, ids, groups[i % 4], stats, stop_at, bucket)
                                    for i in range(n)])
         elif args.scenario == "D":
-            groups = [("1009", "1020", "W1A"), ("1021", "1032", "W1B"),
-                      ("1033", "1044", "W1C"), ("1045", "1056", "W1D")]
+            groups = [(1009, 1020, "W1A"), (1021, 1032, "W1B"),
+                      (1033, 1044, "W1C"), (1045, 1056, "W1D")]
             await asyncio.gather(
                 *[vu_reader(client, args.base, stats, stop_at, bucket) for _ in range(50)],
                 *[vu_judge(client, args.base, ids, f"J{i}", stats, stop_at, bucket) for i in range(1, 14)],
