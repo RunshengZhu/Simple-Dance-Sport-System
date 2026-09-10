@@ -37,6 +37,19 @@ PORT = int(os.environ.get("DSPORT_PORT", "8321"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 app = FastAPI(title="体育舞蹈赛事评分系统 · 服务版", docs_url=None, redoc_url=None)
+
+
+@app.middleware("http")
+async def static_cache_control(request: Request, call_next):
+    """静态资源长缓存（R41 压测：300 并发观众突发首访资源级联 P95 14.7s，
+    根因是 softReload 周期对 /static 的重复条件请求挤占单 worker 事件循环）。
+    静态引用均带 ?v= 版本参数，改版即换 URL，长缓存安全。"""
+    resp = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
 app.mount("/static", StaticFiles(directory=os.path.join(BASE, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE, "templates"))
 
