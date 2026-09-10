@@ -2,10 +2,10 @@
 :root {
   --bg: #f5f3ef;            /* 暖灰底 */
   --card: #ffffff;
-  --line: var(--line);
+  --line: #e5e0d8;
   --txt: #1f2937;
   --muted: #8a8377;
-  --acc: var(--acc);           /* 竞技红 */
+  --acc: #b91c1c;           /* 竞技红 */
   --acc-soft: #fef2f2;
   --gold: #b45309;          /* 赛事金 */
   --ok: #15803d;
@@ -303,8 +303,8 @@ details.card[open] > summary { margin-bottom: .6rem; }
 
 /* ---- 设计令牌升级 ---- */
 :root {
-  --acc-deep: var(--acc-deep);
-  --line-strong: var(--line-strong);
+  --acc-deep: #991b1b;
+  --line-strong: #d8d2c6;
   --radius-sm: 8px;
   --shadow-lift: 0 2px 6px rgba(31,41,55,.1), 0 10px 28px rgba(31,41,55,.08);
 }

@@ -81,14 +81,21 @@ async def run():
                       bg: getComputedStyle(document.body).backgroundColor,
                       hsw: document.documentElement.scrollWidth - document.documentElement.clientWidth,
                       theme: document.documentElement.dataset.theme,
-                      title: (document.querySelector('h1') || document.body).textContent.trim().slice(0, 40) })""")
+                      title: (document.querySelector('h1') || document.body).textContent.trim().slice(0, 40),
+                      btnBg: (() => { const b = document.querySelector('.btn'); if (!b) return null;
+                        const s = getComputedStyle(b);
+                        return (s.backgroundImage === 'none' && s.backgroundColor === 'rgba(0, 0, 0, 0)') ? 'MISSING' : 'ok'; })(),
+                      cardBorder: (() => { const c = document.querySelector('.card'); if (!c) return null;
+                        return getComputedStyle(c).borderTopStyle; })() })""")
                     expect_bg = DARK_BG if theme == "dark" else LIGHT_BG
                     if name in SCREEN_PAGES:
                         bg_ok = True   # 大屏固定深色自成体系
                     else:
                         bg_ok = st["bg"] == expect_bg
-                    record(f"{vp_name}/{theme}/{name}", bg_ok and st["hsw"] <= 0 and st["theme"] == theme,
-                           f"bg={st['bg']} hsw={st['hsw']} title={st['title']!r}")
+                    elem_ok = st["btnBg"] != "MISSING" and st["cardBorder"] in (None, "solid")
+                    record(f"{vp_name}/{theme}/{name}",
+                           bg_ok and st["hsw"] <= 0 and st["theme"] == theme and elem_ok,
+                           f"bg={st['bg']} hsw={st['hsw']} btn={st['btnBg']} border={st['cardBorder']} title={st['title']!r}")
                     if name in SHOT_PAGES:
                         await page.screenshot(path=os.path.join(OUT, f"{vp_name}-{theme}-{name}.png"))
                 # ---- 交互抽查（每视口 dark 一轮）----
