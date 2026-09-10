@@ -3,9 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#b91c1c">
+<meta name="theme-color" content="#f5f3ef" id="meta-theme">
 <title>{% block title %}体育舞蹈评分系统{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css?v=r39">
+<script>
+/* R40 主题防闪烁：CSS 加载前物化主题（localStorage 优先，系统偏好兜底） */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('ds-theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') {
+    t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  document.documentElement.dataset.theme = t;
+})();
+</script>
+<link rel="stylesheet" href="/static/style.css?v=r40">
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
 <header>
@@ -13,6 +24,7 @@
   <nav>
     {% block nav %}{% endblock %}
     <a href="/manual">操作手册</a>
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="切换深浅配色" title="切换深浅配色"></button>
     <span id="net-badge" class="badge" title="实时连接状态">●</span>
   </nav>
 </header>
@@ -21,6 +33,34 @@
 </main>
 <script>window.CID = {% block cid %}0{% endblock %};</script>
 <script src="/static/app.js"></script>
+<script>
+/* R40 主题切换：两态循环并持久化；用户未手动选择时跟随系统变化 */
+(function () {
+  var root = document.documentElement, KEY = 'ds-theme';
+  var meta = document.getElementById('meta-theme');
+  function paint(t) {
+    root.dataset.theme = t;
+    if (meta) meta.content = (t === 'dark') ? '#131519' : '#f5f3ef';
+  }
+  function saved() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function apply(t, store) {
+    paint(t);
+    if (store) { try { localStorage.setItem(KEY, t); } catch (e) {} }
+  }
+  apply(root.dataset.theme === 'dark' ? 'dark' : 'light', false);
+  if (window.matchMedia) {
+    try {
+      matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
+        if (!saved()) apply(e.matches ? 'dark' : 'light', false);
+      });
+    } catch (e) {}
+  }
+  var btn = document.getElementById('theme-toggle');
+  if (btn) btn.onclick = function () {
+    apply(root.dataset.theme === 'dark' ? 'light' : 'dark', true);
+  };
+})();
+</script>
 {% if autorefresh %}<script>
 /* 输入保护：正在填表时推迟重载类刷新，避免打断（R38 终审 P2） */
 function softReloadIfIdle() {
