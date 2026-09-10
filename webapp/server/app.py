@@ -17,7 +17,7 @@ import uuid
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -440,7 +440,31 @@ async def manual_page(request: Request):
     return templates.TemplateResponse(request, "manual.html", {"request": request})
 
 
-@app.get("/public/schedule", response_class=HTMLResponse)
+def _public_fingerprint(competition_id):
+    """公开页变更指纹（R41）：发布门数 + 场次数 + 最大场次 id。
+    廉价索引聚合（<1ms），覆盖发布/撤回/建场/删场四类变更。"""
+    row = db.get_db().execute(
+        "SELECT (SELECT COUNT(*) FROM results r JOIN events e ON e.id=r.event_id "
+        " WHERE e.competition_id=?) AS pub, "
+        "(SELECT COUNT(*) FROM events WHERE competition_id=?) AS n, "
+        "(SELECT COALESCE(MAX(id),0) FROM events WHERE competition_id=?) AS m",
+        (competition_id, competition_id, competition_id)).fetchone()
+    return f'W/"{row["pub"]}-{row["n"]}-{row["m"]}"'
+
+
+def _etag_page(request: Request, fingerprint: str, render):
+    """公开页条件请求（R41）：指纹在渲染前计算，观众手动刷新且无新内容时
+    直接 304（跳过模板渲染与查询），返回 200 时携带 ETag 供下次比对。"""
+    inm = request.headers.get("if-none-match")
+    if inm and inm.strip() == fingerprint:
+        return Response(status_code=304, headers={"ETag": fingerprint, "Cache-Control": "no-cache"})
+    resp = render()
+    resp.headers["ETag"] = fingerprint
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.api_route("/public/schedule", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def public_schedule(request: Request):
     comp = _active_competition()
     evs = []
@@ -448,10 +472,12 @@ async def public_schedule(request: Request):
         evs = db.rows(db.get_db().execute(
             "SELECT code,name,project_code,round,status FROM events WHERE competition_id=? ORDER BY project_code, round, code",
             (comp["id"],)))
-    return templates.TemplateResponse(request, "public_schedule.html", {"request": request, "comp": comp, "events": evs})
+    fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
+    return _etag_page(request, fp, lambda: templates.TemplateResponse(
+        request, "public_schedule.html", {"request": request, "comp": comp, "events": evs}))
 
 
-@app.get("/public/results", response_class=HTMLResponse)
+@app.api_route("/public/results", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def public_results(request: Request):
     comp = _active_competition()
     payload = []
@@ -465,7 +491,10 @@ async def public_results(request: Request):
             if res:
                 payload.append({"ev": ev, "results": res, "names": name_by_number})
     standings = _team_standings(comp["id"], published_only=True) if comp else {"standings": []}
-    return templates.TemplateResponse(request, "public_results.html", {"request": request, "comp": comp, "payload": payload, "standings": standings})
+    fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
+    return _etag_page(request, fp, lambda: templates.TemplateResponse(
+        request, "public_results.html",
+        {"request": request, "comp": comp, "payload": payload, "standings": standings}))
 
 
 @app.get("/screen", response_class=HTMLResponse)
@@ -1284,15 +1313,17 @@ async def team_standings_admin_page(request: Request, competition_id: int, best:
         "request": request, "comp": comp, "standings": standings, "best_n": best_n})
 
 
-@app.get("/public/team-standings", response_class=HTMLResponse)
+@app.api_route("/public/team-standings", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def team_standings_public_page(request: Request):
     comp = _active_competition()
+    fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
     if not comp:
-        return templates.TemplateResponse(request, "public_team_standings.html",
-                                          {"request": request, "comp": None, "standings": {"standings": []}})
-    return templates.TemplateResponse(request, "public_team_standings.html", {
+        return _etag_page(request, fp, lambda: templates.TemplateResponse(
+            request, "public_team_standings.html",
+            {"request": request, "comp": None, "standings": {"standings": []}}))
+    return _etag_page(request, fp, lambda: templates.TemplateResponse(request, "public_team_standings.html", {
         "request": request, "comp": comp,
-        "standings": _team_standings(comp["id"], published_only=True)})
+        "standings": _team_standings(comp["id"], published_only=True)}))
 
 
 @app.get("/api/screen-control")

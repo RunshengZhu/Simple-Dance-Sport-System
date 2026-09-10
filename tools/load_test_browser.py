@@ -47,20 +47,22 @@ class Agg:
                 print(f"{name:<18} n={len(arr):<5} P50={pct(s,50)*1000:.0f}ms "
                       f"P95={pct(s,95)*1000:.0f}ms avg={statistics.mean(arr)*1000:.0f}ms")
         if self.hit304[1]:
-            print(f"静态缓存 304 命中率 {self.hit304[0]}/{self.hit304[1]} = {self.hit304[0]/self.hit304[1]*100:.0f}%")
+            print(f"静态/页面缓存 304 命中率 {self.hit304[0]}/{self.hit304[1]} = {self.hit304[0]/max(1,self.hit304[1])*100:.0f}%")
         if self.sse:
             print(f"SSE 建立 {sum(self.sse)}/{len(self.sse)}")
 
 
 async def visitor(client, base, cid, page_path, duration, ramp_delay, agg, stats):
-    await asyncio.sleep(ramp_delay)   # 分批启动
+    """R41 观众模型（架构定案）：打开页面→资源级联→静默驻留（无任何后台请求）→
+    模拟观众手动刷新 2 次（HTML 条件请求期待 304 + 静态资源缓存）。"""
+    await asyncio.sleep(ramp_delay)
     started = time.time()
     stop_at = started + duration
-    cache = {}       # path -> (etag/last-modified headers)
-    sse_ok = False
+    cache = {}
+    manual_refreshes = 0
     try:
         while time.time() < stop_at:
-            # 1) HTML
+            # ---- 打开页面：HTML + 资源级联 ----
             t0 = time.time()
             r = await client.get(base + page_path)
             html_dt = time.time() - t0
@@ -70,14 +72,11 @@ async def visitor(client, base, cid, page_path, duration, ramp_delay, agg, stats
                 agg.errors += 1
                 await asyncio.sleep(3)
                 continue
-            # 2) 静态资源级联（首次全量，重访带缓存头）
             res_paths = sorted(set(STATIC_RE.findall(r.text)))
             t0 = time.time()
             is_first = not cache
             for rp in res_paths:
-                headers = {}
-                if rp in cache:
-                    headers.update(cache[rp])
+                headers = dict(cache.get(rp, {}))
                 rr = await client.get(base + rp, headers=headers)
                 agg.hit304[1] += 1
                 if rr.status_code == 304:
@@ -89,60 +88,56 @@ async def visitor(client, base, cid, page_path, duration, ramp_delay, agg, stats
                         cond["if-none-match"] = etag
                     if lm:
                         cond["if-modified-since"] = lm
-                    if "max-age" in rr.headers.get("cache-control", ""):
+                    cc = rr.headers.get("cache-control", "")
+                    if "max-age" in cc:
                         cond["fresh"] = True
                     cache[rp] = cond
                     agg.bytes_total += len(rr.content)
                 else:
                     agg.errors += 1
             (agg.res_first if is_first else agg.res_cached).append(time.time() - t0)
-            # 3) SSE 建立（读首个事件块验证）
+            # ---- SSE 建立（工作人员端行为；观众页已无 SSE，此处仅模拟一次建立探测）----
             t1 = time.time()
             try:
                 async with client.stream("GET", base + f"/api/events/{cid}/stream",
-                                         timeout=httpx.Timeout(10, read=8)) as r:
+                                         timeout=httpx.Timeout(10, read=6)) as r:
                     chunks = []
                     async for chunk in r.aiter_bytes():
                         chunks.append(chunk)
-                        break   # 首个事件块（state_sync 立即推送）即算建立
+                        break
                     agg.sse.append(r.status_code == 200 and bool(chunks))
-                    agg.bytes_total += len(chunks[0]) if chunks else 0
             except Exception:
                 agg.sse.append(False)
-            # 4) softReload 周期：8s 后整页重载（HTML + 静态资源带缓存头，与真实 reload 一致）
+            # ---- 静默驻留：无任何后台请求（观众挂机看页面）----
+            refresh_at = started + (duration // 2)
+            while time.time() < min(stop_at, refresh_at):
+                await asyncio.sleep(2)
+            if time.time() >= stop_at:
+                break
+            # ---- 手动刷新：HTML 条件请求（304 秒回）+ 静态资源缓存 ----
+            manual_refreshes += 1
+            t2 = time.time()
+            r2 = await client.get(base + page_path)
+            agg.html.append(time.time() - t2)
+            agg.bytes_total += len(r2.content)
+            if r2.status_code == 304:
+                agg.hit304[0] += 1
+                agg.hit304[1] += 1
+            elif r2.status_code == 200:
+                agg.hit304[1] += 1
+                fp = r2.headers.get("etag")
+                if fp and manual_refreshes == 1:
+                    cache["__page__"] = {"if-none-match": fp}
+            else:
+                agg.errors += 1
+            # 手动刷新之间的间隔：驻留到结束
             while time.time() < stop_at:
-                await asyncio.sleep(8)
-                t2 = time.time()
-                r2 = await client.get(base + page_path)
-                agg.html.append(time.time() - t2)
-                agg.bytes_total += len(r2.content)
-                if r2.status_code != 200:
-                    agg.errors += 1
-                for rp in sorted(set(STATIC_RE.findall(r2.text))):
-                    if cache.get(rp, {}).get("fresh"):
-                        continue   # Cache-Control max-age 内浏览器不发请求（R41 缓存头优化）
-                    headers = dict(cache.get(rp, {}))
-                    rr = await client.get(base + rp, headers=headers)
-                    agg.hit304[1] += 1
-                    if rr.status_code == 304:
-                        agg.hit304[0] += 1
-                    elif rr.status_code == 200:
-                        etag, lm = rr.headers.get("etag"), rr.headers.get("last-modified")
-                        cond = {}
-                        if etag:
-                            cond["if-none-match"] = etag
-                        if lm:
-                            cond["if-modified-since"] = lm
-                        cc = rr.headers.get("cache-control", "")
-                        if "max-age" in cc:
-                            cond["fresh"] = True   # max-age 内直接用本地缓存
-                        cache[rp] = cond
-                if time.time() >= stop_at:
-                    break
+                await asyncio.sleep(2)
+            break
     except Exception as e:
         agg.errors += 1
         stats.append(f"{type(e).__name__}: {e}"[:120])
-    return sse_ok
+    return manual_refreshes
 
 
 async def main():
