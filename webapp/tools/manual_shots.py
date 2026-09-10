@@ -10,6 +10,7 @@
 产出：a1-a12/u-users（桌面）、j1-j5（移动裁判）、p1-p3（移动公众）、s-*（大屏四态）
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -18,9 +19,10 @@ from playwright.sync_api import sync_playwright
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://59.110.90.21:8321"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "server/static/manual/r21")
 OUT.mkdir(parents=True, exist_ok=True)
-ADMIN_PW = "CrmnJG5k9JKCuk9g"       # 线上已轮换的管理员口令（systemd override）
-HOST_PW = "GRumqRvZVDTqGybh"
-MARSHAL_PW = "MspQpW862RmQUGdc"
+# 生产口令一律从环境变量读取（禁止提交到仓库）；本地/测试环境可用默认值
+ADMIN_PW = os.environ.get("DSPORT_ADMIN_PASSWORD", "admin123")
+HOST_PW = os.environ.get("DSPORT_HOST_PASSWORD", "host123")
+MARSHAL_PW = os.environ.get("DSPORT_MARSHAL_PASSWORD", "marshal123")
 COMP = 15
 
 results = []

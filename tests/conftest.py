@@ -18,10 +18,14 @@ import os
 import sys
 import tempfile
 
-# 确保 worktree 根目录在 sys.path 中
+# 确保 worktree 根目录在 sys.path 中（core/ 位于根级）
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+# 桌面版源码目录（desktop/src 以顶层包名 `src` 导入，作为算法对照基准）
+DESKTOP = os.path.join(ROOT, "desktop")
+if DESKTOP not in sys.path:
+    sys.path.insert(0, DESKTOP)
 
 
 # ---------------------------------------------------------------- appdirs 垫片

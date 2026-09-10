@@ -1,6 +1,9 @@
 # 体育舞蹈赛事评分系统 · 服务版
 
-局域网 Web 评分服务（FastAPI + Jinja2 + SQLite WAL + SSE），算法内核为 `core/`（纯标准库，与桌面版逐位等价）。
+局域网/公网 Web 评分服务（FastAPI + Jinja2 + SQLite WAL + SSE）。
+算法内核为仓库根的 `core/`（纯标准库，与桌面版逐位等价）；本包初始化时自动把仓库根
+加入 `sys.path`，`run.py` / `python -m server.seed` / `uvicorn server.app:app` 均可直接启动。
+本地版桌面软件见仓库根 `desktop/`，共享内核说明见仓库根 `README.md`。
 
 ## 运行环境
 

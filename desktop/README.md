@@ -8,13 +8,13 @@
 
 1. **安装依赖**：
    ```bash
-   cd ds-competition
+   cd Simple-Dance-Sport-System/desktop
    pip install -r requirements.txt
    ```
 ### 0.1.2 开发版本
 1. **安装依赖**：
    ```bash
-   cd path-to-ds-competition
+   cd path-to/Simple-Dance-Sport-System/desktop
    pip install -r requirements.txt
    ```
 2. **启动软件**：
@@ -307,7 +307,7 @@ Mark制是另一种常用的评分方法，其核心原则是：
 ### 8.1 配置文件
 
 系统配置文件位于：
-- `ds-competition/src/config.json`
+- `desktop/src/config.json`
 
 ### 8.2 主要配置项
 
