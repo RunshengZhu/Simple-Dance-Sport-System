@@ -8,6 +8,12 @@
 <details class="card card-roster" {% if ev.status == 'pending' %}open{% endif %}>
   <summary><b>上场选手管理</b> <span class="muted">{{ checked_n }}/{{ total }} 已检录 · {% if ev.status == 'pending' %}开场前勾选并开启评分{% else %}展开可调整（评分中调整将清空已有评分）{% endif %}</span></summary>
   <p class="muted">从选手库勾选本场上场选手。<span class="tag ok">已检录</span> / <span class="tag gray">未检录</span> 标识与检录台同步。</p>
+  <div class="roster-tools">
+    <button type="button" class="btn secondary" onclick="candAll(1)">全选</button>
+    <button type="button" class="btn secondary" onclick="candAll(0)">全不选</button>
+    <button type="button" class="btn secondary" onclick="candFlip()">反选</button>
+    <span class="muted" id="cand-count"></span>
+  </div>
   <div id="roster-box">
     {% for c in all_competitors %}
     <label><input type="checkbox" class="cand" value="{{ c.number }}"
@@ -50,6 +56,7 @@
   <p>
     <button class="btn" onclick="calc()">手动计算/重算</button>
     <button class="btn" onclick="publish()">发布（进大屏）</button>
+    <button class="btn" onclick="calcPublish()">计算并发布</button>
     <button class="btn secondary" onclick="unpublish()">撤回发布</button>
     <span id="calc-msg" class="muted"></span>
   </p>
@@ -92,6 +99,31 @@ async function calc() {
   catch (e) { document.getElementById('calc-msg').textContent = e.message; }
 }
 async function publish() { await api('POST', '/api/competition-events/' + CEID + '/publish'); softReload(); }
+async function calcPublish() {
+  try {
+    await api('POST', '/api/competition-events/' + CEID + '/calculate');
+    await api('POST', '/api/competition-events/' + CEID + '/publish');
+    softReload();
+  } catch (e) { document.getElementById('calc-msg').textContent = e.message; }
+}
+function candAll(state) {
+  document.querySelectorAll('#roster-box input.cand:not(:disabled)').forEach(function (cb) { cb.checked = !!state; });
+  candCount();
+}
+function candFlip() {
+  document.querySelectorAll('#roster-box input.cand:not(:disabled)').forEach(function (cb) { cb.checked = !cb.checked; });
+  candCount();
+}
+function candCount() {
+  var all = document.querySelectorAll('#roster-box input.cand'), n = 0;
+  all.forEach(function (cb) { if (cb.checked) n += 1; });
+  var el = document.getElementById('cand-count');
+  if (el) el.textContent = '已勾选 ' + n + ' / ' + all.length;
+}
+document.addEventListener('change', function (e) {
+  if (e.target.matches && e.target.matches('#roster-box input.cand')) candCount();
+});
+candCount();
 async function unpublish() { await api('POST', '/api/competition-events/' + CEID + '/unpublish'); softReload(); }
 
 var ST_NAMES = {pending: '待开始', scoring: '评分中', calculated: '已计算', published: '已发布'};

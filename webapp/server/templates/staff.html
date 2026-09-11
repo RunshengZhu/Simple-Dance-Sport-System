@@ -65,11 +65,13 @@
       <button type="button" class="btn toggle-done" data-ceid="{{ ev.id }}" aria-expanded="false">查看成绩 ▾</button>
     </div>
   </div>
-  <div class="done-body" id="done-body-{{ ev.id }}" hidden>
+  <div class="done-body" id="done-body-{{ ev.id }}">
+    <div>
     {% if ev.results %}
     {% with rows = ev.results, names = ev.names %}{% include "_announce_table.html" %}{% endwith %}
     <p><a class="btn secondary" href="/api/events/{{ ev.competition_id }}/exports?format=markdown&code={{ ev.code }}">下载本场成绩单 (.md)</a></p>
     {% else %}<p class="muted">无结果数据。</p>{% endif %}
+    </div>
   </div>
 </div>
 {% endfor %}
@@ -144,7 +146,7 @@ document.getElementById('logout').onclick = async function () {
 /* ---------- 检录状态轻刷新（不重载、不移动视口） ---------- */
 function progText(ceid, n, total) {
   var el = document.getElementById('prog-' + ceid);
-  if (el) el.textContent = '检录 ' + n + ' / ' + total;
+  if (el) { el.textContent = '检录 ' + n + ' / ' + total; if (window.popBadge) popBadge(el); }
 }
 function paintEvent(ceid, checkedArr, n, total) {
   var set = {};
@@ -186,15 +188,15 @@ function currentChecked(ceid, num, state) {
 function toggleDone(btn) {
   var ceid = btn.dataset.ceid;
   var body = document.getElementById('done-body-' + ceid);
-  var wasOpen = !body.hidden;
-  document.querySelectorAll('.done-card .done-body').forEach(function (b) { b.hidden = true; });
+  var wasOpen = body.classList.contains('open');
+  document.querySelectorAll('.done-card .done-body').forEach(function (b) { b.classList.remove('open'); });
   document.querySelectorAll('.toggle-done').forEach(function (b) {
     b.setAttribute('aria-expanded', 'false');
     b.textContent = '查看成绩 ▾';
     b.classList.remove('secondary');
   });
   if (!wasOpen) {
-    body.hidden = false;
+    body.classList.add('open');
     btn.setAttribute('aria-expanded', 'true');
     btn.textContent = '收起 ▴';
     btn.classList.add('secondary');   /* 展开后收起动作降为次级视觉权重 */
@@ -207,7 +209,7 @@ document.addEventListener('click', function (e) {
     var state = !chip.classList.contains('on');
     postCheckin(ceid, [num], state).then(function (d) {
       paintEvent(ceid, currentChecked(ceid, num, state), d.checked_n, d.total);
-    }).catch(function (err) { alert(err.message); refreshEvent(ceid); });
+    }).catch(function (err) { toast('检录失败：' + err.message, 'err'); refreshEvent(ceid); });
     return;
   }
   var allBtn = e.target.closest('[data-all]');
@@ -217,7 +219,7 @@ document.addEventListener('click', function (e) {
       document.querySelectorAll('.chip[data-ceid="' + ceid2 + '"]'), function (c) { return c.dataset.num; });
     postCheckin(ceid2, nums, state2).then(function (d) {
       paintEvent(ceid2, state2 ? nums : [], d.checked_n, d.total);
-    }).catch(function (err) { alert(err.message); refreshEvent(ceid2); });
+    }).catch(function (err) { toast('批量检录失败：' + err.message, 'err'); refreshEvent(ceid2); });
     return;
   }
   var ann = e.target.closest('.ann-btn');
@@ -230,7 +232,7 @@ document.addEventListener('click', function (e) {
       var tag = head ? head.querySelector('h3 .tag:nth-of-type(2)') : null;
       if (tag) { tag.textContent = state3 ? '已播报 ✓' : '未播报';
                  tag.classList.toggle('ok', state3); tag.classList.toggle('gray', !state3); }
-    }).catch(function (err) { alert(err.message); });
+    }).catch(function (err) { toast('播报标记失败：' + err.message, 'err'); });
     return;
   }
   var tg = e.target.closest('.toggle-done');

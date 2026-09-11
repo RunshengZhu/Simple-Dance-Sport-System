@@ -85,3 +85,38 @@ async function api(method, url, body) {
   if (!r.ok) { throw new Error((data && data.detail) || ('HTTP ' + r.status)); }
   return data;
 }
+
+/* ---- R42：轻量 toast（替代高频 alert）与返回顶部 ---- */
+function toast(msg, type, ms) {
+  var wrap = document.getElementById('toast-wrap');
+  if (!wrap) return;
+  var el = document.createElement('div');
+  el.className = 'toast ' + (type || '');
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(function () {
+    el.classList.add('gone');
+    setTimeout(function () { el.remove(); }, 320);
+  }, ms || 2600);
+}
+(function () {
+  function pop(el) {   // 状态变化小弹跳
+    if (!el) return;
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
+  }
+  window.popBadge = pop;
+  document.addEventListener('DOMContentLoaded', function () {
+    var fab = document.createElement('button');
+    fab.id = 'back-top';
+    fab.type = 'button';
+    fab.setAttribute('aria-label', '返回顶部');
+    fab.textContent = '↑';
+    fab.onclick = function () { window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    document.body.appendChild(fab);
+    window.addEventListener('scroll', function () {
+      fab.classList.toggle('show', window.scrollY > window.innerHeight * 1.6);
+    }, { passive: true });
+  });
+})();
