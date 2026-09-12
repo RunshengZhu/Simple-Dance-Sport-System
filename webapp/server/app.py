@@ -1982,6 +1982,46 @@ async def files_delete(name: str, filename: str, request: Request):
     return {"ok": True}
 
 
+# ---- R43b /apps 静态 inline 直出：把 public 层文件作为「在线使用」入口（无 attachment）。
+# 典型用途：纯前端单文件应用 + Service Worker（scope=同目录）。仅 public 层可直出；
+# 只读分发（无上传、无后端执行），更新走 /files API 同名覆盖。----
+_APPS_CT = {".html": "text/html; charset=utf-8", ".js": "application/javascript",
+            ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
+            ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
+
+
+def _apps_serve(tier_name: str, filename: str):
+    tier = _tier_by_name(tier_name)
+    if not tier or tier["perm"] != "public":
+        raise HTTPException(status_code=404, detail="应用不存在")
+    if not _slug_ok(filename):
+        raise HTTPException(status_code=400, detail="非法文件名")
+    row = db.get_db().execute("SELECT * FROM file_objects WHERE tier_id=? AND filename=?",
+                              (tier["id"], filename)).fetchone()
+    fpath = os.path.join(FILES_ROOT, tier_name, filename)
+    if not row or not os.path.isfile(fpath):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    ext = os.path.splitext(filename)[1].lower()
+    resp = FileResponse(fpath, media_type=_APPS_CT.get(ext, "application/octet-stream"))
+    resp.headers["Content-Disposition"] = "inline"
+    resp.headers["Cache-Control"] = "no-cache"          # 更新走同名覆盖，确保拿到新版
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@app.api_route("/apps/{tier_name}", methods=["GET", "HEAD"])
+@app.api_route("/apps/{tier_name}/", methods=["GET", "HEAD"])
+async def apps_index(tier_name: str, request: Request):
+    return _apps_serve(tier_name, "index.html")
+
+
+@app.api_route("/apps/{tier_name}/{filename:path}", methods=["GET", "HEAD"])
+async def apps_file(tier_name: str, filename: str, request: Request):
+    if "/" in filename:
+        raise HTTPException(status_code=400, detail="仅支持单级文件名")
+    return _apps_serve(tier_name, filename)
+
+
 @app.api_route("/files/{name}/{filename:path}", methods=["GET", "HEAD"])
 async def files_download(name: str, filename: str, request: Request):
     """分发下载（可直接分享的链接）。public 直接下载；token 层需 ?token=<凭证>；
