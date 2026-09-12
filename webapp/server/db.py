@@ -137,6 +137,29 @@ def init_db():
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_in INTEGER DEFAULT 0")  # 检录
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_by TEXT")
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_at TEXT")
+    if "file_tiers" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='file_tiers'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS file_tiers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    perm TEXT NOT NULL DEFAULT 'public',
+    token_hash TEXT DEFAULT '',
+    note TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS file_objects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tier_id INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    content_type TEXT DEFAULT 'application/octet-stream',
+    downloads INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime')),
+    UNIQUE(tier_id, filename)
+);
+""")
     if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
         conn.executescript("""
 CREATE TABLE IF NOT EXISTS users (

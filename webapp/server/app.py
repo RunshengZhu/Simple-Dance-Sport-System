@@ -8,8 +8,11 @@ import io
 import json
 import hashlib
 import hmac
+import mimetypes
 import os
+import re
 import secrets
+import shutil
 import sys
 import time
 import uuid
@@ -17,7 +20,7 @@ import uuid
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -1777,6 +1780,237 @@ def _seed_default_accounts():
                 (username, _hash_pw(os.environ.get(env_key, default)), role,
                  "主持人（默认）" if role == "host" else "检录长（默认）"))
     conn.commit()
+
+
+# ================================================================
+# R43 文件分层托管：分层（tier）+ 权限（public 公开 / token 凭证 / admin 管理员）
+# 上传走 API（admin 会话或层 Bearer 凭证），下载链接可直接分发。
+# 文件落盘 webapp/data/files/<tier>/<filename>（data/ 已不入库不入 git）。
+# ================================================================
+FILES_ROOT = os.environ.get("DSPORT_FILES_DIR", os.path.join(BASE, "..", "data", "files"))
+FILES_ROOT = os.path.abspath(FILES_ROOT)
+MAX_UPLOAD = int(os.environ.get("DSPORT_MAX_UPLOAD_MB", "200")) * 1024 * 1024
+_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+
+
+def _slug_ok(s: str) -> bool:
+    return bool(_SLUG_RE.match(s or "")) and ".." not in s
+
+
+def _tier_by_name(name: str):
+    return db.rowdict(db.get_db().execute(
+        "SELECT * FROM file_tiers WHERE name=?", (name,)).fetchone())
+
+
+def _tier_token_ok(request: Request, tier) -> bool:
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return False
+    raw = auth[7:].strip()
+    return bool(tier["token_hash"]) and _verify_pw(raw, tier["token_hash"])
+
+
+def _file_write_ok(request: Request, tier) -> bool:
+    s = _session(request)
+    if s and s["role"] == "admin":
+        return True
+    return tier["perm"] in ("public", "token") and _tier_token_ok(request, tier)
+
+
+@app.get("/files", response_class=HTMLResponse)
+async def files_page(request: Request):
+    """文件分发管理页（管理员）。"""
+    require_admin(request)
+    tiers = db.rows(db.get_db().execute("SELECT * FROM file_tiers ORDER BY id"))
+    out = []
+    for tr in tiers:
+        fs = db.rows(db.get_db().execute(
+            "SELECT filename, size, downloads, updated_at FROM file_objects WHERE tier_id=? ORDER BY updated_at DESC",
+            (tr["id"],)))
+        out.append({"tier": tr, "files": fs})
+    return templates.TemplateResponse(request, "files.html",
+                                      {"request": request, "tiers": out})
+
+
+@app.post("/api/files/tiers")
+async def files_tier_create(request: Request):
+    """创建分层。body: {name, perm: public|token|admin, token?, note?}
+    perm=token 时若未提供 token 则自动生成并【一次性】返回明文（服务端只存哈希）。"""
+    require_admin(request)
+    body = await request.json()
+    name = str(body.get("name") or "").strip()
+    perm = str(body.get("perm") or "public").strip()
+    note = str(body.get("note") or "")[:200]
+    token = str(body.get("token") or "")
+    if not _slug_ok(name):
+        raise HTTPException(status_code=400, detail="层名须为字母/数字/._- 开头字母或数字，≤80 字符")
+    if perm not in ("public", "token", "admin"):
+        raise HTTPException(status_code=400, detail="perm 须为 public/token/admin")
+    if _tier_by_name(name):
+        raise HTTPException(status_code=400, detail="层名已存在")
+    token_hash = ""
+    gen_token = ""
+    if perm == "token":
+        gen_token = token or secrets.token_urlsafe(18)
+        if len(gen_token) < 8:
+            raise HTTPException(status_code=400, detail="token 至少 8 位")
+        token_hash = _hash_pw(gen_token)
+    elif token:
+        token_hash = _hash_pw(token)
+    conn = db.get_db()
+    conn.execute("INSERT INTO file_tiers(name, perm, token_hash, note) VALUES(?,?,?,?)",
+                 (name, perm, token_hash, note))
+    conn.commit()
+    os.makedirs(os.path.join(FILES_ROOT, name), exist_ok=True)
+    out = {"ok": True, "name": name, "perm": perm, "note": note}
+    if gen_token:
+        out["token"] = gen_token   # 仅此一次返回明文
+    return out
+
+
+@app.get("/api/files/tiers")
+async def files_tier_list(request: Request):
+    require_admin(request)
+    rows = db.rows(db.get_db().execute(
+        "SELECT t.id, t.name, t.perm, t.note, t.created_at, "
+        " COUNT(f.id) AS files, COALESCE(SUM(f.size),0) AS bytes, "
+        " COALESCE(SUM(f.downloads),0) AS downloads "
+        "FROM file_tiers t LEFT JOIN file_objects f ON f.tier_id=t.id GROUP BY t.id ORDER BY t.id"))
+    return {"tiers": rows}
+
+
+@app.put("/api/files/tiers/{name}/token")
+async def files_tier_reset_token(name: str, request: Request):
+    """重置层凭证（旧凭证立即失效），返回一次性新明文。"""
+    require_admin(request)
+    tier = _tier_by_name(name)
+    if not tier:
+        raise HTTPException(status_code=404, detail="层不存在")
+    new_token = secrets.token_urlsafe(18)
+    db.get_db().execute("UPDATE file_tiers SET token_hash=? WHERE id=?",
+                        (_hash_pw(new_token), tier["id"]))
+    db.get_db().commit()
+    return {"ok": True, "token": new_token}
+
+
+@app.delete("/api/files/tiers/{name}")
+async def files_tier_delete(name: str, request: Request):
+    """删除分层及其全部文件（不可恢复）。"""
+    require_admin(request)
+    tier = _tier_by_name(name)
+    if not tier:
+        raise HTTPException(status_code=404, detail="层不存在")
+    shutil.rmtree(os.path.join(FILES_ROOT, name), ignore_errors=True)
+    conn = db.get_db()
+    conn.execute("DELETE FROM file_objects WHERE tier_id=?", (tier["id"],))
+    conn.execute("DELETE FROM file_tiers WHERE id=?", (tier["id"],))
+    conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/files/{name}")
+async def files_list(name: str, request: Request):
+    """列出层内文件（含可直接分发的下载链接）。凭证同上传。"""
+    tier = _tier_by_name(name)
+    if not tier:
+        raise HTTPException(status_code=404, detail="层不存在")
+    if not (_session(request) and _session(request)["role"] == "admin") and not _tier_token_ok(request, tier) \
+            and tier["perm"] != "public":
+        raise HTTPException(status_code=401, detail="需要管理员会话或层凭证")
+    fs = db.rows(db.get_db().execute(
+        "SELECT filename, size, sha256, downloads, updated_at FROM file_objects WHERE tier_id=? ORDER BY updated_at DESC",
+        (tier["id"],)))
+    for f in fs:
+        f["url"] = f"/files/{name}/{f['filename']}" + ("?token=" + request.query_params.get("token", "") if tier["perm"] == "token" and request.query_params.get("token") else "")
+    return {"tier": name, "perm": tier["perm"], "files": fs}
+
+
+@app.put("/api/files/{name}/{filename:path}")
+async def files_upload(name: str, filename: str, request: Request):
+    """上传/覆盖文件（admin 会话或层 Bearer 凭证）。body = 文件原始字节。"""
+    tier = _tier_by_name(name)
+    if not tier:
+        raise HTTPException(status_code=404, detail="层不存在")
+    if not _slug_ok(filename):
+        raise HTTPException(status_code=400, detail="文件名仅允许字母/数字/._- 且不含路径分隔符")
+    if not _file_write_ok(request, tier):
+        raise HTTPException(status_code=401, detail="需要管理员会话或层 Bearer 凭证")
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="空文件")
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail=f"超过上传上限 {MAX_UPLOAD // 1024 // 1024}MB")
+    tdir = os.path.join(FILES_ROOT, name)
+    os.makedirs(tdir, exist_ok=True)
+    fpath = os.path.join(tdir, filename)
+    with open(fpath, "wb") as f:
+        f.write(data)
+    sha = hashlib.sha256(data).hexdigest()
+    ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    conn = db.get_db()
+    existed = conn.execute("SELECT 1 FROM file_objects WHERE tier_id=? AND filename=?",
+                           (tier["id"], filename)).fetchone()
+    if existed:
+        conn.execute("UPDATE file_objects SET size=?, sha256=?, content_type=?, updated_at=datetime('now','localtime') "
+                     "WHERE tier_id=? AND filename=?",
+                     (len(data), sha, ctype, tier["id"], filename))
+    else:
+        conn.execute("INSERT INTO file_objects(tier_id, filename, size, sha256, content_type) VALUES(?,?,?,?,?)",
+                     (tier["id"], filename, len(data), sha, ctype))
+    conn.commit()
+    return {"ok": True, "tier": name, "filename": filename, "size": len(data), "sha256": sha,
+            "overwritten": bool(existed), "url": f"/files/{name}/{filename}"}
+
+
+@app.delete("/api/files/{name}/{filename:path}")
+async def files_delete(name: str, filename: str, request: Request):
+    tier = _tier_by_name(name)
+    if not tier:
+        raise HTTPException(status_code=404, detail="层不存在")
+    if not _file_write_ok(request, tier):
+        raise HTTPException(status_code=401, detail="需要管理员会话或层 Bearer 凭证")
+    row = db.get_db().execute("SELECT id FROM file_objects WHERE tier_id=? AND filename=?",
+                              (tier["id"], filename)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    try:
+        os.remove(os.path.join(FILES_ROOT, name, filename))
+    except OSError:
+        pass
+    db.get_db().execute("DELETE FROM file_objects WHERE tier_id=? AND filename=?", (tier["id"], filename))
+    db.get_db().commit()
+    return {"ok": True}
+
+
+@app.api_route("/files/{name}/{filename:path}", methods=["GET", "HEAD"])
+async def files_download(name: str, filename: str, request: Request):
+    """分发下载（可直接分享的链接）。public 直接下载；token 层需 ?token=<凭证>；
+    admin 层需管理员会话。支持 Range 断点（FileResponse 内建）。"""
+    tier = _tier_by_name(name)
+    if not tier:
+        raise HTTPException(status_code=404, detail="层不存在")
+    row = db.get_db().execute("SELECT * FROM file_objects WHERE tier_id=? AND filename=?",
+                              (tier["id"], filename)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    fpath = os.path.join(FILES_ROOT, name, filename)
+    if not os.path.isfile(fpath):
+        raise HTTPException(status_code=404, detail="文件已丢失，请重新上传")
+    if tier["perm"] == "token":
+        tok = request.query_params.get("token", "")
+        auth_ok = (tok and _verify_pw(tok, tier["token_hash"])) or _tier_token_ok(request, tier)
+        if not auth_ok:
+            raise HTTPException(status_code=401, detail="需要下载凭证（?token=）")
+    elif tier["perm"] == "admin":
+        s = _session(request)
+        if not s or s["role"] != "admin":
+            raise HTTPException(status_code=401, detail="需要管理员登录")
+    resp = FileResponse(fpath, media_type=row["content_type"], filename=filename)
+    resp.headers["ETag"] = '"' + row["sha256"] + '"'
+    resp.headers["Cache-Control"] = "public, max-age=300"
+    db.get_db().execute("UPDATE file_objects SET downloads=downloads+1 WHERE id=?", (row["id"],))
+    db.get_db().commit()
+    return resp
 
 
 @app.on_event("startup")

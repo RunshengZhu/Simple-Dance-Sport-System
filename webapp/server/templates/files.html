@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block cid %}0{% endblock %}
+{% block title %}文件分发{% endblock %}
+{% block nav %}<a href="/events">赛事</a><a href="/users">用户</a><a href="#" id="logout-link">退出</a>{% endblock %}
+{% block content %}
+<h1>文件分发
+  <span class="tag acc">分层托管</span>
+  <span class="muted">按层控制权限，生成可直接分发的下载链接</span></h1>
+
+<div class="card">
+  <h2>新建分层</h2>
+  <p class="muted">层名用于链接路径（字母/数字/._-）。权限：<b>public</b> 任何人可下载；
+  <b>token</b> 需要层凭证（下载链接带 ?token=，上传用 Bearer 头）；
+  <b>admin</b> 仅管理员登录后可下载。凭证只在建层/重置时明文显示一次，请立即保存。</p>
+  <div class="lookup-row">
+    <input id="t-name" placeholder="层名，如 release" style="max-width:200px">
+    <select id="t-perm" style="max-width:140px">
+      <option value="public">public（公开）</option>
+      <option value="token">token（凭证）</option>
+      <option value="admin">admin（管理员）</option>
+    </select>
+    <input id="t-note" placeholder="备注（可选）" style="max-width:240px">
+    <button class="btn" id="t-create">创建分层</button>
+  </div>
+  <p class="muted" id="t-msg"></p>
+</div>
+
+<div id="tier-list">
+  {% for item in tiers %}
+  <div class="card tier-card" data-name="{{ item.tier.name }}">
+    <h3>{{ item.tier.name }}
+      <span class="tag {{ 'ok' if item.tier.perm == 'public' else ('warn' if item.tier.perm == 'token' else 'acc') }}">{{ item.tier.perm }}</span>
+      <span class="muted">{{ item.files | length }} 个文件 · {{ item.tier.note }}</span></h3>
+    {% if item.files %}
+    <table>
+      <tr><th>文件</th><th class="num">大小</th><th class="num">下载次数</th><th>更新时间</th><th>操作</th></tr>
+      {% for f in item.files %}
+      <tr>
+        <td><a href="/files/{{ item.tier.name }}/{{ f.filename }}">{{ f.filename }}</a></td>
+        <td class="num">{{ "%.1f" | format(f.size / 1048576) }} MB</td>
+        <td class="num">{{ f.downloads }}</td>
+        <td class="muted">{{ f.updated_at }}</td>
+        <td><button class="btn secondary copy-link" data-url="/files/{{ item.tier.name }}/{{ f.filename }}">复制链接</button>
+            <button class="btn danger del-file" data-tier="{{ item.tier.name }}" data-file="{{ f.filename }}">删除</button></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">暂无文件。</p>{% endif %}
+    <div class="lookup-row">
+      <input type="file" class="up-file" style="max-width:280px">
+      <button class="btn up-btn" data-tier="{{ item.tier.name }}">上传到 {{ item.tier.name }}</button>
+      <button class="btn secondary list-btn" data-tier="{{ item.tier.name }}">刷新列表</button>
+      <button class="btn danger del-tier" data-tier="{{ item.tier.name }}">删除分层</button>
+    </div>
+  </div>
+  {% endfor %}
+  {% if not tiers %}<div class="card"><p class="muted">还没有分层，先在上方创建一个。</p></div>{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+async function api2(method, url, body, raw) {
+  const opt = { method, headers: {} };
+  if (raw !== undefined) { opt.headers['Content-Type'] = 'application/octet-stream'; opt.body = raw; }
+  else if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  const r = await fetch(url, opt);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+  return d;
+}
+document.getElementById('t-create').onclick = async function () {
+  const msg = document.getElementById('t-msg');
+  try {
+    const d = await api2('POST', '/api/files/tiers', {
+      name: document.getElementById('t-name').value.trim(),
+      perm: document.getElementById('t-perm').value,
+      note: document.getElementById('t-note').value.trim()
+    });
+    msg.className = 'ok-text';
+    msg.textContent = d.token ? ('已创建。层凭证（仅显示一次，请立即保存）：' + d.token) : '已创建。';
+    setTimeout(() => location.reload(), 1800);
+  } catch (e) { msg.className = 'err'; msg.textContent = e.message; }
+};
+document.addEventListener('click', async function (e) {
+  const copy = e.target.closest('.copy-link');
+  if (copy) {
+    const url = location.origin + copy.dataset.url;
+    try { await navigator.clipboard.writeText(url); toast('链接已复制：' + url, 'ok'); }
+    catch (err) { toast('复制失败，请手动复制：' + url, 'err', 5000); }
+    return;
+  }
+  const delF = e.target.closest('.del-file');
+  if (delF) {
+    if (!confirm('删除文件 ' + delF.dataset.file + '？')) return;
+    try { await api2('DELETE', '/api/files/' + delF.dataset.tier + '/' + delF.dataset.file);
+      toast('已删除', 'ok'); setTimeout(() => location.reload(), 600); }
+    catch (err) { toast(err.message, 'err'); }
+    return;
+  }
+  const delT = e.target.closest('.del-tier');
+  if (delT) {
+    if (!confirm('删除整个分层 ' + delT.dataset.tier + ' 及其全部文件？不可恢复！')) return;
+    try { await api2('DELETE', '/api/files/tiers/' + delT.dataset.tier);
+      toast('分层已删除', 'ok'); setTimeout(() => location.reload(), 600); }
+    catch (err) { toast(err.message, 'err'); }
+    return;
+  }
+  const lst = e.target.closest('.list-btn');
+  if (lst) { location.reload(); return; }
+  const up = e.target.closest('.up-btn');
+  if (up) {
+    const card = up.closest('.tier-card');
+    const file = card.querySelector('.up-file').files[0];
+    if (!file) { toast('请先选择文件', 'err'); return; }
+    if (file.size > 200 * 1024 * 1024) { toast('超过 200MB 上限', 'err'); return; }
+    up.disabled = true; up.textContent = '上传中…';
+    try {
+      const buf = await file.arrayBuffer();
+      const d = await api2('PUT', '/api/files/' + up.dataset.tier + '/' + file.name, new Uint8Array(buf));
+      toast((d.overwritten ? '已覆盖：' : '已上传：') + d.filename + '（' + (d.size / 1048576).toFixed(1) + ' MB）', 'ok');
+      setTimeout(() => location.reload(), 900);
+    } catch (err) { toast('上传失败：' + err.message, 'err'); up.disabled = false; up.textContent = '上传到 ' + up.dataset.tier; }
+  }
+});
+{% endblock %}
