@@ -50,6 +50,7 @@
       <input type="file" class="up-file" style="max-width:280px">
       <button class="btn up-btn" data-tier="{{ item.tier.name }}">上传到 {{ item.tier.name }}</button>
       <button class="btn secondary list-btn" data-tier="{{ item.tier.name }}">刷新列表</button>
+      <button class="btn secondary reset-token" data-tier="{{ item.tier.name }}">重置凭证</button>
       <button class="btn danger del-tier" data-tier="{{ item.tier.name }}">删除分层</button>
     </div>
   </div>
@@ -102,6 +103,15 @@ document.addEventListener('click', async function (e) {
     try { await api2('DELETE', '/api/files/tiers/' + delT.dataset.tier);
       toast('分层已删除', 'ok'); setTimeout(() => location.reload(), 600); }
     catch (err) { toast(err.message, 'err'); }
+    return;
+  }
+  const rt = e.target.closest('.reset-token');
+  if (rt) {
+    if (!confirm('重置「' + rt.dataset.tier + '」的层凭证？旧凭证立即失效。')) return;
+    try {
+      const d = await api2('PUT', '/api/files/tiers/' + rt.dataset.tier + '/token');
+      toast('新凭证（仅显示一次，请立即保存）：' + d.token, 'ok', 12000);
+    } catch (err) { toast(err.message, 'err'); }
     return;
   }
   const lst = e.target.closest('.list-btn');
