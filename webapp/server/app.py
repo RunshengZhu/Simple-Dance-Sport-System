@@ -1990,7 +1990,11 @@ _APPS_CT = {".html": "text/html; charset=utf-8", ".js": "application/javascript"
             ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
 
 
+APP_ALIASES = {"wuzhen": "wuzhen-release"}   # /apps/<别名> → 托管层名（方案 A 指定路径 /apps/wuzhen/）
+
+
 def _apps_serve(tier_name: str, filename: str):
+    tier_name = APP_ALIASES.get(tier_name, tier_name)
     tier = _tier_by_name(tier_name)
     if not tier or tier["perm"] != "public":
         raise HTTPException(status_code=404, detail="应用不存在")
