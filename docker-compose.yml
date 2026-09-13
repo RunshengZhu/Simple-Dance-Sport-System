@@ -1,0 +1,37 @@
+# 首次部署前：先 `cp .env.example .env` 并修改其中内容，见 docs/DEPLOY.md
+services:
+  app:
+    build: .
+    # SQLite 数据库 + 上传的托管文件全部持久化在命名卷 app-data
+    volumes:
+      - app-data:/app/data
+    # 口令等应用环境变量来自 .env（DSPORT_ADMIN_PASSWORD 等）
+    env_file:
+      - .env
+    restart: unless-stopped
+    # 仅在 compose 内部网络暴露，绝不映射公网端口；公网流量统一走 caddy 反代
+    expose:
+      - "8321"
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    # Caddyfile 里的 {$SITE_DOMAIN} 读的是 caddy 容器自身的环境变量，需在此注入；
+    # compose 会自动读取项目根的 .env 完成下行的 ${SITE_DOMAIN} 插值。
+    # 未设置时直接报错中止，避免 Caddy 拿到空域名导致证书签发失败。
+    environment:
+      - SITE_DOMAIN=${SITE_DOMAIN:?请在项目根的 .env 中设置 SITE_DOMAIN}
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:

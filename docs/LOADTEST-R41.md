@@ -113,13 +113,13 @@
 
 ```bash
 # 数据集（幂等，口令走环境变量；服务器 systemd override 内取）
-DSPORT_ADMIN_PASSWORD=.. DSPORT_MARSHAL_PASSWORD=.. python3 tools/build_load_data.py http://59.110.90.21:8321
+DSPORT_ADMIN_PASSWORD=.. DSPORT_MARSHAL_PASSWORD=.. python3 webapp/tools/build_load_data.py http://59.110.90.21:8321
 # 浏览器模拟（300 观众峰值）
-python3 tools/load_test_browser.py --vus 300 --duration 120 --ramp 15
+python3 webapp/tools/load_test_browser.py --vus 300 --duration 120 --ramp 15
 # API 场景
-python3 tools/load_test_api.py --scenario A --vus 100 --duration 90
-python3 tools/load_test_api.py --scenario B --duration 90
-python3 tools/load_test_api.py --scenario C --vus 20 --duration 90
-DSPORT_MARSHAL_PASSWORD=.. python3 tools/load_test_api.py --scenario D --duration 120
-python3 tools/load_test_api.py --scenario E --sse 200 --duration 60
+python3 webapp/tools/load_test_api.py --scenario A --vus 100 --duration 90
+python3 webapp/tools/load_test_api.py --scenario B --duration 90
+python3 webapp/tools/load_test_api.py --scenario C --vus 20 --duration 90
+DSPORT_MARSHAL_PASSWORD=.. python3 webapp/tools/load_test_api.py --scenario D --duration 120
+python3 webapp/tools/load_test_api.py --scenario E --sse 200 --duration 60
 ```

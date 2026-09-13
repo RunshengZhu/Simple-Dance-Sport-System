@@ -1,0 +1,13 @@
+# 站点域名来自仓库根 .env 的 SITE_DOMAIN（docker-compose.yml 会注入给 caddy 容器）。
+# 首次启动后 Caddy 自动向 Let's Encrypt 申请并续期 HTTPS 证书，前提是 80/443 可达、域名解析已生效。
+{$SITE_DOMAIN} {
+	encode gzip
+	reverse_proxy app:8321 {
+		# 关键：禁用响应缓冲，SSE 事件逐条实时推送到浏览器，不在反代层积压
+		flush_interval -1
+	}
+	# 应用层上传上限为 200MB，这里放宽到 256MB 留出余量；出现上传 413 先查这里
+	request_body {
+		max_size 256MB
+	}
+}

@@ -26,6 +26,10 @@ if ROOT not in sys.path:
 DESKTOP = os.path.join(ROOT, "desktop")
 if DESKTOP not in sys.path:
     sys.path.insert(0, DESKTOP)
+# 服务版应用（webapp/server 以顶层包名 `server` 导入）
+WEBAPP = os.path.join(ROOT, "webapp")
+if WEBAPP not in sys.path:
+    sys.path.insert(0, WEBAPP)
 
 
 # ---------------------------------------------------------------- appdirs 垫片

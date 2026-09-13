@@ -58,3 +58,13 @@ python -m pytest          # 内核测试（core/ 为被测对象，desktop/src �
   同样从环境变量读取凭据。
 - `core/` 位于仓库根：webapp 的 `server` 包初始化时会自动把仓库根加入 `sys.path`，
   `run.py`、`python -m server.seed`、`uvicorn server.app:app` 三种启动方式均无需手动设置 PYTHONPATH。
+
+## 部署
+
+服务版支持两种部署方式：**A) 直接运行**——在 `webapp/` 目录下先执行 `python -m server.seed`（可选，写入演示种子赛事），再执行 `python run.py` 启动服务，生产口令通过 `DSPORT_ADMIN_PASSWORD` / `DSPORT_HOST_PASSWORD` / `DSPORT_MARSHAL_PASSWORD` 环境变量注入；**B) Docker Compose + Caddy 自动 HTTPS**——容器化部署模板与步骤见 [`docs/DEPLOY.md`](docs/DEPLOY.md)，注意服务需以单 worker 运行（SQLite WAL 与 SSE 的约束）。
+
+## 安全
+
+- 生产口令一律通过 `DSPORT_ADMIN_PASSWORD` / `DSPORT_HOST_PASSWORD` / `DSPORT_MARSHAL_PASSWORD` 环境变量注入，仓库与代码中不含有效凭据。
+- 安全漏洞请勿通过 GitHub issue 公开报告，报告渠道与已知安全设计见 [SECURITY.md](SECURITY.md)。
+- 支持版本：仅最新 `main` 分支。
