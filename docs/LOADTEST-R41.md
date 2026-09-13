@@ -9,7 +9,7 @@
 - 版本：R40 修复版（HEAD 4a5b0d1 之后）
 - 数据：压测数据集（见 §2），与日常数据共存；压测后清理压测赛事
 
-## 2. 压测数据集（tools/build_load_data.py，API 驱动写入测试服务器）
+## 2. 压测数据集（webapp/tools/build_load_data.py，API 驱动写入测试服务器）
 
 | 项 | 规模 | 说明 |
 |----|------|------|
@@ -19,7 +19,7 @@
 | 场次 | 6+ | 大评分场 S1（300 人分组 3×100，评分制）、顺位大场 W1（48 人分组 4×12）、Mark 场 L1（32 人）、快速场 F1（8 人决赛，评分制，供并发提交压测） |
 | 检录 | F1/W1/S1 全检录 | 开场状态 scoring |
 
-## 3. 场景矩阵（tools/load_test_api.py 后端 + tools/load_test_browser.py 浏览器）
+## 3. 场景矩阵（webapp/tools/load_test_api.py 后端 + webapp/tools/load_test_browser.py 浏览器行为模拟）
 
 ### 后端 API 场景（asyncio 并发 worker，梯度爬坡）
 
