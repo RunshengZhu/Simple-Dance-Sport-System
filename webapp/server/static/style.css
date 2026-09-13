@@ -564,3 +564,14 @@ html.theme-anim table, html.theme-anim th, html.theme-anim td, html.theme-anim .
 /* ---- R42：控制台花名册批量工具行 ---- */
 .roster-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 10px; }
 .roster-tools .btn { padding: 5px 12px; font-size: .85rem; }
+
+/* ================================================================
+   R43 P2 快赢交互：公开成绩页场次锚点快跳条
+   ================================================================ */
+.anchor-bar { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+.anchor-chip { padding:4px 10px; border:1px solid var(--line-strong); border-radius:999px; font-size:.82rem; color:var(--txt); }
+.anchor-chip:hover { border-color:var(--acc); color:var(--acc); text-decoration:none; }
+[id^="ev-"] { scroll-margin-top: 70px; }   /* 锚点落点避开 sticky header */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}

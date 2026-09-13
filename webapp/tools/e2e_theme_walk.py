@@ -128,8 +128,10 @@ async def run():
                     await page.goto(BASE + "/staff")
                     await page.wait_for_timeout(800)
                     ceid = "4"
-                    y0 = await page.evaluate(
-                        "document.querySelector('.st-event[data-ceid=\\'%s\\']').scrollIntoView({block:'center'}); window.scrollY" % ceid)
+                    await page.evaluate(
+                        "document.querySelector('.st-event[data-ceid=\\'%s\\']').scrollIntoView({block:'center'})" % ceid)
+                    await page.wait_for_timeout(600)   # R42 scroll-behavior:smooth 后等滚动完成
+                    y0 = await page.evaluate("window.scrollY")
                     pre = await page.evaluate(
                         "document.querySelector('.chip[data-ceid=\\'%s\\'][data-num=\\'144\\']').classList.contains('on')" % ceid)
                     await page.click(f".chip[data-ceid='{ceid}'][data-num='144']")

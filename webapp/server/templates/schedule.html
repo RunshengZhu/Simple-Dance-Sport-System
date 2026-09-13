@@ -183,11 +183,11 @@ async function saveEvent() {
 async function delEvent(code) {
   if (!confirm('删除场次 ' + code + '？')) return;
   var ceid = ceidOf(code);
-  if (!ceid) { alert('未找到场次'); return; }
+  if (!ceid) { toast('未找到场次', 'err'); return; }
   try {
     await api('DELETE', '/api/competition-events/' + ceid, {});
     softReload();
-  } catch (e) { alert(e.message); }
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ---- 状态筛选（F5） ---- */
@@ -258,7 +258,7 @@ document.getElementById('ro-save').addEventListener('click', function () {
 document.getElementById('ro-clear').addEventListener('click', function () {
   api('POST', '/api/events/' + window.CID + '/run-order', {order: []})
     .then(softReload)
-    .catch(function (e) { alert(e.message); });
+    .catch(function (e) { toast(e.message, 'err'); });
 });
 api('GET', '/api/events/' + window.CID + '/run-order').then(function (d) {
   var saved = d.order.filter(function (e) { return e.run_seq; }).sort(function (a, b) { return a.run_seq - b.run_seq; });

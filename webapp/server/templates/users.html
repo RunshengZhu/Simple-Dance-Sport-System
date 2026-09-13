@@ -64,7 +64,7 @@ function loadUsers() {
         '</td></tr>';
     });
     document.getElementById('user-rows').innerHTML = rows || '<tr><td colspan="6" class="muted">暂无账号</td></tr>';
-  }).catch(function (e) { alert(e.message); });
+  }).catch(function (e) { toast(e.message, 'err'); });
 }
 function createUser() {
   var body = {
@@ -85,10 +85,10 @@ function createUser() {
 function resetPw(id) {
   var pw = prompt('输入新口令（至少 6 位）');
   if (pw === null) return;
-  api('POST', '/api/users/' + id + '/password', {password: pw}).then(loadUsers).catch(function (e) { alert(e.message); });
+  api('POST', '/api/users/' + id + '/password', {password: pw}).then(loadUsers).catch(function (e) { toast(e.message, 'err'); });
 }
 function toggleUser(id, active) {
-  api('POST', '/api/users/' + id + '/active', {active: !!active}).then(loadUsers).catch(function (e) { alert(e.message); });
+  api('POST', '/api/users/' + id + '/active', {active: !!active}).then(loadUsers).catch(function (e) { toast(e.message, 'err'); });
 }
 loadUsers();
 {% endblock %}

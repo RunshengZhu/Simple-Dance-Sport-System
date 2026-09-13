@@ -276,12 +276,24 @@ async def console_page(request: Request, competition_id: int, ceid: int):
     all_competitors = db.rows(db.get_db().execute(
         "SELECT DISTINCT number, name, unit FROM competitors WHERE competition_id=? ORDER BY number", (competition_id,)))
     checked = set(checked_roster(ev["id"]))
+    # 同项目下一场（P2 快赢）：优先同项目仍在评分中的最近一场，其次任一未开场场次，供控制台一键跳转
+    _conn = db.get_db()
+    next_ev = db.rowdict(_conn.execute(
+        "SELECT id, code FROM events WHERE competition_id=? AND project_code=? AND id!=? AND status='scoring' "
+        "ORDER BY round, id LIMIT 1",
+        (competition_id, ev["project_code"], ceid)).fetchone())
+    if not next_ev:
+        next_ev = db.rowdict(_conn.execute(
+            "SELECT id, code FROM events WHERE competition_id=? AND project_code=? AND id!=? AND status='pending' "
+            "ORDER BY round, id LIMIT 1",
+            (competition_id, ev["project_code"], ceid)).fetchone())
     return templates.TemplateResponse(request, "console.html", {
         "comp": comp, "ev": ev,
         "dances": dances_of(ev["id"]), "roster": roster(ev["id"]),
         "all_competitors": all_competitors, "checked": checked,
         "checked_n": len(checked), "total": len(roster(ev["id"])),
         "judges": judges_of(competition_id), "result": load_results(ev["id"]),
+        "next_ev": next_ev,
     })
 
 
@@ -664,6 +676,36 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
     conn.commit()
     sse.bus.publish(competition_id, "schedule_changed")
     return {"ok": True, "imported": count, "problems": problems}
+
+
+_CSV_TEMPLATES = {
+    # 表头与 api_import 解析列一致（FR 导入列名），各带 2 行示例
+    "competitors": [["背番号", "项目编号", "姓名", "学校/单位"],
+                    ["101", "S-CHA", "张三", "北京舞蹈学院"],
+                    ["102", "S-CHA", "李四", "上海体育大学"]],
+    "judges": [["裁判ID", "姓名"],
+               ["J1", "王裁判"],
+               ["J2", "李裁判"]],
+    "schedule": [["场次编号", "场次名称", "项目编号", "轮次", "舞种", "评分类型", "晋级人数", "参赛选手"],
+                 ["S-CHA-R1", "恰恰初赛", "S-CHA", "1", "恰恰", "SKATING", "12", "101,102,103"],
+                 ["S-CHA-R2", "恰恰决赛", "S-CHA", "2", "恰恰", "SKATING", "0", "101,102"]],
+}
+
+
+@app.get("/api/templates/{kind}")
+async def api_template(kind: str):
+    """CSV 导入模板下载（P2 快赢）：competitors/judges/schedule，
+    表头与 api_import 解析列一致，含 2 行示例，Content-Disposition 触发下载。"""
+    rows = _CSV_TEMPLATES.get(kind)
+    if not rows:
+        raise HTTPException(status_code=404, detail="未知模板类型")
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    for r in rows:
+        w.writerow(r)
+    return PlainTextResponse(
+        buf.getvalue(), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="template-{0}.csv"'.format(kind)})
 
 
 def _require_active_event(ceid):

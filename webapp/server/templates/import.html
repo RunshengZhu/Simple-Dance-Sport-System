@@ -14,6 +14,7 @@
   <div class="row">
     <input type="file" id="f-{{ kind }}" accept=".csv">
     <button class="btn" onclick="doImport('{{ kind }}')">上传导入</button>
+    <a class="btn secondary" href="/api/templates/{{ kind }}" target="_blank">下载模板</a>
     <span id="msg-{{ kind }}" class="muted"></span>
   </div>
   <div id="rep-{{ kind }}"></div>

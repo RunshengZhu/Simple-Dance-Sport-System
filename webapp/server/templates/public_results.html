@@ -11,6 +11,9 @@
   </div>
   <div id="lookup-result" class="muted">输入背番号查询选手公示信息（姓名/单位）与已发布成绩。</div>
 </div>
+{% if payload %}
+<div class="anchor-bar">{% for p in payload %}<a href="#ev-{{ p.ev.code }}" class="anchor-chip">{{ p.ev.code }}</a>{% endfor %}</div>
+{% endif %}
 {% if standings and standings.standings %}
 <div class="card">
   <h2>团体总分榜（单位）</h2>
@@ -23,7 +26,7 @@
 </div>
 {% endif %}
 {% for p in payload %}
-<div class="card">
+<div class="card" id="ev-{{ p.ev.code }}">
   <h2>{{ p.ev.name }}（{{ p.ev.project_code }} 第{{ p.ev.round }}轮）</h2>
   {% with rows = p.results["overall_results"], names = p.names %}{% include "_announce_table.html" %}{% endwith %}
 </div>

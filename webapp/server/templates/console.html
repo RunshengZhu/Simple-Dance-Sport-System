@@ -41,6 +41,7 @@
 <p class="lifecycle-bar">
   <button class="btn secondary" onclick="closeEvent()">关闭评分</button>
   <button class="btn danger" onclick="returnScores()">退回评分（FR-G5）</button>
+  {% if next_ev %}<a class="btn secondary" href="/events/{{ comp.id }}/console/{{ next_ev.id }}">下一场 → {{ next_ev.code }}</a>{% endif %}
 </p>
 {% endif %}
 
@@ -80,19 +81,19 @@ function selectedRoster() {
 }
 async function openEvent(reset) {
   var roster = selectedRoster();
-  if (!roster.length) { alert('请至少勾选一名上场选手'); return; }
+  if (!roster.length) { toast('请至少勾选一名上场选手', 'err'); return; }
   if (reset && !confirm('重开将清空本场次全部评分与结果，确认？')) return;
   try {
     var r = await api('POST', '/api/competition-events/' + CEID + '/open', {roster: roster, reset: reset});
-    if (r.reset_scores) alert('已清空本场次已有评分数据');
+    if (r.reset_scores) toast('已清空本场次已有评分数据', 'ok');
     softReload();
-  } catch (e) { alert(e.message); }
+  } catch (e) { toast(e.message, 'err'); }
 }
 async function closeEvent() { await api('POST', '/api/competition-events/' + CEID + '/close'); softReload(); }
 async function returnScores() {
   if (!confirm('退回将清空本场全部评分与结果，裁判需重新提交，确认？')) return;
   try { await api('POST', '/api/competition-events/' + CEID + '/return-scores', {}); softReload(); }
-  catch (e) { alert(e.message); }
+  catch (e) { toast(e.message, 'err'); }
 }
 async function calc() {
   try { await api('POST', '/api/competition-events/' + CEID + '/calculate'); softReload(); }
