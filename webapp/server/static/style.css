@@ -575,3 +575,7 @@ html.theme-anim table, html.theme-anim th, html.theme-anim td, html.theme-anim .
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
 }
+
+/* ---- R46：提交栏长消息不挤压按钮 ---- */
+.judge-sheet .submit-bar .btn { white-space: nowrap; }
+.judge-sheet .submit-bar #msg, .judge-sheet .submit-bar #progress { min-width: 0; }
