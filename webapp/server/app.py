@@ -2094,8 +2094,9 @@ async def files_download(name: str, filename: str, request: Request):
     resp = FileResponse(fpath, media_type=row["content_type"], filename=filename)
     resp.headers["ETag"] = '"' + row["sha256"] + '"'
     resp.headers["Cache-Control"] = "public, max-age=300"
-    db.get_db().execute("UPDATE file_objects SET downloads=downloads+1 WHERE id=?", (row["id"],))
-    db.get_db().commit()
+    if request.method == "GET":   # HEAD（探活/链接预览）不计入下载
+        db.get_db().execute("UPDATE file_objects SET downloads=downloads+1 WHERE id=?", (row["id"],))
+        db.get_db().commit()
     return resp
 
 
