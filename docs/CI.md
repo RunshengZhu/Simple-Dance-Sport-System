@@ -6,7 +6,7 @@
 
 | Job | 内容 |
 | --- | --- |
-| **test** | 按 `requirements.txt` 锁定组合安装依赖(fastapi / starlette / uvicorn / jinja2 / httpx / pytest),然后全量跑 `python -m pytest -q`(当前 107 项)。 |
+| **test** | 按 `requirements.txt` 锁定组合安装依赖(fastapi / starlette / uvicorn / jinja2 / httpx / pytest),然后全量跑 `python -m pytest -q`(当前 130 项)。 |
 | **lint** | `python -m compileall webapp/server core`,秒级语法层检查,不做风格 lint。 |
 
 触发时机:push 到 `main` 或 `feat/*` 分支,以及所有 pull request。

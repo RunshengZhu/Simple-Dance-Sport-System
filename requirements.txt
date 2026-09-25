@@ -1,5 +1,5 @@
 # dancesport — Python 依赖锁定（版本为本机实测，勿凭记忆改动）
-# 锁定组合验证于 2026-09-26：干净 venv 按 requirements.txt+pytest 安装 → 131 passed（含 numpy）
+# 锁定组合验证于 2026-09-26：干净 venv 按 requirements.txt+pytest 安装 → 130 passed（131−删除的遗留诊断脚本；含 numpy）
 #
 # 已知兼容性约束：starlette 内置 TestClient 与 httpx>=0.28 不兼容。
 # 本仓库测试已改用 httpx ASGITransport 直连 ASGI app、不依赖 TestClient，
