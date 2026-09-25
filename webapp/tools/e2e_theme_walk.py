@@ -127,18 +127,33 @@ async def run():
                     }""")
                     await page.goto(BASE + "/staff")
                     await page.wait_for_timeout(800)
-                    ceid = "4"
-                    await page.evaluate(
-                        "document.querySelector('.st-event[data-ceid=\\'%s\\']').scrollIntoView({block:'center'})" % ceid)
-                    await page.wait_for_timeout(600)   # R42 scroll-behavior:smooth 后等滚动完成
-                    y0 = await page.evaluate("window.scrollY")
-                    pre = await page.evaluate(
-                        "document.querySelector('.chip[data-ceid=\\'%s\\'][data-num=\\'144\\']').classList.contains('on')" % ceid)
-                    await page.click(f".chip[data-ceid='{ceid}'][data-num='144']")
-                    await page.wait_for_timeout(700)
-                    st2 = await page.evaluate("""(ceid) => ({
-                      y: window.scrollY,
-                      on: document.querySelector('.chip[data-ceid="'+ceid+'"][data-num="144"]').classList.contains('on') })""", ceid)
+                    # R47：动态挑一个「评分中」场次的目标芯片（优先未检录 off，退而 on）
+                    ceid, num = await page.evaluate("""() => {
+                      for (const c of document.querySelectorAll('.st-event')) {
+                        if (c.dataset.status !== 'scoring') continue;
+                        const chip = c.querySelector('.chip.off') || c.querySelector('.chip.on');
+                        if (chip) return [c.dataset.ceid, chip.dataset.num];
+                      }
+                      return [null, null];
+                    }""")
+                    if not ceid:
+                        record(f"{vp_name}/dark/staff-click-stable（跳过：无评分中芯片）", True, "no chip")
+                    else:
+                        await page.evaluate(
+                            f"document.querySelector('.st-event[data-ceid=\'{ceid}\']').scrollIntoView({{block:'center', behavior:'instant'}})")
+                        await page.wait_for_timeout(600)   # R42 scroll-behavior:smooth 后等滚动完成
+                        y0 = await page.evaluate("window.scrollY")
+                        pre = await page.evaluate(
+                            f"document.querySelector('.chip[data-ceid=\'{ceid}\'][data-num=\'{num}\']').classList.contains('on')")
+                        await page.evaluate(
+                            f"document.querySelector('.chip[data-ceid=\'{ceid}\'][data-num=\'{num}\']').click()")
+                        await page.wait_for_timeout(700)
+                        st2 = await page.evaluate("""([ceid, num]) => ({
+                          y: window.scrollY,
+                          on: document.querySelector('.chip[data-ceid="'+ceid+'"][data-num="'+num+'"]').classList.contains('on') })""", [ceid, num])
+                        record(f"{vp_name}/dark/staff-click-stable",
+                               abs(st2["y"] - y0) < 2 and st2["on"] != pre,
+                               json.dumps(st2) + f" y0={y0} pre={pre}")
                     record(f"{vp_name}/dark/staff-click-stable",
                            abs(st2["y"] - y0) < 2 and st2["on"] != pre,
                            json.dumps(st2) + f" y0={y0} pre={pre}")
