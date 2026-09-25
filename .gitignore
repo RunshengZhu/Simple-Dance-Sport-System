@@ -182,11 +182,8 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# Test files
-test_*.py
-!test_placement_scoring_fix.py
-!test_round_name_calculation.py
-!test_actual_import.py
+# Test files（tests/ 目录内的测试全部纳入版本控制；此规则仅防仓库根散落临时测试脚本）
+/test_*.py
 
 # Temporary files
 *.tmp

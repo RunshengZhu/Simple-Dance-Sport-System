@@ -1,0 +1,26 @@
+# dancesport — Python 依赖锁定（版本为本机实测，勿凭记忆改动）
+# 锁定组合验证于 2026-09-26：干净 venv 按 requirements.txt+pytest 安装 → 131 passed（含 numpy）
+#
+# 已知兼容性约束：starlette 内置 TestClient 与 httpx>=0.28 不兼容。
+# 本仓库测试已改用 httpx ASGITransport 直连 ASGI app、不依赖 TestClient，
+# 因此锁定下述当前可用组合即可。升级其中任一包前，先全量跑测试确认。
+
+# ---- 运行时（webapp 服务必需）----
+fastapi==0.109.0
+starlette==0.35.1
+uvicorn==0.27.0
+jinja2==3.1.6
+
+# ---- 测试（CI/开发）----
+httpx==0.28.1
+pytest==8.4.2
+# desktop/src 对照基准（tests/conftest.py 以顶层包名 src 导入）顶层 import numpy，
+# 必须显式安装（R47 复审 P1：干净环境缺 numpy 导致 3 个收集错误）
+numpy==2.0.2
+
+# playwright 仅 E2E 手动跑，不进 CI 必装层（见 .github/workflows/ci.yml 注释）
+#
+# desktop 桌面版依赖（pandas / openpyxl / xlsxwriter / Pillow / reportlab /
+# matplotlib / appdirs）不在本文件锁定，见 desktop/requirements.txt 与
+# desktop/README.md。tests/conftest.py 已为 pandas/appdirs/reportlab 提供
+# 垫片，core 对照测试在未安装这些包的环境下可直接通过（CI 即此场景）。

@@ -1,0 +1,56 @@
+# dancesport CI
+#
+# test job:
+#   - actions/checkout 默认拉取全仓库，core 测试引用的 desktop/src 对照源码
+#     （以顶层包名 src 导入）随之就位，无需额外步骤。
+#   - 测试无需浏览器、无需外部网络：webapp 测试经 httpx ASGITransport 直连
+#     ASGI app；desktop 版重依赖 pandas/appdirs/reportlab 故意不安装，
+#     tests/conftest.py 对三者均有垫片，已在无 pandas 环境实测通过
+#     （垫片仅在真实包缺失时生效，风险极低，故不 pip install pandas 兜底）。
+#   - playwright 仅 E2E 手动跑，不进本流水线必装层。
+#
+# lint job（可选层）:
+#   - python -m compileall 对 webapp/server 与 core 做快速语法层检查，
+#     秒级完成，能挡住低级语法错误；不做风格类 lint。
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/*'
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Syntax check (compileall)
+        run: python -m compileall webapp/server core
