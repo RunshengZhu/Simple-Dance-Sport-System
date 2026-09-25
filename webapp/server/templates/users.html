@@ -4,6 +4,17 @@
 {% block content %}
 <h1>用户与角色管理 <span class="muted">账号由管理员分发，无自注册</span></h1>
 
+<details class="card" id="audit-box">
+  <summary><strong>审计日志</strong> <span class="muted">敏感操作留痕（退回评分 / 撤销检录 / 口令 / 停启用 / 删除类）</span></summary>
+  <p><button class="btn secondary" onclick="loadAudit()">刷新</button> <span class="muted" id="audit-meta"></span></p>
+  <div class="table-fit">
+    <table>
+      <tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr>
+      <tbody id="audit-rows"></tbody>
+    </table>
+  </div>
+</details>
+
 <div class="card table-fit">
   <h2>角色说明</h2>
   <table>
@@ -90,5 +101,24 @@ function resetPw(id) {
 function toggleUser(id, active) {
   api('POST', '/api/users/' + id + '/active', {active: !!active}).then(loadUsers).catch(function (e) { toast(e.message, 'err'); });
 }
+var AUDIT_LABELS = {
+  return_scores: '退回评分', uncheckin: '撤销检录', user_password: '重置口令',
+  user_active: '停用/启用', event_delete: '删除赛事', ce_delete: '删除场次',
+  tier_delete: '删除分层', file_delete: '删除文件'
+};
+function loadAudit() {
+  api('GET', '/api/audit?limit=200').then(function (d) {
+    var rows = '';
+    (d.items || []).forEach(function (a) {
+      rows += '<tr><td class="muted">' + esc(a.created_at) + '</td><td>' + esc(a.actor) + '</td>' +
+        '<td>' + (AUDIT_LABELS[a.action] || esc(a.action)) + '</td>' +
+        '<td class="muted">' + esc(a.target) + '</td><td>' + esc(a.detail) + '</td></tr>';
+    });
+    document.getElementById('audit-rows').innerHTML =
+      rows || '<tr><td colspan="5" class="muted">暂无记录</td></tr>';
+    document.getElementById('audit-meta').textContent = '共 ' + (d.items || []).length + ' 条（最新在前）';
+  }).catch(function (e) { toast(e.message, 'err'); });
+}
 loadUsers();
+loadAudit();
 {% endblock %}

@@ -242,6 +242,7 @@ async function submitSheet() {
     var r = await api('PUT', '/api/judge/competition-events/' + CEID + '/dances/' + encodeURIComponent(DANCE) + '/sheet', {values: collect()});
     el.className = 'ok';
     el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判');
+    try { sessionStorage.removeItem('sheet:' + CEID + ':' + encodeURIComponent(DANCE)); } catch (err) {}
   } catch (e) { el.className = 'err'; el.textContent = e.message; }
 }
 
@@ -279,4 +280,82 @@ connectSSE('/api/events/' + CID + '/stream', {
   score_returned: softReload,
   checkin_changed: refreshOffState
 }, refreshOffState, 6000);
+
+/* ---- R46b 打分本地暂存：输入即存 sessionStorage，重开/误关页后自动恢复；提交成功清除 ---- */
+(function () {
+  var KEY = 'sheet:' + CEID + ':' + encodeURIComponent(DANCE);
+  function allRows() {
+    return document.querySelectorAll('.rank-row, .mark-row, .score-row');
+  }
+  function snapshot() {
+    var vals = {};
+    allRows().forEach(function (row) {
+      var el = row.querySelector('input.val');
+      if (!el) return;
+      var num = el.dataset.num || (el.closest('[data-num]') && el.closest('[data-num]').dataset.num);
+      if (!num) return;
+      if (el.type === 'checkbox') { vals[num] = el.checked; }
+      else if (el.value !== '') { vals[num] = el.value; }
+    });
+    return vals;
+  }
+  function hasAnswer(vals) {
+    return Object.keys(vals).some(function (k) {
+      var v = vals[k];
+      return v !== '' && v !== false && v !== null && v !== undefined;
+    });
+  }
+  function save() {
+    var vals = snapshot();
+    if (!hasAnswer(vals)) { try { sessionStorage.removeItem(KEY); } catch (e) {} return; }
+    try { sessionStorage.setItem(KEY, JSON.stringify({ values: vals, ts: Date.now() })); } catch (e) {}
+  }
+  function apply(vals) {
+    allRows().forEach(function (row) {
+      var el = row.querySelector('input.val');
+      if (!el) return;
+      var num = el.dataset.num;
+      if (!(num in vals)) return;
+      var v = vals[num];
+      if (el.type === 'checkbox') { el.checked = !!v; }
+      else { el.value = v; }
+    });
+    if (SKATING && typeof renderSkating === 'function') renderSkating();
+    else if (SCORE && typeof renderScore === 'function') renderScore();
+    else if (typeof renderMark === 'function') renderMark();
+  }
+  function restore() {
+    try {
+      var raw = sessionStorage.getItem(KEY);
+      if (!raw) return false;
+      var d = JSON.parse(raw);
+      if (!d.values || Date.now() - d.ts > 24 * 3600 * 1000) { sessionStorage.removeItem(KEY); return false; }
+      apply(d.values);
+      return true;
+    } catch (e) { return false; }
+  }
+  // 恢复（初始化渲染完成后执行一次）
+  var restored = restore();
+  if (restored) {
+    var m = document.getElementById('msg');
+    if (m && !m.textContent) { m.className = 'muted'; m.textContent = '已恢复上次未提交的作答（本机暂存）'; }
+  }
+  // 交互后保存（点击/输入，去抖 300ms）
+  var saveTimer = null;
+  document.addEventListener('click', function () {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 300);
+  });
+  document.addEventListener('input', function () {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 300);
+  });
+  // 提交成功清除（挂接 submitSheet 的成功写点：观察 msg 变 ok）
+  var msgEl = document.getElementById('msg');
+  if (msgEl) {
+    new MutationObserver(function () {
+      if (msgEl.className === 'ok') { try { sessionStorage.removeItem(KEY); } catch (e) {} }
+    }).observe(msgEl, { attributes: true, attributeFilter: ['class'], childList: true, characterData: true });
+  }
+})();
 {% endblock %}

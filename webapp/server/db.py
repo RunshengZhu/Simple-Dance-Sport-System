@@ -160,6 +160,18 @@ CREATE TABLE IF NOT EXISTS file_objects (
     UNIQUE(tier_id, filename)
 );
 """)
+    if "audit_log" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor TEXT NOT NULL,            -- 操作人（display_name/username/角色）
+    action TEXT NOT NULL,           -- 动作标识，如 'return_scores'/'uncheckin'/'user_password'/'user_active'/'event_delete'/'ce_delete'/'tier_delete'/'file_delete'
+    target TEXT DEFAULT '',         -- 对象描述（如 'event:3'/'user:2'/'tier:release/file:x.txt'）
+    detail TEXT DEFAULT '',         -- 关键细节（如 撤销的背号列表、新状态）
+    ip TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+""")
     if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
         conn.executescript("""
 CREATE TABLE IF NOT EXISTS users (

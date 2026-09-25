@@ -412,7 +412,7 @@ async def api_users_create(request: Request = None):
 
 @app.post("/api/users/{user_id}/password")
 async def api_users_password(user_id: int, request: Request = None):
-    require_admin(request)
+    s = require_admin(request)
     try:
         body = await request.json()
     except Exception:
@@ -427,12 +427,17 @@ async def api_users_password(user_id: int, request: Request = None):
     conn.commit()
     if not cur.rowcount:
         raise HTTPException(status_code=404, detail="账号不存在")
+    urow = conn.execute("SELECT username, display_name FROM users WHERE id=?", (user_id,)).fetchone()
+    _audit(_actor_name(s), "user_password", f"user:{user_id}",
+           "重置 {0}（{1}）口令".format((urow["display_name"] or urow["username"]) if urow else "?",
+                                       urow["username"] if urow else "?"),
+           _client_ip(request))
     return {"ok": True}
 
 
 @app.post("/api/users/{user_id}/active")
 async def api_users_active(user_id: int, request: Request = None):
-    require_admin(request)
+    s = require_admin(request)
     try:
         body = await request.json()
     except Exception:
@@ -446,7 +451,23 @@ async def api_users_active(user_id: int, request: Request = None):
     if not state:
         conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))   # 停用即踢下线
     conn.commit()
+    urow = conn.execute("SELECT username, display_name FROM users WHERE id=?", (user_id,)).fetchone()
+    _audit(_actor_name(s), "user_active", f"user:{user_id}",
+           "{0} → {1}".format((urow["display_name"] or urow["username"]) if urow else "?",
+                              "启用" if state else "停用"),
+           _client_ip(request))
     return {"ok": True, "active": bool(state)}
+
+
+@app.get("/api/audit")
+async def api_audit(request: Request = None, limit: int = 200):
+    """敏感操作审计查询（管理员）：最新 limit 条，倒序。"""
+    require_admin(request)
+    limit = max(1, min(int(limit), 500))
+    rows = db.rows(db.get_db().execute(
+        "SELECT id, actor, action, target, detail, ip, created_at FROM audit_log ORDER BY id DESC LIMIT ?",
+        (limit,)))
+    return {"items": rows}
 
 
 @app.get("/manual", response_class=HTMLResponse)
@@ -564,7 +585,9 @@ async def api_activate(competition_id: int, request: Request = None):
 
 @app.delete("/api/events/{competition_id}")
 async def api_delete_event(competition_id: int, request: Request = None):
-    require_admin(request)
+    s = require_admin(request)
+    comp = db.rowdict(db.get_db().execute(
+        "SELECT name FROM competitions WHERE id=?", (competition_id,)).fetchone())
     conn = db.get_db()
     for ev in db.rows(conn.execute("SELECT id FROM events WHERE competition_id=?", (competition_id,))):
         conn.execute("DELETE FROM score_records WHERE event_id=?", (ev["id"],))
@@ -575,6 +598,8 @@ async def api_delete_event(competition_id: int, request: Request = None):
         conn.execute("DELETE FROM {0} WHERE competition_id=?".format(t), (competition_id,))
     conn.execute("DELETE FROM competitions WHERE id=?", (competition_id,))
     conn.commit()
+    _audit(_actor_name(s), "event_delete", f"event:{competition_id}",
+           comp["name"] if comp else "", _client_ip(request))
     return {"ok": True}
 
 
@@ -874,7 +899,7 @@ async def api_event_edit(ceid: int, request: Request = None):
 @app.delete("/api/competition-events/{ceid}")
 async def api_event_delete(ceid: int, request: Request = None):
     """删除场次（仅 pending）。"""
-    require_admin(request)
+    s = require_admin(request)
     ev = _event_or_404(ceid)
     if ev["status"] != "pending":
         raise HTTPException(status_code=400, detail="仅未开场的场次可删除（先退回或关闭后清理）")
@@ -884,6 +909,8 @@ async def api_event_delete(ceid: int, request: Request = None):
     conn.execute("DELETE FROM event_competitors WHERE event_id=?", (ceid,))
     conn.execute("DELETE FROM events WHERE id=?", (ceid,))
     conn.commit()
+    _audit(_actor_name(s), "ce_delete", f"event:{ceid}",
+           f"{ev['code']} {ev['name']}", _client_ip(request))
     sse.bus.publish(comp_id, "schedule_changed", {"deleted": ev["code"]})
     return {"ok": True}
 
@@ -908,15 +935,18 @@ async def api_event_settings(competition_id: int, request: Request = None):
 @app.post("/api/competition-events/{ceid}/return-scores")
 async def api_return_scores(ceid: int, request: Request = None):
     """FR-G5 评分退回：清空本场评分与结果，状态回到评分中，裁判重新提交。"""
-    require_admin(request)
+    s = require_admin(request)
     ev, comp = _require_active_event(ceid)
     if ev["status"] not in ("scoring", "calculated", "published"):
         raise HTTPException(status_code=400, detail="当前状态不可退回")
     conn = db.get_db()
+    cleared = conn.execute("SELECT COUNT(*) c FROM score_records WHERE event_id=?", (ceid,)).fetchone()["c"]
     conn.execute("DELETE FROM score_records WHERE event_id=?", (ceid,))
     conn.execute("DELETE FROM results WHERE event_id=?", (ceid,))
     conn.execute("UPDATE events SET status='scoring', published=0 WHERE id=?", (ceid,))
     conn.commit()
+    _audit(_actor_name(s), "return_scores", f"event:{ceid}",
+           f"{ev['code']} {ev['name']}：清空评分 {cleared} 条，状态回到评分中", _client_ip(request))
     sse.bus.publish(comp["id"], "score_returned", {"event_id": ceid})
     return {"ok": True, "event_id": ceid}
 
@@ -1194,6 +1224,10 @@ async def api_checkin(ceid: int, request: Request = None):
                 "DELETE FROM score_records WHERE event_id=? AND competitor_number=?",
                 (ceid, num))
     conn.commit()
+    if not state:
+        # 撤销检录属敏感操作（连带作废该选手评分），逐次留痕；检录（state=true）量大不记
+        _audit(who, "uncheckin", f"event:{ceid}",
+               f"{ev['code']} 撤销检录：{','.join(numbers)}", _client_ip(request))
     sse.bus.publish(comp["id"], "checkin_changed",
                     {"event_id": ceid, "count": len(numbers), "state": bool(state)})
     return {"ok": True, "updated": len(numbers),
@@ -1808,6 +1842,28 @@ def _verify_pw(pw: str, stored: str) -> bool:
         return False
 
 
+def _actor_name(s):
+    """审计操作人：账号制会话取显示名/用户名，其余回落到角色（admin 无账号表）。"""
+    if not s:
+        return "?"
+    return s.get("display_name") or s.get("username") or s.get("role") or "?"
+
+
+def _client_ip(request: Request):
+    return request.client.host if request.client else "?"
+
+
+def _audit(actor, action, target="", detail="", ip=""):
+    """敏感操作留痕（R47）。审计失败不阻塞业务操作。"""
+    try:
+        db.get_db().execute(
+            "INSERT INTO audit_log(actor, action, target, detail, ip) VALUES(?,?,?,?,?)",
+            (str(actor)[:80], str(action)[:40], str(target)[:120], str(detail)[:300], str(ip)[:64]))
+        db.get_db().commit()
+    except Exception:
+        pass
+
+
 def _seed_default_accounts():
     """首次启动播种：host/marshal 角色至少各有一个默认账号（口令取环境变量），
     使旧部署在切换到账号制后仍可登录。管理员保持环境变量超管口令，不入表。"""
@@ -1938,15 +1994,19 @@ async def files_tier_reset_token(name: str, request: Request):
 @app.delete("/api/files/tiers/{name}")
 async def files_tier_delete(name: str, request: Request):
     """删除分层及其全部文件（不可恢复）。"""
-    require_admin(request)
+    s = require_admin(request)
     tier = _tier_by_name(name)
     if not tier:
         raise HTTPException(status_code=404, detail="层不存在")
+    n_files = db.get_db().execute("SELECT COUNT(*) c FROM file_objects WHERE tier_id=?",
+                                  (tier["id"],)).fetchone()["c"]
     shutil.rmtree(os.path.join(FILES_ROOT, name), ignore_errors=True)
     conn = db.get_db()
     conn.execute("DELETE FROM file_objects WHERE tier_id=?", (tier["id"],))
     conn.execute("DELETE FROM file_tiers WHERE id=?", (tier["id"],))
     conn.commit()
+    _audit(_actor_name(s), "tier_delete", f"tier:{name}",
+           f"perm={tier['perm']}，删除文件 {n_files} 个", _client_ip(request))
     return {"ok": True}
 
 
@@ -2021,6 +2081,9 @@ async def files_delete(name: str, filename: str, request: Request):
         pass
     db.get_db().execute("DELETE FROM file_objects WHERE tier_id=? AND filename=?", (tier["id"], filename))
     db.get_db().commit()
+    # 删除者可能是层 Bearer 凭证（非账号会话），actor 回落为 token:<层名>
+    _audit(_actor_name(_session(request)), "file_delete", f"tier:{name}/file:{filename}",
+           "", _client_ip(request))
     return {"ok": True}
 
 

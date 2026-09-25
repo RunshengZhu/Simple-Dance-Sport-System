@@ -19,6 +19,7 @@
     <button class="sf-btn" data-f="done">已完成</button>
   </div>
   <input id="staff-search" placeholder="按场次编号/名称过滤，回车定位首个匹配" style="margin-top:8px">
+  <button class="btn secondary" id="scene-index-btn" aria-expanded="false" aria-haspopup="dialog" style="margin-top:8px">场次索引</button>
 </div>
 
 <h2>待赛 / 评分中场次 · 检录</h2>
@@ -245,4 +246,92 @@ if (CID) connectSSE('/api/events/' + CID + '/stream', {
   competition_event_opened: softReload,
   results_published: softReload
 }, refreshAllOpen, 8000);
+
+/* ---------- R45 场次索引抽屉：大场次分区导航（数据取自已渲染 DOM，无新增 API） ---------- */
+(function () {
+  var btn = document.getElementById('scene-index-btn');
+  if (!btn) return;
+  var drawer = null;
+
+  function collectCards() {
+    var need = [], done = [];
+    document.querySelectorAll('.st-event').forEach(function (card) {
+      var st = card.dataset.status;
+      (st === 'calculated' || st === 'published' ? done : need).push(card);
+    });
+    return { need: need, done: done };
+  }
+
+  function flashCard(card) {
+    /* behavior:'instant'：全局 scroll-behavior:smooth 会与长距离滚动动画叠加导致定位等待 */
+    card.scrollIntoView({ block: 'start', behavior: 'instant' });
+    card.classList.remove('flash');
+    void card.offsetWidth; /* 重启动画 */
+    card.classList.add('flash');
+    setTimeout(function () { card.classList.remove('flash'); }, 1700);
+  }
+
+  function buildGroup(title, list) {
+    var g = document.createElement('div'); g.className = 'si-group';
+    var t = document.createElement('div'); t.className = 'si-group-title';
+    t.textContent = title;
+    var n = document.createElement('span'); n.className = 'si-count'; n.textContent = list.length + ' 场';
+    t.appendChild(n); g.appendChild(t);
+    if (!list.length) {
+      var p = document.createElement('p'); p.className = 'si-empty'; p.textContent = '无';
+      g.appendChild(p);
+      return g;
+    }
+    var box = document.createElement('div'); box.className = 'si-chips';
+    list.forEach(function (card) {
+      var c = document.createElement('button');
+      c.type = 'button'; c.className = 'sf-btn si-chip';
+      c.textContent = card.dataset.code || card.dataset.ceid;
+      c.addEventListener('click', function () { close(); flashCard(card); });
+      box.appendChild(c);
+    });
+    g.appendChild(box);
+    return g;
+  }
+
+  function onDocClick(e) {
+    if (!drawer.contains(e.target) && e.target !== btn && !btn.contains(e.target)) close();
+  }
+  function onKey(e) { if (e.key === 'Escape') close(); }
+
+  function open() {
+    if (drawer) return;
+    var cs = collectCards();
+    drawer = document.createElement('div');
+    drawer.id = 'scene-index-drawer';
+    drawer.className = 'scene-index-drawer';
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-label', '场次索引');
+    var head = document.createElement('div'); head.className = 'si-head';
+    var title = document.createElement('strong'); title.textContent = '场次索引';
+    var x = document.createElement('button');
+    x.type = 'button'; x.className = 'si-close';
+    x.setAttribute('aria-label', '关闭场次索引'); x.textContent = '✕';
+    x.addEventListener('click', close);
+    head.appendChild(title); head.appendChild(x);
+    var body = document.createElement('div'); body.className = 'si-body';
+    body.appendChild(buildGroup('待检录', cs.need));
+    body.appendChild(buildGroup('已完成', cs.done));
+    drawer.appendChild(head); drawer.appendChild(body);
+    document.body.appendChild(drawer);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('click', onDocClick);
+    btn.setAttribute('aria-expanded', 'true');
+  }
+  function close() {
+    if (!drawer) return;
+    var d = drawer; drawer = null;
+    d.remove();
+    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('click', onDocClick);
+    btn.setAttribute('aria-expanded', 'false');
+  }
+  btn.addEventListener('click', function () { drawer ? close() : open(); });
+  if (!document.querySelectorAll('.st-event').length) btn.disabled = true;
+})();
 {% endblock %}
