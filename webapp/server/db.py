@@ -172,6 +172,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 """)
+    se_cols2 = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
+    if "comp_id" not in se_cols2:
+        conn.execute("ALTER TABLE sessions ADD COLUMN comp_id INTEGER")
+
     if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
         conn.executescript("""
 CREATE TABLE IF NOT EXISTS users (

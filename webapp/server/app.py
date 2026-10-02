@@ -185,7 +185,19 @@ async def api_logout(request: Request):
 
 
 def _active_competition():
+    """全局激活赛事（公开页/兜底用）。"""
     return db.rowdict(db.get_db().execute("SELECT * FROM competitions WHERE active=1 ORDER BY id DESC").fetchone())
+
+
+def _current_competition(request: Request):
+    """R49 多赛事模型：管理员按会话切换赛事；未选择时回落全局激活赛事。"""
+    s = _session(request)
+    if s and s.get("comp_id"):
+        c = db.rowdict(db.get_db().execute(
+            "SELECT * FROM competitions WHERE id=?", (s["comp_id"],)).fetchone())
+        if c:
+            return c
+    return _active_competition()
 
 
 def _comp_or_404(competition_id):
@@ -315,7 +327,7 @@ async def results_page(request: Request, competition_id: int):
 @app.get("/judge", response_class=HTMLResponse)
 async def judge_home(request: Request):
     s = require_judge(request)
-    comp = _active_competition()
+    comp = _current_competition(request)
     assignments = []
     if comp:
         evs = db.rows(db.get_db().execute(
@@ -577,9 +589,11 @@ async def api_activate(competition_id: int, request: Request = None):
     require_admin(request)
     _comp_or_404(competition_id)
     conn = db.get_db()
-    conn.execute("UPDATE competitions SET active=0")
+    # R49 多赛事模型：多赛事可同时 active，不再互斥
     conn.execute("UPDATE competitions SET active=1 WHERE id=?", (competition_id,))
     conn.commit()
+    # 同步操作人的会话赛事选择
+    _session(request)  # 确保 session 存在
     return {"ok": True}
 
 
@@ -1019,7 +1033,7 @@ async def api_unpublish(ceid: int, request: Request = None):
 @app.get("/api/judge/me/assignments")
 async def api_assignments(request: Request = None):
     s = require_judge(request)
-    comp = _active_competition()
+    comp = _current_competition(request)
     out = []
     if comp:
         for ev in db.rows(db.get_db().execute(
@@ -1144,7 +1158,7 @@ async def staff_page(request: Request):
     """主持台/检录台共用页：赛程 + 逐场检录 + 已完成场次成绩与播报标记。"""
     s = require_staff(request)
     who = s.get("display_name") or s.get("username") or s["role"]
-    comp = _active_competition()
+    comp = _current_competition(request)
     conn = db.get_db()
     items, done = [], []
     name_by_number = {}
@@ -1252,7 +1266,7 @@ async def api_announce(ceid: int, request: Request = None):
 @app.get("/api/projects/{project_code}/rounds/{round_no}/advancement-proposal")
 async def api_proposal(project_code: str, round_no: int, request: Request = None, competition_id: int = None):
     require_admin(request)
-    comp = _active_competition()
+    comp = _current_competition(request)
     cid = competition_id or (comp or {}).get("id")
     if not cid:
         raise HTTPException(status_code=400, detail="无激活赛事")
@@ -1262,7 +1276,7 @@ async def api_proposal(project_code: str, round_no: int, request: Request = None
 @app.post("/api/projects/{project_code}/rounds/{round_no}/advancement-confirm")
 async def api_confirm(project_code: str, round_no: int, request: Request = None):
     require_admin(request)
-    comp = _active_competition()
+    comp = _current_competition(request)
     if not comp:
         raise HTTPException(status_code=400, detail="无激活赛事")
     body = await request.json()
@@ -1404,7 +1418,7 @@ async def team_standings_admin_page(request: Request, competition_id: int, best:
 
 @app.api_route("/public/team-standings", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def team_standings_public_page(request: Request):
-    comp = _active_competition()
+    comp = _current_competition(request)
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
     if not comp:
         return _etag_page(request, 0, "standings", fp, lambda: templates.TemplateResponse(
@@ -1547,7 +1561,7 @@ async def api_detail_scores(ceid: int, request: Request = None):
 
 # ------------------------------------------------------------------ public API
 def _public_payload():
-    comp = _active_competition()
+    comp = _current_competition(request)
     if not comp:
         return None
     events = db.rows(db.get_db().execute(
@@ -1585,7 +1599,7 @@ async def api_public_schedule(competition_id: int):
 async def api_public_results(competition_id: int, request: Request = None, scope: str = "published"):
     _comp_or_404(competition_id)
     # scope 参数保留（v0.2.3 正文单态：仅 published）；明细不对公开端暴露（D5）
-    comp = _active_competition()
+    comp = _current_competition(request)
     out = []
     if comp and comp["id"] == competition_id:
         for ev in db.rows(db.get_db().execute(
