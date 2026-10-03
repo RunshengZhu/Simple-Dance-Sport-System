@@ -176,6 +176,37 @@ CREATE TABLE IF NOT EXISTS audit_log (
     if "comp_id" not in se_cols2:
         conn.execute("ALTER TABLE sessions ADD COLUMN comp_id INTEGER")
 
+    if "score_change_log" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='score_change_log'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS score_change_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL,
+    judge_code TEXT NOT NULL,
+    competitor_number TEXT NOT NULL,
+    dance_name TEXT NOT NULL,
+    old_mark INTEGER,
+    new_mark INTEGER,
+    old_placement INTEGER,
+    new_placement INTEGER,
+    changed_by TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_scl_event ON score_change_log(event_id);
+CREATE INDEX idx_scl_ts ON score_change_log(created_at);
+""")
+    if "snapshot_meta" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='snapshot_meta'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS snapshot_meta (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    file_size INTEGER DEFAULT 0,
+    sha256 TEXT DEFAULT '',
+    note TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+""")
+
     if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
         conn.executescript("""
 CREATE TABLE IF NOT EXISTS users (

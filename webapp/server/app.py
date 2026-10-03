@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import shutil
+import sqlite3
 import sys
 import time
 import uuid
@@ -1126,6 +1127,14 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
             raise HTTPException(status_code=400, detail="至少需勾选一名给予 Mark 的选手")
 
     conn = db.get_db()
+    # R48 评分变更日志：捕获旧值 → 写入后记入 score_change_log（追加式历史）
+    old_records = {}
+    if kind != "mark":
+        for r in conn.execute(
+                "SELECT competitor_number, mark, placement FROM score_records "
+                "WHERE event_id=? AND judge_code=? AND dance_name=?",
+                (ceid, s["judge_code"], dance)).fetchall():
+            old_records[r["competitor_number"]] = (r["mark"], r["placement"])
     if kind == "mark":
         # 整体替换：清除该裁判该舞种旧记录，仅保留本次勾选（给予 mark）的选手
         conn.execute("DELETE FROM score_records WHERE event_id=? AND judge_code=? AND dance_name=?",
@@ -1146,10 +1155,145 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
                  _sheet_mark_value(kind, v),
                  _sheet_placement_value(kind, v)))
     conn.commit()
+    # R48 评分变更日志（追加式）
+    for num in values:
+        old_m, old_p = old_records.get(str(num), (None, None))
+        new_m = _sheet_mark_value(kind, values[num]) if kind == "mark" else None
+        new_p = _sheet_placement_value(kind, values[num]) if kind != "mark" else None
+        if kind == "mark":
+            new_m = 1 if values[num] else None
+            new_p = None
+        if (old_m, old_p) != (new_m, new_p):
+            conn.execute(
+                "INSERT INTO score_change_log(event_id, judge_code, competitor_number, dance_name,"
+                " old_mark, new_mark, old_placement, new_placement, changed_by)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (ceid, s["judge_code"], str(num), dance, old_m, new_m, old_p, new_p,
+                 s.get("display_name") or s.get("judge_code") or s["role"]))
+    conn.commit()
     sse.bus.publish(comp["id"], "score_submitted",
                     {"event_id": ceid, "dance": dance, "judge": s["judge_code"]})
     auto = _auto_calculate_if_ready(_event_or_404(ceid), comp)
     return {"ok": True, "auto_calculated": auto}
+
+
+# ---------------------------------------------- R48 数据持久化与容灾
+# 设计原则：
+#   1. JSON 导出 = 可读、可跨版本、可编辑后导入
+#   2. SQLite 二进制备份 = 秒级、原子、可直接替换恢复
+#   3. score_change_log = 追加式历史（每个分值变化一行，可回溯任意时点）
+#   4. 导入 = 单事务原子写入，失败自动回滚
+_BACKUP_TABLES = [
+    "competitors", "judges", "events", "event_dances", "event_competitors",
+    "score_records", "results", "audit_log", "score_change_log", "file_tiers",
+]
+
+_EXPORT_SCHEMA_VERSION = 1
+
+
+@app.get("/api/export/json")
+async def export_json(request: Request = None):
+    """全量 JSON 结构化导出（admin）。"""
+    require_admin(request)
+    conn = db.get_db()
+    tables = {}
+    for tbl in _BACKUP_TABLES:
+        rows = db.rows(conn.execute(f"SELECT * FROM {tbl}").fetchall())
+        tables[tbl] = rows
+    comp = _active_competition()
+    payload = {
+        "format": "dancesport-backup",
+        "version": _EXPORT_SCHEMA_VERSION,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "competition": dict(comp) if comp else None,
+        "tables": tables,
+    }
+    text = json.dumps(payload, ensure_ascii=False, indent=None, separators=(",", ":"))
+    return Response(content=text.encode(), media_type="application/gzip",
+                    headers={"Content-Disposition": 'attachment; filename="dancesport-export.json.gz"',
+                             "Content-Encoding": "gzip"})
+
+
+@app.post("/api/import/json")
+async def import_json(request: Request = None):
+    """从 JSON 结构化备份原子导入（admin）。单事务，失败全回滚。"""
+    require_admin(request)
+    body = await request.body()
+    try:
+        import gzip as _gz
+        raw = _gz.decompress(body) if body[:2] == b"\x1f\x8b" else body
+        payload = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="无法解析备份文件")
+    if payload.get("format") != "dancesport-backup" or payload.get("version") != _EXPORT_SCHEMA_VERSION:
+        raise HTTPException(status_code=400, detail="备份格式或版本不匹配")
+    tables = payload.get("tables", {})
+    conn = db.get_db()
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("BEGIN TRANSACTION")
+        for tbl in reversed(_BACKUP_TABLES):
+            conn.execute(f"DELETE FROM {tbl}")
+        # 按依赖顺序正向插入
+        for tbl in _BACKUP_TABLES:
+            rows = tables.get(tbl, [])
+            if not rows:
+                continue
+            cols = list(rows[0].keys())
+            ph = ",".join("?" for _ in cols)
+            conn.executemany(
+                f"INSERT INTO {tbl} ({','.join(cols)}) VALUES ({ph})",
+                [[r.get(c) for c in cols] for r in rows])
+        conn.execute("COMMIT")
+    except Exception as e:
+        conn.execute("ROLLBACK")
+        raise HTTPException(status_code=500, detail=f"导入失败已回滚: {e}")
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+    return {"ok": True, "tables": {t: len(tables.get(t, [])) for t in tables}}
+
+
+@app.get("/api/export/db")
+async def export_sqlite(request: Request = None):
+    """SQLite 二进制原份导出（admin）。秒级完成，可直接替换恢复。"""
+    require_admin(request)
+    conn = db.get_db()
+    dst = "/tmp/dancesport-export.db"
+    if os.path.exists(dst):
+        os.remove(dst)
+    dst_conn = sqlite3.connect(dst)
+    conn.backup(dst_conn)
+    dst_conn.close()
+    return FileResponse(dst, media_type="application/x-sqlite3",
+                        filename=f"dancesport-{time.strftime('%Y%m%d-%H%M%S')}.db")
+
+
+@app.post("/api/import/db")
+async def import_sqlite(request: Request = None):
+    """从 SQLite 二进制文件替换整个数据库（admin）。原子替换，失败保留原库。"""
+    require_admin(request)
+    body = await request.body()
+    if len(body) < 100:
+        raise HTTPException(status_code=400, detail="文件过小")
+    dst_path = DEFAULT_DB
+    tmp_path = dst_path + ".import-tmp"
+    with open(tmp_path, "wb") as f:
+        f.write(body)
+    # 验证完整性
+    test_conn = sqlite3.connect(tmp_path)
+    qc = test_conn.execute("PRAGMA integrity_check").fetchone()[0]
+    test_conn.close()
+    if qc != "ok":
+        os.remove(tmp_path)
+        raise HTTPException(status_code=400, detail="导入文件完整性校验失败")
+    # 关闭现有连接 → 替换文件 → 重启
+    # 注意：这会终止所有活动会话，调用方需确认
+    os.replace(tmp_path, dst_path)
+    for suffix in ("-wal", "-shm"):
+        p = dst_path + suffix
+        if os.path.exists(p):
+            os.remove(p)
+    raise HTTPException(status_code=503, detail="数据库已替换，服务即将重启以加载新数据。请稍后刷新页面。")
 
 
 # ---------------------------------------------- 检录/播报台（主持人 · 检录长/检录员）
