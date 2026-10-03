@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""R46 手册标注截图管线：真实页面 → 元素聚焦截图 → PIL 视觉/文本标注 → static/manual/r46/。
+"""手册标注截图管线：真实页面 → 元素聚焦截图 → PIL 视觉标注 → static/manual/<版本>/。
 
-自足式：脚本开头通过 API 准备演示数据（演示赛/选手/裁判/场次三状态），
+自足式：脚本开头通过 API 准备演示数据（演示赛/选手/裁判/场次三状态 +
+第二场未激活赛事 + 审计留痕样例 + 文件分层样例），
 不依赖任何既有库状态；/tmp 会话库，可随时重建。
 
 标注视觉语言：
   红色圆角框 = 圈住关键控件；红底白数字圆标 = 步骤编号；
-  截图顶部注释条 = 与编号对应的中文说明。
+  中文说明由手册 HTML 图注承担（避免 PIL 字体缺字问题）。
 """
 import asyncio
 import io
@@ -16,12 +17,12 @@ import os
 import sys
 import urllib.request
 
+MANUAL_VER = "r50"
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8302"
 OUT = sys.argv[2] if len(sys.argv) > 2 else None
 if OUT is None:
     HERE = os.path.dirname(os.path.abspath(__file__))
-    OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))),
-                       "server", "static", "manual", "r46")
+    OUT = os.path.join(os.path.dirname(HERE), "server", "static", "manual", MANUAL_VER)
 os.makedirs(OUT, exist_ok=True)
 
 # ---------------- 数据准备（API） ----------------
@@ -76,6 +77,7 @@ def setup_data():
     req("POST", f"/api/events/{demo}/imports/judges", raw="裁判ID,姓名\nJ1,演示裁判1\nJ2,演示裁判2\nJ3,演示裁判3\n")
     sched = ("场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手\n"
              "D1,D1第1轮,P1,1,华尔兹,SKATING,0," + ",".join(f"20{i}" for i in range(1, 13)) + "\n"
+             "D2,D2第1轮,P1,1,华尔兹,SKATING,0," + ",".join(f"20{i}" for i in range(1, 13)) + "\n"
              "S1,S1集体舞,P1,1,集体舞,SCORE,0,201,202,203,204,205,206\n"
              "P1F,P1决赛,P1,2,华尔兹,SKATING,0,201,202,203,204,205,206\n")
     req("POST", f"/api/events/{demo}/imports/schedule", raw=sched)
@@ -106,6 +108,33 @@ def setup_data():
         req("PUT", f"/api/judge/competition-events/{ids['P1F']}/dances/{quote('华尔兹')}/sheet",
             {"values": vals}, sess="judge")
     req("POST", f"/api/competition-events/{ids['P1F']}/publish", {}, sess="admin")
+    # R50 手册 v4：第二场赛事（未激活）→ 赛事管理页多赛事列表演示
+    c, o = req("GET", "/api/events")
+    try:
+        comps = json.loads(o).get("events", [])
+        if not any(e["name"] == "春季邀请赛（示例）" for e in comps):
+            req("POST", "/api/events", {"name": "春季邀请赛（示例）", "date": "2026-11-08", "location": "示例体育馆"})
+    except Exception:
+        pass
+    # R50：审计留痕样例（撤销检录→补回 / 建号+重置口令 / 退回评分）
+    req("POST", f"/api/competition-events/{ids['D1']}/checkin",
+        {"numbers": ["205"], "state": False}, sess="marshal")
+    req("POST", f"/api/competition-events/{ids['D1']}/checkin",
+        {"numbers": ["205"], "state": True}, sess="marshal")
+    c, o = req("POST", "/api/users", {"username": "marshal-li", "display_name": "检录员-李老师",
+                                      "role": "marshal", "password": "demo123456"})
+    if c in (200, 201):
+        c, o = req("GET", "/api/users")
+        try:
+            uid = next(u["id"] for u in json.loads(o).get("users", []) if u["username"] == "marshal-li")
+            req("POST", f"/api/users/{uid}/password", {"password": "demo654321"})
+        except Exception:
+            pass
+    req("POST", f"/api/competition-events/{ids['S1']}/return-scores", {})
+    # R50：文件分层演示（public 层 + 样例文件 + 下载计数）
+    req("POST", "/api/files/tiers", {"name": "manual-demo", "perm": "public", "note": "手册演示层"})
+    req("PUT", "/api/files/manual-demo/scoresheet-sample.txt",
+        raw="成绩册样例：D1 第1轮 成绩公告\n", sess="admin")
     print("演示数据就绪 cid=%s ids=%s" % (demo, ids))
     return demo, ids
 
@@ -115,11 +144,23 @@ def setup_data():
 SCENES = [
     dict(name="a-login", vp="desktop", url="/login", role=None,
          focus=[("#role", "1 角色选「管理员」"), ("#password", "2 输入管理员口令"), ("#btn", "3 点「登录」进入系统")]),
+    dict(name="a-events", vp="desktop", url="/events", role="admin",
+         focus=[("js:document.querySelector('.card .row')", "1 填赛事名称点「创建」"),
+                ("#tbl", "2 每场赛事独立进入 导入 / 赛程 / 结果"),
+                ("js:Array.from(document.querySelectorAll('button')).find(b=>b.classList.contains('act-btn'))",
+                 "3 未激活的赛事可随时「激活」")]),
+    dict(name="a-users-audit", vp="desktop", url="/users", role="admin", pre_open_audit=True,
+         focus=[("js:document.querySelector('#audit-box summary')", "1 「审计日志」默认收起，点开即看"),
+                ("#audit-rows", "2 退回评分/撤销检录/口令/停启用/删除 全部署名留痕")]),
+    dict(name="a-files", vp="desktop", url="/files", role="admin",
+         focus=[("js:document.querySelector('.lookup-row')", "1 新建分层：public 公开 / token 凭证 / admin 管理"),
+                ("js:document.querySelector('.copy-link')", "2 「复制链接」得到可直接分发的下载地址"),
+                ("js:document.querySelector('.up-file')", "3 选文件上传（同名覆盖，下载次数累计）")]),
     dict(name="a-import", vp="desktop", url=None, role="admin", url_js="/events/{cid}/import",
          focus=[("a[href*='/api/templates/competitors']", "1 每类数据都有模板下载"), ("#f-competitors", "2 按模板填好后上传"),
                 ("a[href*='/api/templates/schedule']", "3 赛程模板含全部列")],
          notes_line="导错可重传，逐行提示问题"),
-    dict(name="a-console-open", vp="desktop", url_js="/events/{cid}/console/{D1}", role="admin",
+    dict(name="a-console-open", vp="desktop", url_js="/events/{cid}/console/{D2}", role="admin",
          focus=[("js:document.querySelector('.roster-tools')", "1 全选/反选上场选手"),
                 ("#cand-count", "2 勾选数实时显示"),
                 ("js:Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('开启评分'))", "3 「开启评分」裁判即可打分")],
@@ -139,8 +180,13 @@ SCENES = [
                  "3 「检录 N / M」实时更新")]),
     dict(name="m-checkin-locate", vp="mobile", url="/staff", role="marshal",
          focus=[(".status-filter", "1 按状态筛选场次"), ("#staff-search", "2 输入场次编号回车定位")]),
+    dict(name="m-index", vp="mobile", url="/staff", role="marshal",
+         focus=[("#staff-search", "1 场次很多时先按编号搜索"),
+                ("#scene-index-btn", "2 或点「场次索引」按分组浏览")]),
+    dict(name="m-index-drawer", vp="mobile", url="/staff", role="marshal", pre_click_index=True,
+         focus=[("js:document.getElementById('scene-index-drawer')", "3 按「待检录 / 已完成」分组，点场次名即跳转")]),
     dict(name="m-accordion", vp="mobile", url="/staff", role="marshal", pre_click_accordion=True,
-         scroll_to='.done-card',
+         scroll_to='.done-card', scroll_block='start',
          focus=[("js:document.querySelector('.toggle-done')", "1 「查看成绩」原位展开"),
                 ("js:document.querySelector('.done-card .done-body.open table')", "2 公告表可宣读"),
                 ("js:document.querySelector('.done-card .done-body.open a[href*=exports]')", "3 需要纸质稿点下载"),
@@ -172,7 +218,6 @@ SCENES = [
 # ---------------- 标注绘制（Pillow） ----------------
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
-FONT_PATH = "/System/Library/Fonts/PingFang.ttc"
 ACCENT = (225, 29, 29)
 
 
@@ -180,14 +225,6 @@ def _font(size):
     """已验证：Hiragino Sans GB.ttc 的 index 0 含完整简体中文字形
     （PingFang.ttc 的 truetype 直开失败勿用）。"""
     return ImageFont.truetype("/System/Library/Fonts/Hiragino Sans GB.ttc", size)
-    for cand in [FONT_PATH] + sorted(_glob.glob("/System/Library/Fonts/Hiragino Sans GB.ttc")) + \
-            sorted(_glob.glob("/System/Library/Fonts/STHeiti *.ttc")) + \
-            sorted(_glob.glob("/System/Library/Fonts/Supplemental/Songti.ttc")):
-        try:
-            return ImageFont.truetype(cand, size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
 
 
 def annotate(img, boxes, dpr):
@@ -245,14 +282,22 @@ async def run():
                 await page.evaluate("(() => { const d = document.querySelector('details.card'); if (d) d.open = true; })()")
             if scene.get("pre_click_accordion"):
                 await page.evaluate("(() => { const b = document.querySelector('.toggle-done'); if (b) b.click(); })()")
+                await page.wait_for_timeout(450)   # 等展开动画结束，否则 scrollIntoView 按旧布局滚动
             if scene.get("pre_lookup"):
                 v = scene["pre_lookup"]
                 await page.fill("#lookup-num", v)
                 await page.evaluate("(() => { const b = document.getElementById('lookup-go'); if (b) b.click(); })()")
+            if scene.get("pre_open_audit"):
+                await page.evaluate("(() => { const d = document.getElementById('audit-box'); if (d) d.open = true; })()")
+                await page.wait_for_timeout(400)
+            if scene.get("pre_click_index"):
+                await page.evaluate("(() => { const b = document.getElementById('scene-index-btn'); if (b && !b.disabled) b.click(); })()")
+                await page.wait_for_timeout(400)
             if scene.get("scroll_to"):
                 sel = scene["scroll_to"].replace("'", '\\"')
+                blk = scene.get("scroll_block", "center")
                 await page.evaluate(f"(() => {{ const el = document.querySelector('{sel}'); "
-                                    f"if (el) el.scrollIntoView({{block:'center', behavior:'instant'}}); }})()")
+                                    f"if (el) el.scrollIntoView({{block:'{blk}', behavior:'instant'}}); }})()")
             await page.wait_for_timeout(400)
             # focus 元素 boundingBox
             boxes, defs = [], []
@@ -311,5 +356,4 @@ async def run():
 
 
 if __name__ == "__main__":
-    setup_data()
     asyncio.run(run())

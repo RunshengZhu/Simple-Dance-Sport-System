@@ -1704,8 +1704,10 @@ async def api_detail_scores(ceid: int, request: Request = None):
 
 
 # ------------------------------------------------------------------ public API
-def _public_payload():
-    comp = _current_competition(request)
+def _public_payload(comp=None):
+    """公开数据载荷。comp 缺省时回落全局激活赛事；
+    调用方持有明确赛事（如按 id 的公开端点）时必须显式传入。"""
+    comp = comp or _active_competition()
     if not comp:
         return None
     events = db.rows(db.get_db().execute(
@@ -1768,7 +1770,7 @@ async def api_screen_state(competition_id: int):
     scoring = db.rows(conn.execute(
         "SELECT code,name,project_code,round FROM events WHERE competition_id=? AND status='scoring'",
         (competition_id,)))
-    payload = _public_payload() or {"published_results": [], "events": []}
+    payload = _public_payload(comp) or {"published_results": [], "events": []}
     if payload.get("competition"):
         SCREEN_CONTROL["comp_id"] = payload["competition"]["id"]
     return {"competition": payload["competition"], "scoring_now": scoring,
@@ -1874,7 +1876,7 @@ async def api_public_lookup(competition_id: int, num: str = ""):
         "JOIN events e ON e.id=ec.event_id WHERE e.competition_id=? AND ec.competitor_number=?",
         (comp["id"], num)))})
     results = []
-    for p in (_public_payload() or {}).get("published_results", []):
+    for p in (_public_payload(comp) or {}).get("published_results", []):
         for r in p["results"]:
             if str(r["competitor_number"]) == num:
                 results.append({"code": p["code"], "name": p["name"], "round": p["round"],
