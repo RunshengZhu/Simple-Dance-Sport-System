@@ -23,7 +23,7 @@
     <p>报名导入 · 赛程编排 · 检录 · 裁判评分（顺位法 / Mark 制 / 评分制）· 成绩发布 · 现场大屏。</p>
     <div class="portal-actions">
       <a class="portal-cta" href="/login">进入系统 →</a>
-      <a class="portal-doc" href="/manual">说明书 →</a>
+      <a class="portal-doc" href="/manual" title="赛事评分系统使用说明">说明书 →</a>
     </div>
     <p class="portal-stat">累计 {{ stats.get('scoring', 0) }} 次访问</p>
   </div>
@@ -33,7 +33,7 @@
     <p>队列舞队形候选、走位方案与可行性算账；在线应用，支持离线使用。</p>
     <div class="portal-actions">
       <a class="portal-cta" href="/apps/wuzhen/">打开应用 →</a>
-      <a class="portal-doc" href="/manual#wuzhen">说明书 →</a>
+      <a class="portal-doc" href="/apps/wuzhen/" title="说明书在应用内：打开后点右上角「说明」">说明书 →</a>
     </div>
     <p class="portal-stat">累计 {{ stats.get('app:wuzhen', 0) }} 次在线打开</p>
   </div>
@@ -42,8 +42,7 @@
     <h3><a href="/apps">舞会音乐播放器</a></h3>
     <p>舞会现场歌单播放工具，Windows / macOS / Linux / Android 多平台下载。</p>
     <div class="portal-actions">
-      <a class="portal-cta" href="/apps">前往下载 →</a>
-      <a class="portal-doc" href="/manual#player">说明书 →</a>
+      <a class="portal-cta" href="/apps#party-player">前往下载 →</a>
     </div>
     <p class="portal-stat">货架访问 {{ stats.get('apps', 0) }} 次{% if player_dl %} · 累计下载 {{ player_dl }} 次{% endif %}</p>
   </div>
