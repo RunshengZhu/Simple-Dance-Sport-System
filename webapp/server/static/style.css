@@ -668,3 +668,8 @@ body.portal main { max-width: 1040px; }
 @media (prefers-reduced-motion: no-preference) {
   .portal-card { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
 }
+.portal-actions { display: flex; align-items: center; gap: 16px; }
+.portal-card h3 a { color: inherit; text-decoration: none; }
+.portal-card h3 a:hover { color: var(--acc); }
+.portal-doc { color: var(--muted); font-size: .9rem; }
+.portal-doc:hover { color: var(--acc); }

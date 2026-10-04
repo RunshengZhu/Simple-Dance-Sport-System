@@ -64,6 +64,8 @@
   <a href="#judge">⚖️ 裁判</a>
   <a href="#public">👀 观众</a>
   <a href="#screen">📺 大屏</a>
+  <a href="#wuzhen">💃 舞阵</a>
+  <a href="#player">🎵 播放器</a>
 </div>
 
 <h2 id="admin">一、管理员：从建赛到收官</h2>
@@ -250,8 +252,23 @@
   <img src="/static/manual/r50/s-screen-results.png" alt="大屏成绩公告" loading="lazy">
 </div>
 
-<p class="muted" style="margin-top:2rem">使用说明 v4.1 · 2026-10-04 · 面向使用者 · 关键步骤配标注实机图 ·
-覆盖门户首页 / 多场赛事并行 / 操作留痕 / 文件分发 / 数据备份 / 打分暂存 ·
+<h2 id="wuzhen">七、舞阵 · 编排：队列舞队形设计</h2>
+<div class="step"><h3>打开与使用</h3>
+  <p>门户点「舞阵 · 编排」或直接打开 <code>/apps/wuzhen/</code>，<b>无需账号</b>。
+  手机、平板、电脑均可使用；支持添加到主屏幕（PWA），添加后可离线使用。</p>
+  <p>功能围绕队列舞编排：生成队形候选、给出走位方案并做可行性算账、SVG 队形预览、编排体检。
+  项目以文件导入导出，与评分系统数据互不干扰。软件负责候选与算账，队形与艺术取舍由编导决定。</p>
+</div>
+
+<h2 id="player">八、舞会音乐播放器</h2>
+<div class="step"><h3>下载与安装</h3>
+  <p>面向舞会现场的音乐播放工具。打开「应用货架」（门户点「舞会音乐播放器」或直接访问 <code>/apps</code>），
+  在 party-player 下按你的平台下载最新安装包：Windows / macOS / Linux 为压缩包，Android 为 APK，
+  下载后安装即可。版本是否有更新，以列表中的「更新时间」为准。</p>
+</div>
+
+<p class="muted" style="margin-top:2rem">使用说明 v4.2 · 2026-10-04 · 面向使用者 · 关键步骤配标注实机图 ·
+覆盖门户首页 / 多场赛事并行 / 操作留痕 / 文件分发 / 数据备份 / 打分暂存 / 舞阵编排 / 音乐播放器 ·
 系统实现细节见 docs/DESIGN.md，部署指南见 docs/DEPLOY.md。</p>
 {% endblock %}
 {% block scripts %}
