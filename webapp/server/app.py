@@ -43,6 +43,105 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title="体育舞蹈赛事评分系统 · 服务版", docs_url=None, redoc_url=None)
 
 
+def _visit_slug(path: str):
+    """R53 访问统计桶：把 HTML 页面路径归到工具级 slug；非页面/资源返回 None 不计数。"""
+    if path == "/":
+        return "portal"
+    if path == "/login" or path == "/events" or path.startswith("/events/"):
+        return "scoring"
+    if path == "/judge" or path.startswith("/judge/"):
+        return "scoring"
+    if path in ("/staff", "/users"):
+        return "scoring"
+    if path == "/public" or path.startswith("/public/"):
+        return "public"
+    if path == "/screen":
+        return "screen"
+    if path == "/manual":
+        return "manual"
+    if path == "/apps":
+        return "apps"
+    if path.startswith("/apps/"):
+        rest = path[len("/apps/"):].strip("/")
+        if rest and "/" not in rest:
+            return "app:" + rest
+    return None
+
+
+def _parse_rate(s: str, default):
+    """'N/窗口秒' → (N, 秒)；解析失败用默认。"""
+    try:
+        n, w = s.split("/")
+        return (max(1, int(n)), max(1, int(w)))
+    except Exception:
+        return default
+
+
+RATE_GENERAL = _parse_rate(os.environ.get("DSPORT_RATE_GENERAL", ""), (300, 10))   # 常规页面/接口
+RATE_LOGIN = _parse_rate(os.environ.get("DSPORT_RATE_LOGIN", ""), (10, 60))        # 登录防爆破
+MAX_BODY = int(os.environ.get("DSPORT_MAX_BODY", str(220 * 1024 * 1024)))          # 上传保护
+_RATE: dict = {}   # (slot, window_start) -> count（内存态，单 worker；重启即清零）
+
+
+@app.middleware("http")
+async def guard(request: Request, call_next):
+    """R53 基础防护：请求体大小上限 + 按 IP 固定窗口限速（常规 / 登录两档）+ 429。
+    无 client 信息（测试直连/内部调用）不参与限速。"""
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > MAX_BODY:
+        return JSONResponse({"detail": "请求体过大"}, status_code=413)
+    cli = request.client
+    # 环回豁免：本机健康检查/测试不走限速（DDoS 只可能来自外部，TCP 源无法伪装环回）
+    if cli is None or not cli.host or cli.host in ("127.0.0.1", "::1", "testclient"):
+        return await call_next(request)
+    is_login = request.method == "POST" and request.url.path == "/api/login"
+    n, w = RATE_LOGIN if is_login else RATE_GENERAL
+    now = int(time.time())
+    key = (("L" if is_login else "G") + cli.host, now // w)
+    cnt = _RATE.get(key, 0) + 1
+    _RATE[key] = cnt
+    if len(_RATE) > 20000:          # 防膨胀：直接重置（窗口粒度，影响可忽略）
+        _RATE.clear()
+        _RATE[key] = cnt
+    if cnt > n:
+        retry = w - (now % w)
+        if request.url.path.startswith("/api"):
+            return JSONResponse({"detail": "请求过于频繁，请稍后再试"}, status_code=429,
+                                headers={"Retry-After": str(retry)})
+        return PlainTextResponse("请求过于频繁，请稍后再试", status_code=429,
+                                 headers={"Retry-After": str(retry)})
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """R53 基础安全响应头（HTTPS 就绪后再补 HSTS）。"""
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return resp
+
+
+@app.middleware("http")
+async def visit_count(request: Request, call_next):
+    """R53 访问统计：GET 且 200 且 text/html 的页面按工具桶计一次（接口/静态/下载不计）。"""
+    resp = await call_next(request)
+    try:
+        if request.method == "GET" and resp.status_code == 200                 and resp.headers.get("content-type", "").startswith("text/html"):
+            slug = _visit_slug(request.url.path)
+            if slug:
+                conn = db.get_db()
+                conn.execute(
+                    "INSERT INTO visit_stats(slug, day, n) VALUES(?, ?, 1) "
+                    "ON CONFLICT(slug, day) DO UPDATE SET n = n + 1",
+                    (slug, time.strftime("%Y-%m-%d")))
+                conn.commit()
+    except Exception:
+        pass
+    return resp
+
+
 @app.middleware("http")
 async def static_cache_control(request: Request, call_next):
     """静态资源长缓存（R41 压测：300 并发观众突发首访资源级联 P95 14.7s，
@@ -227,8 +326,15 @@ async def home(request: Request):
         return RedirectResponse("/judge")
     if s and s["role"] in ("host", "marshal"):
         return RedirectResponse("/staff")
+    conn = db.get_db()
+    stats = {r["slug"]: r["n"] for r in db.rows(
+        conn.execute("SELECT slug, SUM(n) AS n FROM visit_stats GROUP BY slug"))}
+    player_dl = conn.execute(
+        "SELECT COALESCE(SUM(f.downloads), 0) AS d FROM file_objects f "
+        "JOIN file_tiers t ON t.id = f.tier_id WHERE t.name = 'party-player'").fetchone()["d"]
     return templates.TemplateResponse(request, "portal.html", {
-        "request": request, "comp": _active_competition()})
+        "request": request, "comp": _active_competition(),
+        "stats": stats, "player_dl": player_dl})
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -475,6 +581,44 @@ async def api_users_active(user_id: int, request: Request = None):
                               "启用" if state else "停用"),
            _client_ip(request))
     return {"ok": True, "active": bool(state)}
+
+
+@app.get("/api/stats")
+async def api_stats(request: Request = None):
+    """R53 访问统计（admin）：各工具桶 累计/今日/近7天。"""
+    require_admin(request)
+    conn = db.get_db()
+    today = time.strftime("%Y-%m-%d")
+    d7 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 6 * 86400))
+    totals = db.rows(conn.execute(
+        "SELECT slug, SUM(n) AS n FROM visit_stats GROUP BY slug ORDER BY n DESC"))
+    today_m = {r["slug"]: r["n"] for r in db.rows(
+        conn.execute("SELECT slug, n FROM visit_stats WHERE day = ?", (today,)))}
+    d7_m = {r["slug"]: r["n"] for r in db.rows(
+        conn.execute("SELECT slug, SUM(n) AS n FROM visit_stats WHERE day >= ? GROUP BY slug", (d7,)))}
+    return {"items": [{"slug": r["slug"], "total": r["n"],
+                       "today": today_m.get(r["slug"], 0),
+                       "d7": d7_m.get(r["slug"], 0)} for r in totals]}
+
+
+_ROBOTS = """User-agent: *
+Disallow: /api/
+Disallow: /events
+Disallow: /judge
+Disallow: /staff
+Disallow: /users
+Disallow: /files/
+Allow: /
+Allow: /public/
+Allow: /manual
+Allow: /apps/
+"""
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    """私有工作区不索引；门户/公开页/手册/应用可索引。"""
+    return PlainTextResponse(_ROBOTS, media_type="text/plain")
 
 
 @app.get("/api/audit")

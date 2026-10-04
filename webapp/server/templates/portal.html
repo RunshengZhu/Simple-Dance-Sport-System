@@ -25,6 +25,7 @@
       <a class="portal-cta" href="/login">进入系统 →</a>
       <a class="portal-doc" href="/manual">说明书 →</a>
     </div>
+    <p class="portal-stat">累计 {{ stats.get('scoring', 0) }} 次访问</p>
   </div>
   <div class="card portal-card" data-href="/apps/wuzhen/">
     <span class="pc-ico" aria-hidden="true">💃</span>
@@ -34,6 +35,7 @@
       <a class="portal-cta" href="/apps/wuzhen/">打开应用 →</a>
       <a class="portal-doc" href="/manual#wuzhen">说明书 →</a>
     </div>
+    <p class="portal-stat">累计 {{ stats.get('app:wuzhen', 0) }} 次在线打开</p>
   </div>
   <div class="card portal-card" data-href="/apps">
     <span class="pc-ico" aria-hidden="true">🎵</span>
@@ -43,6 +45,7 @@
       <a class="portal-cta" href="/apps">前往下载 →</a>
       <a class="portal-doc" href="/manual#player">说明书 →</a>
     </div>
+    <p class="portal-stat">货架访问 {{ stats.get('apps', 0) }} 次{% if player_dl %} · 累计下载 {{ player_dl }} 次{% endif %}</p>
   </div>
   <div class="card portal-card is-placeholder" aria-disabled="true">
     <span class="pc-ico" aria-hidden="true">🧰</span>

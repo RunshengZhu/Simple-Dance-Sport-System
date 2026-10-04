@@ -4,6 +4,17 @@
 {% block content %}
 <h1>用户与角色管理 <span class="muted">账号由管理员分发，无自注册</span></h1>
 
+<details class="card" id="stats-box">
+  <summary><strong>访问统计</strong> <span class="muted">各工具页面访问量（HTML 页面 200 计一次）</span></summary>
+  <p><button class="btn secondary" onclick="loadStats()">刷新</button> <span class="muted" id="stats-meta"></span></p>
+  <div class="table-fit">
+    <table>
+      <tr><th>页面 / 工具</th><th class="num">累计</th><th class="num">今日</th><th class="num">近7天</th></tr>
+      <tbody id="stats-rows"></tbody>
+    </table>
+  </div>
+</details>
+
 <details class="card" id="audit-box">
   <summary><strong>审计日志</strong> <span class="muted">敏感操作留痕（退回评分 / 撤销检录 / 口令 / 停启用 / 删除类）</span></summary>
   <p><button class="btn secondary" onclick="loadAudit()">刷新</button> <span class="muted" id="audit-meta"></span></p>
@@ -119,6 +130,23 @@ function loadAudit() {
     document.getElementById('audit-meta').textContent = '共 ' + (d.items || []).length + ' 条（最新在前）';
   }).catch(function (e) { toast(e.message, 'err'); });
 }
+var STAT_LABELS = {
+  portal: '门户首页', scoring: '赛事评分系统', public: '公开页',
+  screen: '现场大屏', manual: '使用手册', apps: '应用货架'
+};
+function loadStats() {
+  api('GET', '/api/stats').then(function (d) {
+    var rows = '';
+    (d.items || []).forEach(function (s) {
+      var label = STAT_LABELS[s.slug] || (s.slug.indexOf('app:') === 0 ? '应用：' + s.slug.slice(4) : s.slug);
+      rows += '<tr><td>' + label + '</td><td class="num">' + s.total + '</td><td class="num">' + s.today + '</td><td class="num">' + s.d7 + '</td></tr>';
+    });
+    document.getElementById('stats-rows').innerHTML =
+      rows || '<tr><td colspan="4" class="muted">暂无数据</td></tr>';
+    document.getElementById('stats-meta').textContent = '共 ' + (d.items || []).length + ' 项（累计 / 今日 / 近7天）';
+  }).catch(function (e) { toast(e.message, 'err'); });
+}
 loadUsers();
 loadAudit();
+loadStats();
 {% endblock %}

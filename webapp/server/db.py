@@ -207,6 +207,16 @@ CREATE TABLE IF NOT EXISTS snapshot_meta (
 );
 """)
 
+    if "visit_stats" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='visit_stats'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS visit_stats (
+    slug TEXT NOT NULL,
+    day TEXT NOT NULL,
+    n INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (slug, day)
+);
+""")
+
     if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
         conn.executescript("""
 CREATE TABLE IF NOT EXISTS users (

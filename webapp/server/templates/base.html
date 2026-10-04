@@ -31,7 +31,14 @@
 <main>
 {% block content %}{% endblock %}
 </main>
-<footer class="site-footer">{% block footer %}{% endblock %}</footer>
+<footer class="site-footer">
+  {% block footer %}{% endblock %}
+  {% block beian %}<p class="beian-line">
+    <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">ICP备XXXXXXXX号-1（备案通过后替换）</a>
+    <span aria-hidden="true">·</span>
+    <a href="https://beian.mps.gov.cn/#/query/webSearch" target="_blank" rel="noopener noreferrer">公安备案号（如有）</a>
+  </p>{% endblock %}
+</footer>
 <div id="toast-wrap" aria-live="polite"></div>
 <script>window.CID = {% block cid %}0{% endblock %};</script>
 <script src="/static/app.js"></script>

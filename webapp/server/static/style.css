@@ -673,3 +673,12 @@ body.portal main { max-width: 1040px; }
 .portal-card h3 a:hover { color: var(--acc); }
 .portal-doc { color: var(--muted); font-size: .9rem; }
 .portal-doc:hover { color: var(--acc); }
+
+.portal-stat { margin: 12px 0 0; font-size: .85rem; color: var(--muted); }
+.beian-line {
+  margin: 8px 0 0; font-size: .84rem; color: var(--muted);
+  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+}
+.beian-line a { color: var(--muted); text-decoration: none; }
+.beian-line a:hover { color: var(--acc); }
+body.screen .site-footer { display: none; }
