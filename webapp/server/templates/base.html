@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f5f3ef" id="meta-theme">
-<title>{% block title %}体育舞蹈评分系统{% endblock %}</title>
+<title>{% block title %}体育舞蹈工具箱{% endblock %}</title>
 <script>
 /* R40 主题防闪烁：CSS 加载前物化主题（localStorage 优先，系统偏好兜底） */
 (function () {
@@ -16,11 +16,11 @@
   document.documentElement.dataset.theme = t;
 })();
 </script>
-<link rel="stylesheet" href="/static/style.css?v=r45">
+<link rel="stylesheet" href="/static/style.css?v=r52">
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
 <header>
-  <span class="brand">体育舞蹈评分系统</span>
+  <span class="brand">体育舞蹈工具箱</span>
   <nav>
     {% block nav %}{% endblock %}
     <a href="/manual">操作手册</a>
@@ -31,6 +31,7 @@
 <main>
 {% block content %}{% endblock %}
 </main>
+<footer class="site-footer">{% block footer %}{% endblock %}</footer>
 <div id="toast-wrap" aria-live="polite"></div>
 <script>window.CID = {% block cid %}0{% endblock %};</script>
 <script src="/static/app.js"></script>

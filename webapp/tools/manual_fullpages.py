@@ -107,6 +107,7 @@ def prep_extra_data():
 
 # (文件名, 视口, url 模板, full_page)
 SHOTS = [
+    ("p-portal", "desktop", "/", True),
     ("a4-schedule-tree", "desktop", "/events/{cid}/schedule", True),
     ("a5-console", "desktop", "/events/{cid}/console/{D1}", True),
     ("a6-advancement", "desktop", "/events/{cid}/advancement?project=P1&round=1", True),

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}体育舞蹈工具箱{% endblock %}
+{% block bodyclass %}portal{% endblock %}
+{% block nav %}<a href="/public/schedule">赛程</a><a href="/public/results">成绩</a>{% endblock %}
+{% block content %}
+<section class="portal-hero">
+  <h1>体育舞蹈工具箱</h1>
+  <p>面向体育舞蹈（国标舞）赛事组织者与爱好者的免费工具集：<br class="hm-desktop">
+  赛事评分 · 成绩公示 · 赛程编排 · 队列舞队形设计 · 赛会资料分发</p>
+</section>
+
+<section class="card portal-live">
+  <h2>{% if comp %}正在进行的赛事 <span class="tag acc">{{ comp.name }}</span>{% else %}观众查询{% endif %}</h2>
+  <div class="portal-links">
+    <a class="btn" href="/public/schedule">公开赛程</a>
+    <a class="btn" href="/public/results">公开成绩</a>
+    <a class="btn secondary" href="/screen">现场大屏</a>
+  </div>
+  <p class="muted portal-hint">无需登录；成绩与赛程随赛事进程实时更新。</p>
+</section>
+
+<section class="portal-grid">
+  <a class="card portal-card" href="/login">
+    <h3>赛事评分系统</h3>
+    <p>面向赛事组织者的全流程工具：导入报名 · 赛程编排 · 检录 · 裁判评分（顺位法 / Mark 制 / 评分制）·
+    晋级与成绩发布 · 现场大屏。</p>
+    <span class="portal-cta">进入系统 →</span>
+  </a>
+  <a class="card portal-card" href="/manual">
+    <h3>使用手册</h3>
+    <p>管理员 / 检录长 / 主持人 / 裁判 / 观众 / 大屏 全角色图解说明，关键步骤配实机标注图，按角色查步骤即可。</p>
+    <span class="portal-cta">查看手册 →</span>
+  </a>
+  <a class="card portal-card" href="/apps/wuzhen/">
+    <h3>舞阵 · 编排</h3>
+    <p>队列舞队形候选、走位方案与可行性算账，支持项目文件导入导出，可离线使用的 PWA 应用。</p>
+    <span class="portal-cta">打开舞阵 →</span>
+  </a>
+</section>
+{% endblock %}
+{% block footer %}
+<span>© 2026 体育舞蹈工具箱 · 免费开放的赛事工具集</span>
+<!-- ICP备案号占位：备案通过后在此替换为「XX ICP备XXXXXXXX号」并链接至工信部网站 -->
+{% endblock %}
+{% block scripts %}
+{% endblock %}

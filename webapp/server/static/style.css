@@ -618,3 +618,43 @@ html.theme-anim table, html.theme-anim th, html.theme-anim td, html.theme-anim .
 @media (max-width: 719px) {
   .scene-index-drawer { top: 58px; right: 10px; }
 }
+
+/* ---------- R52 工具箱门户首页 ---------- */
+.portal-hero {
+  text-align: center;
+  padding: clamp(28px, 6vw, 56px) 12px 20px;
+}
+.portal-hero h1 {
+  margin: 0 0 10px;
+  font-size: clamp(1.7rem, 4.5vw, 2.6rem);
+  letter-spacing: .04em;
+  color: var(--acc);
+}
+.portal-hero p { margin: 0 auto; max-width: 720px; color: var(--muted); line-height: 1.7; }
+.portal-live { max-width: 860px; margin: 0 auto 18px; }
+.portal-live h2 { margin-top: 0; }
+.portal-links { display: flex; flex-wrap: wrap; gap: 10px; }
+.portal-hint { margin: 10px 0 0; font-size: .88rem; }
+.portal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 16px;
+  max-width: 980px;
+  margin: 0 auto 26px;
+}
+.portal-card { display: block; text-decoration: none; color: var(--txt); }
+.portal-card h3 { margin: 0 0 8px; color: var(--txt); }
+.portal-card p { margin: 0 0 14px; color: var(--muted); font-size: .93rem; line-height: 1.65; }
+.portal-cta { font-weight: 700; color: var(--acc); }
+.portal-card:hover { border-color: var(--acc); box-shadow: var(--shadow); transform: translateY(-2px); }
+.portal-card:hover .portal-cta { text-decoration: underline; }
+.site-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: .84rem;
+  padding: 18px 12px 42px;
+}
+body.portal main { max-width: 1040px; }
+@media (prefers-reduced-motion: no-preference) {
+  .portal-card { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+}

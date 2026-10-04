@@ -218,12 +218,17 @@ def _event_or_404(ceid):
 # ------------------------------------------------------------------ pages
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
+    """R52 工具箱门户：未登录访客看工具入口（备案名「体育舞蹈工具箱」落地面）；
+    已登录工作人员直达各自工作台。"""
     s = _session(request)
     if s and s["role"] == "admin":
         return RedirectResponse("/events")
     if s and s["role"] == "judge":
         return RedirectResponse("/judge")
-    return RedirectResponse("/public/schedule")   # 观众动线：未登录首屏=公开赛程
+    if s and s["role"] in ("host", "marshal"):
+        return RedirectResponse("/staff")
+    return templates.TemplateResponse(request, "portal.html", {
+        "request": request, "comp": _active_competition()})
 
 
 @app.get("/login", response_class=HTMLResponse)
