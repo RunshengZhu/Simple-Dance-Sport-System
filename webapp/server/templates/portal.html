@@ -1,41 +1,45 @@
 {% extends "base.html" %}
 {% block title %}体育舞蹈工具箱{% endblock %}
 {% block bodyclass %}portal{% endblock %}
-{% block nav %}<a href="/public/schedule">赛程</a><a href="/public/results">成绩</a>{% endblock %}
+{% block nav %}{% endblock %}
 {% block content %}
 <section class="portal-hero">
   <h1>体育舞蹈工具箱</h1>
-  <p>面向体育舞蹈（国标舞）赛事组织者与爱好者的免费工具集：<br class="hm-desktop">
-  赛事评分 · 成绩公示 · 赛程编排 · 队列舞队形设计 · 赛会资料分发</p>
+  <p>面向体育舞蹈（国标舞）赛事组织者与爱好者的免费工具集，一个工具解决一件事。</p>
 </section>
 
-<section class="card portal-live">
-  <h2>{% if comp %}正在进行的赛事 <span class="tag acc">{{ comp.name }}</span>{% else %}观众查询{% endif %}</h2>
-  <div class="portal-links">
-    <a class="btn" href="/public/schedule">公开赛程</a>
-    <a class="btn" href="/public/results">公开成绩</a>
-    <a class="btn secondary" href="/screen">现场大屏</a>
-  </div>
-  <p class="muted portal-hint">无需登录；成绩与赛程随赛事进程实时更新。</p>
-</section>
+<nav class="portal-audience" aria-label="观众查询">
+  {% if comp %}<span class="tag acc">{{ comp.name }}</span>{% endif %}
+  <a class="btn secondary" href="/public/schedule">公开赛程</a>
+  <a class="btn secondary" href="/public/results">公开成绩</a>
+  <a class="btn secondary" href="/screen">现场大屏</a>
+</nav>
 
+<h2 class="portal-shelf-title">工具架</h2>
 <section class="portal-grid">
   <a class="card portal-card" href="/login">
+    <span class="pc-ico" aria-hidden="true">🏆</span>
     <h3>赛事评分系统</h3>
-    <p>面向赛事组织者的全流程工具：导入报名 · 赛程编排 · 检录 · 裁判评分（顺位法 / Mark 制 / 评分制）·
-    晋级与成绩发布 · 现场大屏。</p>
+    <p>报名导入 · 赛程编排 · 检录 · 裁判评分（顺位法 / Mark 制 / 评分制）· 成绩发布 · 现场大屏。</p>
     <span class="portal-cta">进入系统 →</span>
   </a>
-  <a class="card portal-card" href="/manual">
-    <h3>使用手册</h3>
-    <p>管理员 / 检录长 / 主持人 / 裁判 / 观众 / 大屏 全角色图解说明，关键步骤配实机标注图，按角色查步骤即可。</p>
-    <span class="portal-cta">查看手册 →</span>
-  </a>
   <a class="card portal-card" href="/apps/wuzhen/">
+    <span class="pc-ico" aria-hidden="true">💃</span>
     <h3>舞阵 · 编排</h3>
-    <p>队列舞队形候选、走位方案与可行性算账，支持项目文件导入导出，可离线使用的 PWA 应用。</p>
-    <span class="portal-cta">打开舞阵 →</span>
+    <p>队列舞队形候选、走位方案与可行性算账；在线应用，支持离线使用。</p>
+    <span class="portal-cta">打开应用 →</span>
   </a>
+  <a class="card portal-card" href="/apps">
+    <span class="pc-ico" aria-hidden="true">🎵</span>
+    <h3>舞会音乐播放器</h3>
+    <p>舞会现场歌单播放工具，Windows / macOS / Linux / Android 多平台下载。</p>
+    <span class="portal-cta">前往下载 →</span>
+  </a>
+  <div class="card portal-card is-placeholder" aria-disabled="true">
+    <span class="pc-ico" aria-hidden="true">🧰</span>
+    <h3>更多工具</h3>
+    <p>陆续筹备上架；新工具挂载后自动出现在<a href="/apps">应用货架</a>。</p>
+  </div>
 </section>
 {% endblock %}
 {% block footer %}

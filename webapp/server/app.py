@@ -2283,6 +2283,23 @@ def _apps_serve(tier_name: str, filename: str):
     return resp
 
 
+@app.get("/apps", response_class=HTMLResponse)
+async def apps_shelf(request: Request):
+    """R52 应用货架：列出全部 public 托管层（在线应用 + 可下载工具）。
+    新工具上传到 public 层即自动出现在此页与门户卡片，无需改代码。"""
+    conn = db.get_db()
+    tiers = db.rows(conn.execute(
+        "SELECT * FROM file_tiers WHERE perm='public' AND name != 'release' ORDER BY id"))
+    items = []
+    for t in tiers:
+        files = db.rows(conn.execute(
+            "SELECT filename, size, updated_at FROM file_objects WHERE tier_id=? "
+            "ORDER BY updated_at DESC, filename DESC", (t["id"],)))
+        items.append({"tier": t, "files": files,
+                      "has_index": any(f["filename"] == "index.html" for f in files)})
+    return templates.TemplateResponse(request, "apps.html", {"request": request, "items": items})
+
+
 @app.api_route("/apps/{tier_name}", methods=["GET", "HEAD"])
 @app.api_route("/apps/{tier_name}/", methods=["GET", "HEAD"])
 async def apps_index(tier_name: str, request: Request):

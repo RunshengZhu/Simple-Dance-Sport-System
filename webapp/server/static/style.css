@@ -631,10 +631,20 @@ html.theme-anim table, html.theme-anim th, html.theme-anim td, html.theme-anim .
   color: var(--acc);
 }
 .portal-hero p { margin: 0 auto; max-width: 720px; color: var(--muted); line-height: 1.7; }
-.portal-live { max-width: 860px; margin: 0 auto 18px; }
-.portal-live h2 { margin-top: 0; }
-.portal-links { display: flex; flex-wrap: wrap; gap: 10px; }
-.portal-hint { margin: 10px 0 0; font-size: .88rem; }
+.portal-audience {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 8px; margin: 0 auto 8px; padding: 0 12px;
+}
+.portal-shelf-title {
+  max-width: 980px; margin: 18px auto 12px;
+  font-size: 1.02rem; color: var(--ink-soft); letter-spacing: .06em;
+}
+.pc-ico { display: block; font-size: 1.7rem; margin-bottom: 8px; }
+.portal-card.is-placeholder {
+  border-style: dashed; background: transparent; box-shadow: none;
+}
+.portal-card.is-placeholder h3 { color: var(--ink-soft); }
+.portal-card.is-placeholder .pc-ico { filter: grayscale(.4); opacity: .75; }
 .portal-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}应用 · 体育舞蹈工具箱{% endblock %}
+{% block nav %}<a href="/">首页</a>{% endblock %}
+{% block content %}
+<h1>应用货架 <span class="muted">已挂载的在线应用与工具分发</span></h1>
+{% for item in items %}
+<div class="card">
+  <h2>{{ item.tier.name }}
+    {% if item.has_index %}<a class="btn" href="/apps/{{ item.tier.name }}/">打开应用</a>{% endif %}
+  </h2>
+  {% if item.tier.note %}<p class="muted">{{ item.tier.note }}</p>{% endif %}
+  {% if item.files %}
+  <div class="table-fit">
+    <table>
+      <tr><th>文件</th><th class="num">大小</th><th>更新时间</th></tr>
+      {% for f in item.files %}
+      <tr>
+        <td><a href="/files/{{ item.tier.name }}/{{ f.filename }}">{{ f.filename }}</a></td>
+        <td class="num">{{ "%.1f" | format(f.size / 1048576) }} MB</td>
+        <td class="muted">{{ f.updated_at }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}<p class="muted">暂无文件。</p>{% endif %}
+</div>
+{% else %}
+<p class="muted">暂无已挂载的应用。</p>
+{% endfor %}
+{% endblock %}
+{% block scripts %}
+{% endblock %}
