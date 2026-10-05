@@ -631,10 +631,6 @@ html.theme-anim table, html.theme-anim th, html.theme-anim td, html.theme-anim .
   color: var(--acc);
 }
 .portal-hero p { margin: 0 auto; max-width: 720px; color: var(--muted); line-height: 1.7; }
-.portal-audience {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
-  gap: 8px; margin: 0 auto 8px; padding: 0 12px;
-}
 .portal-shelf-title {
   max-width: 980px; margin: 18px auto 12px;
   font-size: 1.02rem; color: var(--ink-soft); letter-spacing: .06em;

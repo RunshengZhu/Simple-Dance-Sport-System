@@ -333,8 +333,7 @@ async def home(request: Request):
         "SELECT COALESCE(SUM(f.downloads), 0) AS d FROM file_objects f "
         "JOIN file_tiers t ON t.id = f.tier_id WHERE t.name = 'party-player'").fetchone()["d"]
     return templates.TemplateResponse(request, "portal.html", {
-        "request": request, "comp": _active_competition(),
-        "stats": stats, "player_dl": player_dl})
+        "request": request, "stats": stats, "player_dl": player_dl})
 
 
 @app.get("/login", response_class=HTMLResponse)
