@@ -30,7 +30,8 @@
   <h2>角色说明</h2>
   <table>
     <tr><th>角色</th><th>登录方式</th><th>职责</th></tr>
-    <tr><td>管理员</td><td>环境变量超管口令（不入库）</td><td>赛事全生命周期控制、账号管理</td></tr>
+    <tr><td>管理员（总）</td><td>环境变量超管口令（不入库，仅开发者持有）</td><td>全部赛事与账号管理</td></tr>
+    <tr><td>赛事管理员</td><td>用户名 + 口令（创建时绑定赛事）</td><td>仅管理自己绑定的赛事：导入、编排、检录、结果、晋级</td></tr>
     <tr><td>主持人 (host)</td><td>用户名 + 口令</td><td>开场前补检录、成绩播报标记</td></tr>
     <tr><td>检录长/检录员 (marshal)</td><td>用户名 + 口令</td><td>检录处逐场检录</td></tr>
     <tr><td>裁判 (judge)</td><td>免口令直达链接（D10）</td><td>评分（名单由赛事导入产生，无独立账号）</td></tr>
@@ -49,7 +50,9 @@
       <select id="u-role">
         <option value="marshal">检录长/检录员</option>
         <option value="host">主持人</option>
+        <option value="compadmin">赛事管理员（需绑定赛事）</option>
       </select>
+      <label>赛事 ID（仅赛事管理员需要，填赛事管理页列表里的 ID）</label><input id="u-compid" placeholder="如 20">
       <label>初始口令</label><input id="u-password" type="password" placeholder="至少 6 位">
     </div>
   </div>
@@ -96,6 +99,11 @@ function createUser() {
     password: document.getElementById('u-password').value
   };
   var msg = document.getElementById('u-msg');
+  if (body.role === 'compadmin') {
+    var ucid = parseInt(document.getElementById('u-compid').value, 10);
+    if (!ucid) { msg.textContent = '赛事管理员必须填写赛事 ID'; return; }
+    body.competition_id = ucid;
+  }
   api('POST', '/api/users', body).then(function () {
     msg.textContent = '已创建';
     document.getElementById('u-username').value = '';

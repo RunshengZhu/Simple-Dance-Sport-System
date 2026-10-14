@@ -83,6 +83,52 @@ MAX_BODY = int(os.environ.get("DSPORT_MAX_BODY", str(220 * 1024 * 1024)))       
 _RATE: dict = {}   # (slot, window_start) -> count（内存态，单 worker；重启即清零）
 
 
+def _compadmin(request: Request):
+    """R54 赛事管理员：会话角色为 admin 且绑定 users.role='compadmin' 的账号。
+    返回账号行（含 comp_id）；非赛事管理员返回 None。总管理员（环境口令）不建账号、永不受限。"""
+    s = _session(request)
+    if not s or not s.get("user_id"):
+        return None
+    u = db.rowdict(db.get_db().execute(
+        "SELECT * FROM users WHERE id=? AND role='compadmin' AND active=1", (s["user_id"],)).fetchone())
+    return u or None
+
+
+_COMPCID_RE = re.compile(r"^/(api/)?events/(\d+)")
+_COMPCID_DENY_PREFIXES = ("/api/users", "/api/import/json", "/api/import/db",
+                          "/api/export/json", "/api/export/db")
+
+
+@app.middleware("http")
+async def compadmin_scope(request: Request, call_next):
+    """R54 赛事管理员作用域中间件：全局能力拒绝；带 competition_id 的路径仅放行自己的赛事；
+    /events 列表页与 /users、/files 页重定向到自己的赛程编排页。"""
+    ca = _compadmin(request)
+    if not ca:
+        return await call_next(request)
+    cid = ca["comp_id"]
+    p = request.url.path
+    method = request.method
+
+    def deny(msg="赛事管理员无此权限"):
+        if p.startswith("/api"):
+            return JSONResponse({"detail": msg}, status_code=403)
+        return PlainTextResponse(msg, status_code=403)
+
+    if p.rstrip("/") in ("/events", "/users", "/files"):
+        return RedirectResponse(f"/events/{cid}/schedule", status_code=302)
+    if p.startswith(_COMPCID_DENY_PREFIXES):
+        return deny("赛事管理员不可执行全局操作")
+    if p == "/api/events" and method == "POST":
+        return deny("赛事管理员不可创建赛事")
+    if p == "/api/screen-control" and method == "POST":
+        return deny("赛事管理员不可修改全局大屏设置")
+    m = _COMPCID_RE.match(p)
+    if m and int(m.group(2)) != cid:
+        return deny("赛事管理员仅可操作自己的赛事")
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def guard(request: Request, call_next):
     """R53 基础防护：请求体大小上限 + 按 IP 固定窗口限速（常规 / 登录两档）+ 429。
@@ -186,6 +232,8 @@ def require_admin(request: Request):
     return s
 
 
+
+
 @app.exception_handler(HTTPException)
 async def html_auth_redirect(request: Request, exc: HTTPException):
     """页面路由的登录/权限异常改为跳转登录页（API 路由维持 JSON），避免用户看到裸错误。"""
@@ -238,10 +286,27 @@ async def api_login(request: Request):
     token = secrets.token_urlsafe(32)
     conn = db.get_db()
     if role == "admin":
-        if body.get("password") != ADMIN_PASSWORD:
-            login_failures_window(ip).append(time.time())
-            raise HTTPException(status_code=403, detail="口令错误")
-        conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'admin')", (token,))
+        demo_username = str(body.get("username") or "").strip()
+        password = str(body.get("password") or "")
+        if demo_username:
+            # R54 赛事管理员：账号制登录；会话角色记 admin（页面通行），
+            # 能力由 compadmin_scope 中间件按 users.comp_id 钳制。总管理员走环境口令、不建账号。
+            urow = db.rowdict(conn.execute(
+                "SELECT * FROM users WHERE username=? AND role='compadmin'", (demo_username,)).fetchone())
+            if not urow or not _verify_pw(password, urow["pw_hash"]):
+                _hash_pw(password)
+                login_failures_window(ip).append(time.time())
+                raise HTTPException(status_code=403, detail="用户名或口令错误")
+            if not urow["active"]:
+                login_failures_window(ip).append(time.time())
+                raise HTTPException(status_code=403, detail="用户名或口令错误")
+            conn.execute("INSERT INTO sessions(token, role, user_id) VALUES(?, 'admin', ?)",
+                         (token, urow["id"]))
+        else:
+            if body.get("password") != ADMIN_PASSWORD:
+                login_failures_window(ip).append(time.time())
+                raise HTTPException(status_code=403, detail="口令错误")
+            conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'admin')", (token,))
     elif role in ("host", "marshal"):
         # 分角色账号制：用户名 + 口令，账号由管理员在「用户管理」页创建/停用
         username = str(body.get("username") or "").strip() or role   # 留空 = 默认账号（host/marshal）
@@ -521,16 +586,28 @@ async def api_users_create(request: Request = None):
         raise HTTPException(status_code=400, detail="口令至少 6 位")
     if len(username) > 64 or len(display_name) > 64:
         raise HTTPException(status_code=400, detail="用户名/显示名最长 64 字符")
-    if role not in ("host", "marshal"):
-        raise HTTPException(status_code=400, detail="角色须为 host 或 marshal")
+    comp_id = body.get("competition_id")
+    if role not in ("host", "marshal", "compadmin"):
+        raise HTTPException(status_code=400, detail="角色须为 host / marshal / compadmin")
+    if role == "compadmin":
+        # R54 赛事管理员：必须绑定赛事
+        try:
+            comp_id = int(comp_id)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="赛事管理员必须绑定 competition_id")
+        if not db.rowdict(db.get_db().execute(
+                "SELECT id FROM competitions WHERE id=?", (comp_id,)).fetchone()):
+            raise HTTPException(status_code=400, detail="绑定的赛事不存在")
+    else:
+        comp_id = None
     conn = db.get_db()
     if conn.execute("SELECT 1 FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
         raise HTTPException(status_code=400, detail="用户名已存在（不区分大小写）")
     conn.execute(
-        "INSERT INTO users(username, pw_hash, role, display_name) VALUES(?,?,?,?)",
-        (username, _hash_pw(password), role, display_name or username))
+        "INSERT INTO users(username, pw_hash, role, display_name, comp_id) VALUES(?,?,?,?,?)",
+        (username, _hash_pw(password), role, display_name or username, comp_id))
     conn.commit()
-    return {"ok": True, "username": username}
+    return {"ok": True, "username": username, "role": role, "comp_id": comp_id}
 
 
 @app.post("/api/users/{user_id}/password")
@@ -736,7 +813,7 @@ async def api_create_event(request: Request):
 @app.post("/api/events/{competition_id}/activate")
 async def api_activate(competition_id: int, request: Request = None):
     require_admin(request)
-    _comp_or_404(competition_id)
+    comp = _comp_or_404(competition_id)
     conn = db.get_db()
     # R49 多赛事模型：多赛事可同时 active，不再互斥
     conn.execute("UPDATE competitions SET active=1 WHERE id=?", (competition_id,))
@@ -1557,6 +1634,11 @@ async def api_announce(ceid: int, request: Request = None):
 # ------------------------------------------------------------------ advancement
 @app.get("/api/projects/{project_code}/rounds/{round_no}/advancement-proposal")
 async def api_proposal(project_code: str, round_no: int, request: Request = None, competition_id: int = None):
+    ca = _compadmin(request)
+    if ca:
+        comp = _current_competition(request)
+        if not comp or comp["id"] != ca["comp_id"]:
+            raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
     require_admin(request)
     comp = _current_competition(request)
     cid = competition_id or (comp or {}).get("id")
@@ -1567,6 +1649,11 @@ async def api_proposal(project_code: str, round_no: int, request: Request = None
 
 @app.post("/api/projects/{project_code}/rounds/{round_no}/advancement-confirm")
 async def api_confirm(project_code: str, round_no: int, request: Request = None):
+    ca = _compadmin(request)
+    if ca:
+        comp = _current_competition(request)
+        if not comp or comp["id"] != ca["comp_id"]:
+            raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
     require_admin(request)
     comp = _current_competition(request)
     if not comp:

@@ -11,6 +11,7 @@
     <option value="marshal">检录长 / 检录员</option>
   </select>
   <div id="user-box" style="display:none"><label>用户名</label><input id="username" placeholder="由管理员分发"></div>
+  <div id="admin-user-box" style="display:none"><label>用户名（选填）</label><input id="admin-username" placeholder="赛事管理员账号填这里，总管理员留空"></div>
   <div id="pw-box"><label id="pw-label">口令</label><input type="password" id="password"></div>
   <div id="judge-box" style="display:none"><label>裁判 ID</label><input id="judge_id" placeholder="如 J1"></div>
   <p><button class="btn" id="btn">登录</button> <span id="msg" class="err"></span></p>
@@ -27,6 +28,7 @@ function syncRole() {
   document.getElementById('pw-box').style.display = isJudge ? 'none' : '';
   document.getElementById('judge-box').style.display = isJudge ? '' : 'none';
   document.getElementById('user-box').style.display = isAccount ? '' : 'none';
+  document.getElementById('admin-user-box').style.display = role === 'admin' ? '' : 'none';
   if (!isJudge) document.getElementById('pw-label').textContent = PW_ROLES[role];
 }
 document.getElementById('role').onchange = syncRole;
@@ -50,6 +52,7 @@ document.getElementById('btn').onclick = async function () {
   else {
     body.password = document.getElementById('password').value;
     if (isAccountRole(role)) body.username = document.getElementById('username').value.trim();
+    if (role === 'admin') body.username = document.getElementById('admin-username').value.trim();
   }
   try {
     await api('POST', '/api/login', body);
