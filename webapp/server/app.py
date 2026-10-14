@@ -161,8 +161,11 @@ async def guard(request: Request, call_next):
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    """R53 基础安全响应头（HTTPS 就绪后再补 HSTS）。"""
+    """R53 基础安全响应头（HTTPS 就绪后再补 HSTS）。
+    R54b：HTML 页面一律 no-cache——登录页等模板更新后浏览器不得使用旧缓存。"""
     resp = await call_next(request)
+    if resp.headers.get("content-type", "").startswith("text/html"):
+        resp.headers["Cache-Control"] = "no-cache"
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
