@@ -92,6 +92,20 @@ def submit_skating(ceid, dance, nums):
         must(c, f"J{j} 提交 {dance} 名次表", o)
 
 
+def publish_event(ceid, label, announce=False):
+    """发布；若自动算分未触发（400 请先完成计算）则显式计算后重试。"""
+    c, o = req("POST", f"/api/competition-events/{ceid}/publish", {})
+    if c == 400 and "计算" in o.decode("utf-8", "ignore"):
+        must(*req("POST", f"/api/competition-events/{ceid}/calculate", {}), f"{label} 显式计算")
+        c, o = req("POST", f"/api/competition-events/{ceid}/publish", {})
+    must(c, f"{label} 发布", o)
+    if announce:
+        req("POST", "/api/login", {"role": "host", "username": "demo-host",
+                                   "password": "DemoHost2026"}, sess="host")
+        must(*req("POST", f"/api/competition-events/{ceid}/announce",
+                  {"announced": True}, sess="host"), f"{label} 标记已播报")
+
+
 def main():
     must(*req("POST", "/api/login", {"role": "admin", "password": ADMIN_PW}), "管理员登录")
 
@@ -176,7 +190,7 @@ def main():
     must(*req("POST", f"/api/competition-events/{ids['R1']}/checkin",
               {"numbers": ["3%0d" % i for i in range(1, 9)], "state": True}, sess="marshal"), "R1 全检录 8/8")
     submit_skating(ids["R1"], "伦巴", ["3%0d" % i for i in range(1, 9)])
-    must(*req("POST", f"/api/competition-events/{ids['R1']}/publish", {}), "R1 发布（未播报）")
+    publish_event(ids["R1"], "R1", announce=False)
 
     # ---- S1 集体舞：评分制 → 发布 → 播报 ----
     must(*req("POST", f"/api/competition-events/{ids['S1']}/open",
