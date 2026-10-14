@@ -406,23 +406,23 @@ def _event_or_404(ceid):
 # ------------------------------------------------------------------ pages
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """R52 工具箱门户：未登录访客看工具入口（备案名「体育舞蹈工具箱」落地面）；
-    已登录工作人员直达各自工作台。"""
-    s = _session(request)
-    if s and s["role"] == "admin":
-        return RedirectResponse("/events")
-    if s and s["role"] == "judge":
-        return RedirectResponse("/judge")
-    if s and s["role"] in ("host", "marshal"):
-        return RedirectResponse("/staff")
+    """R55b 工具箱门户：/ 恒为工具箱首页（备案名「体育舞蹈工具箱」落地面）。
+    R56c：登录用户不再被重定向——左上角品牌点击必须能回到首页；
+    门户页首为已登录角色提供「我的工作台」链接防迷路。"""
     conn = db.get_db()
     stats = {r["slug"]: r["n"] for r in db.rows(
         conn.execute("SELECT slug, SUM(n) AS n FROM visit_stats GROUP BY slug"))}
     player_dl = conn.execute(
         "SELECT COALESCE(SUM(f.downloads), 0) AS d FROM file_objects f "
         "JOIN file_tiers t ON t.id = f.tier_id WHERE t.name = 'party-player'").fetchone()["d"]
+    s = _session(request)
+    role_home = {("judge"): ("/judge", "我的评分台"),
+                 ("marshal"): ("/staff", "检录台"),
+                 ("host"): ("/staff", "主持台"),
+                 ("admin"): ("/events", "赛事管理")}.get(s["role"]) if s else None
     return templates.TemplateResponse(request, "portal.html", {
-        "request": request, "stats": stats, "player_dl": player_dl})
+        "request": request, "stats": stats, "player_dl": player_dl,
+        "role_home": role_home})
 
 
 @app.get("/login", response_class=HTMLResponse)

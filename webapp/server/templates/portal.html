@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}体育舞蹈工具箱{% endblock %}
 {% block bodyclass %}portal{% endblock %}
-{% block nav %}{% endblock %}
+{% block nav %}{% if role_home %}<a href="{{ role_home[0] }}">{{ role_home[1] }}</a>{% endif %}{% endblock %}
 {% block content %}
 <section class="portal-hero">
   <h1>体育舞蹈工具箱</h1>
