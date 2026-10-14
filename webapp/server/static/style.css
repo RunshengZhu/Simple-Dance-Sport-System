@@ -690,3 +690,37 @@ body.screen .site-footer { display: none; }
 .comp-card h3 a:hover { color: var(--acc); }
 .comp-meta { margin: 6px 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .comp-login { max-width: 860px; margin: 0 auto 22px; }
+
+/* ---------- R56 筹备向导 ---------- */
+.wiz-steps {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 0 auto 18px; max-width: 980px;
+}
+.wstep {
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border: 1px solid var(--line); border-radius: 999px; font-size: .9rem; color: var(--muted);
+}
+.wstep i {
+  font-style: normal; width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--gray-soft); color: var(--ink-soft); font-size: .8rem;
+}
+.wstep.cur { border-color: var(--acc); color: var(--acc); font-weight: 700; }
+.wstep.cur i { background: var(--acc); color: #fff; }
+.wstep.done i { background: var(--ok); color: #fff; }
+.wiz-pane { max-width: 860px; margin: 0 auto 18px; }
+.wiz-pane h2 { margin-top: 0; }
+.wiz-info { margin: 10px 0; }
+.wiz-info th { text-align: left; color: var(--muted); font-weight: 500; width: 8em; padding: 6px 10px 6px 0; }
+.wiz-info td { padding: 6px 0; }
+.wiz-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.wiz-upload label { display: inline-flex; align-items: center; gap: 8px; }
+.wiz-result { min-height: 1.2em; margin: 6px 0; font-weight: 500; }
+.wiz-result.ok { color: var(--ok); }
+.wiz-result.err { color: var(--acc); }
+.wiz-count { color: var(--muted); font-size: .88rem; margin: 0 0 8px; }
+.wiz-nav { display: flex; justify-content: space-between; margin-top: 16px; gap: 10px; }
+.wiz-nav .btn.secondary { margin-right: auto; }
+.wiz-staff-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.wiz-staff-form .btn { grid-column: 1 / -1; }
+.wiz-summary table { margin: 10px 0; }
+@media (max-width: 719px) { .wiz-staff-form { grid-template-columns: 1fr; } }

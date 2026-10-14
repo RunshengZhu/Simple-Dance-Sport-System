@@ -98,8 +98,13 @@ def test_compadmin_blocked_on_other_comp(seeded):
 def test_compadmin_cannot_create_comp_or_manage_users(seeded):
     assert req("POST", "/api/events",
                json={"name": "偷建的赛事"}, role="ca").status_code == 403
+    # R56 筹备向导：赛事管理员可创建检录/主持账号（工作人员池）
     assert req("POST", "/api/users",
-               json={"username": "x9", "password": "123456", "role": "marshal"}, role="ca").status_code == 403
+               json={"username": "x9", "password": "123456", "role": "marshal"}, role="ca").status_code in (200, 201)
+    # 但不可创建另一名赛事管理员
+    assert req("POST", "/api/users",
+               json={"username": "ca-x", "password": "123456", "role": "compadmin",
+                     "competition_id": 1}, role="ca").status_code == 403
 
 
 def test_compadmin_cannot_touch_global_ops(seeded):

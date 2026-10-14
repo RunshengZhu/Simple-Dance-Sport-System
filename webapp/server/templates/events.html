@@ -13,6 +13,13 @@
     <button class="btn" id="create-btn" type="button">创建</button>
     <span id="create-msg" class="err"></span>
   </div>
+  <details class="wiz-admin" style="margin-top:10px">
+    <summary class="muted">同时创建赛事管理员账号（可选，推荐）</summary>
+    <div class="row" style="margin-top:8px">
+      <input id="ca-username" placeholder="赛事管理员用户名（如 organizer-xxx）">
+      <input id="ca-password" placeholder="赛事管理员口令（至少 6 位）">
+    </div>
+  </details>
 </div>
 <div class="card">
   <h2>赛事列表</h2>
@@ -56,7 +63,15 @@ document.getElementById('tbl').addEventListener('click', async function (ev) {
 document.getElementById('create-btn').addEventListener('click', async function () {
   try {
     await api('POST', '/api/events', {name: inputVal('name'), date: inputVal('date'), location: inputVal('location')});
-    showMsg('创建成功', true);
+    var cu = inputVal('ca-username'), cp = inputVal('ca-password');
+    if (cu || cp) {
+      var all = await api('GET', '/api/events');
+      var nid = (all.events.find(function (x) { return x.name === inputVal('name'); }) || {}).id;
+      await api('POST', '/api/users', {username: cu, password: cp, role: 'compadmin', competition_id: nid});
+      showMsg('赛事与赛事管理员账号已创建', true);
+    } else {
+      showMsg('创建成功', true);
+    }
     inputVal2reset();
     refresh();
   } catch (e) { showMsg(e.message, false); }

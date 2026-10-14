@@ -120,7 +120,9 @@ async def compadmin_scope(request: Request, call_next):
 
     if p.rstrip("/") in ("/events", "/users", "/files"):
         return RedirectResponse(f"/events/{cid}/schedule", status_code=302)
-    if p.startswith(_COMPCID_DENY_PREFIXES):
+    if p == "/api/users" and method in ("GET", "POST"):
+        pass  # R56 筹备向导：赛事管理员可创建/查看工作人员（host/marshal），handler 内钳制角色
+    elif p.startswith(_COMPCID_DENY_PREFIXES):
         return deny("赛事管理员不可执行全局操作")
     if p == "/api/events" and method == "POST":
         return deny("赛事管理员不可创建赛事")
@@ -484,6 +486,53 @@ async def competition_home(request: Request, competition_id: int):
         "is_comp_admin": bool(ca and ca["comp_id"] == competition_id)})
 
 
+@app.get("/events/{competition_id}/setup", response_class=HTMLResponse)
+async def setup_wizard_page(request: Request, competition_id: int):
+    """R56 筹备向导：赛事管理员建赛后的多步引导。筹备完成后访问自动跳赛程编排。"""
+    s = require_admin(request)
+    comp = _comp_or_404(competition_id)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    if comp["setup_done"]:
+        return RedirectResponse(f"/events/{competition_id}/schedule", status_code=302)
+    return templates.TemplateResponse(request, "setup.html", {"request": request, "comp": comp})
+
+
+@app.get("/api/events/{competition_id}/setup/status")
+async def api_setup_status(competition_id: int, request: Request = None):
+    """筹备向导状态：各步骤当前数量。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    staff = db.rows(conn.execute(
+        "SELECT username, display_name, role FROM users WHERE role IN ('host','marshal') ORDER BY role, username"))
+    evs = db.rows(conn.execute(
+        "SELECT status, published FROM events WHERE competition_id=?", (competition_id,)))
+    return {
+        "competitors": conn.execute(
+            "SELECT COUNT(*) c FROM competitors WHERE competition_id=?", (competition_id,)).fetchone()["c"],
+        "judges": conn.execute(
+            "SELECT COUNT(*) c FROM judges WHERE competition_id=?", (competition_id,)).fetchone()["c"],
+        "events": len(evs),
+        "events_published": sum(1 for e in evs if e["published"]),
+        "staff": staff,
+        "setup_done": bool(comp["setup_done"]),
+    }
+
+
+@app.post("/events/{competition_id}/setup/complete")
+async def setup_complete(competition_id: int, request: Request = None):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    db.get_db().execute("UPDATE competitions SET setup_done=1 WHERE id=?", (competition_id,))
+    db.get_db().commit()
+    return {"ok": True}
+
+
 @app.get("/competitions/{competition_id}/login", response_class=HTMLResponse)
 async def competition_login_page(request: Request, competition_id: int):
     """赛事专属登录页：登录成功即把会话绑定到本赛事（sessions.comp_id）。"""
@@ -681,6 +730,8 @@ async def api_users_create(request: Request = None):
     comp_id = body.get("competition_id")
     if role not in ("host", "marshal", "compadmin"):
         raise HTTPException(status_code=400, detail="角色须为 host / marshal / compadmin")
+    if _compadmin(request) and role == "compadmin":
+        raise HTTPException(status_code=403, detail="赛事管理员不可创建赛事管理员账号")
     if role == "compadmin":
         # R54 赛事管理员：必须绑定赛事
         try:

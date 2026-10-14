@@ -210,6 +210,9 @@ CREATE TABLE IF NOT EXISTS snapshot_meta (
     se_cols3 = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "comp_id" not in se_cols3:
         conn.execute("ALTER TABLE users ADD COLUMN comp_id INTEGER")
+    comp_cols = {r[1] for r in conn.execute("PRAGMA table_info(competitions)")}
+    if "setup_done" not in comp_cols:
+        conn.execute("ALTER TABLE competitions ADD COLUMN setup_done INTEGER DEFAULT 0")
 
     if "visit_stats" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='visit_stats'")}:
         conn.executescript("""

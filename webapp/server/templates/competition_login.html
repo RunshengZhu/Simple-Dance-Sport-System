@@ -28,7 +28,7 @@
 var CID = {{ comp.id }};
 var QROLE = {{ role | tojson }};
 var QJUDGE = {{ judge | tojson }};
-var HOME = {judge: '/judge', marshal: '/staff', host: '/staff', admin: '/events/' + CID + '/schedule'};
+var HOME = {judge: '/judge', marshal: '/staff', host: '/staff', admin: '/events/' + CID + '/setup'};
 var LABEL = {judge: '裁判 ID', marshal: '检录口令', host: '主持人口令', admin: '赛事管理员口令'};
 
 function syncRole() {
