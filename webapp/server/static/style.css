@@ -678,3 +678,14 @@ body.portal main { max-width: 1040px; }
 .beian-line a { color: var(--muted); text-decoration: none; }
 .beian-line a:hover { color: var(--acc); }
 body.screen .site-footer { display: none; }
+
+.comp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 16px;
+  max-width: 1040px;
+}
+.comp-card h3 a { color: inherit; text-decoration: none; }
+.comp-card h3 a:hover { color: var(--acc); }
+.comp-meta { margin: 6px 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.comp-login { max-width: 860px; margin: 0 auto 22px; }

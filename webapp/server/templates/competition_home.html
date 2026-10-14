@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ comp.name }} · 体育舞蹈工具箱{% endblock %}
+{% block nav %}<a href="/competitions">公开赛事</a><a href="/">首页</a>{% endblock %}
+{% block content %}
+<section class="portal-hero" style="padding-bottom:12px">
+  <h1>{{ comp.name }}</h1>
+  <p>{{ comp.date or "日期待定" }} · {{ comp.location or "地点待定" }}</p>
+</section>
+
+<div class="card comp-login">
+  <b>参赛与工作人员入口</b>
+  <div class="portal-links" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px">
+    <a class="btn" href="/competitions/{{ comp.id }}/login?role=judge">裁判评分入口</a>
+    <a class="btn secondary" href="/competitions/{{ comp.id }}/login?role=marshal">检录入口</a>
+    <a class="btn secondary" href="/competitions/{{ comp.id }}/login?role=host">主持入口</a>
+    <a class="btn secondary" href="/competitions/{{ comp.id }}/login?role=admin">赛事管理员入口</a>
+  </div>
+  <p class="muted" style="margin:10px 0 0;font-size:.88rem">
+    观众无需登录，本页可直接浏览赛程与已发布成绩。</p>
+</div>
+
+<h2>赛程</h2>
+<div class="card table-fit">
+  <table>
+    <tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
+    {% for e in events %}
+    <tr>
+      <td><b>{{ e.code }}</b></td>
+      <td>{{ e.name }}</td>
+      <td>{{ e.project_code }}</td>
+      <td>第 {{ e.round }} 轮</td>
+      <td>
+        {% if e.status == 'pending' %}<span class="tag gray">待开始</span>
+        {% elif e.status == 'scoring' %}<span class="tag warn">评分中</span>
+        {% elif e.status == 'calculated' %}<span class="tag acc">已计算</span>
+        {% else %}<span class="tag ok">已发布</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if published %}
+<h2>成绩公告</h2>
+{% for p in published %}
+<div class="card">
+  <h3>{{ p.code }} {{ p.name }} <span class="tag ok">已发布</span></h3>
+  <div class="table-fit">
+    <table>
+      <tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th class="num">总分</th></tr>
+      {% for r in p.results %}
+      <tr>
+        <td><b>{{ r.rank }}</b></td>
+        <td>{{ r.competitor_number }}</td>
+        <td>{{ r.competitor_name or "—" }}</td>
+        <td class="num">{{ r.total_score }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if standings %}
+<h2>团体总分榜</h2>
+<div class="card table-fit">
+  <table>
+    <tr><th>名次</th><th>单位</th><th class="num">总分</th></tr>
+    {% for s in standings %}
+    <tr><td>{{ loop.index }}</td><td>{{ s.unit }}</td><td class="num">{{ s.total }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% endblock %}

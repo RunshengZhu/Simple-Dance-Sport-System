@@ -14,6 +14,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import urllib.parse
 import sys
 import time
 import uuid
@@ -59,6 +60,8 @@ def _visit_slug(path: str):
         return "screen"
     if path == "/manual":
         return "manual"
+    if path == "/competitions":
+        return "competitions"
     if path == "/apps":
         return "apps"
     if path.startswith("/apps/"):
@@ -288,6 +291,13 @@ async def api_login(request: Request):
         raise HTTPException(status_code=429, detail="失败次数过多，请稍后再试")
     token = secrets.token_urlsafe(32)
     conn = db.get_db()
+    bind_cid = body.get("competition_id")
+    if bind_cid is not None:
+        try:
+            bind_cid = int(bind_cid)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="competition_id 须为整数")
+
     if role == "admin":
         demo_username = str(body.get("username") or "").strip()
         password = str(body.get("password") or "")
@@ -303,8 +313,10 @@ async def api_login(request: Request):
             if not urow["active"]:
                 login_failures_window(ip).append(time.time())
                 raise HTTPException(status_code=403, detail="用户名或口令错误")
-            conn.execute("INSERT INTO sessions(token, role, user_id) VALUES(?, 'admin', ?)",
-                         (token, urow["id"]))
+            if bind_cid is not None and urow["comp_id"] != bind_cid:
+                raise HTTPException(status_code=403, detail="该赛事管理员不属于此赛事")
+            conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, 'admin', ?, ?)",
+                         (token, urow["id"], urow["comp_id"]))
         else:
             if body.get("password") != ADMIN_PASSWORD:
                 login_failures_window(ip).append(time.time())
@@ -323,8 +335,8 @@ async def api_login(request: Request):
         if not urow["active"]:
             login_failures_window(ip).append(time.time())
             raise HTTPException(status_code=403, detail="用户名或口令错误")
-        conn.execute("INSERT INTO sessions(token, role, user_id) VALUES(?,?,?)",
-                     (token, role, urow["id"]))
+        conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?,?,?,?)",
+                     (token, role, urow["id"], bind_cid))
     elif role == "judge":
         code = str(body.get("judge_id") or "")
         row = conn.execute("SELECT * FROM judges WHERE code=? ", (code,)).fetchone()
@@ -332,7 +344,14 @@ async def api_login(request: Request):
         if not row:
             login_failures_window(ip).append(time.time())
             raise HTTPException(status_code=403, detail="裁判 ID 不存在")
-        conn.execute("INSERT INTO sessions(token, role, judge_code) VALUES(?, 'judge', ?)", (token, code))
+        if bind_cid is not None:
+            # R55 赛事专属登录：裁判必须属于所登录的赛事
+            member = conn.execute("SELECT 1 FROM judges WHERE competition_id=? AND code=?",
+                                  (bind_cid, code)).fetchone()
+            if not member:
+                raise HTTPException(status_code=403, detail="该裁判不属于此赛事")
+        conn.execute("INSERT INTO sessions(token, role, judge_code, comp_id) VALUES(?, 'judge', ?, ?)",
+                     (token, code, bind_cid))
     else:
         raise HTTPException(status_code=400, detail="未知角色")
     conn.commit()
@@ -406,7 +425,77 @@ async def home(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
+    """R55：/login 不再服务评分系统——只保留总管理员登录页；
+    裁判旧书签（/login?role=judge&judge=J1）302 到其所属赛事的专属登录页；
+    其余情况跳公开赛事列表。"""
+    q = request.query_params
+    if q.get("role") == "judge":
+        code = (q.get("judge") or "").strip()
+        if code:
+            conn = db.get_db()
+            rows = db.rows(conn.execute(
+                "SELECT j.competition_id, c.active FROM judges j "
+                "JOIN competitions c ON c.id=j.competition_id "
+                "WHERE j.code=? AND c.active=1 ORDER BY j.competition_id DESC", (code,)))
+            if rows:
+                return RedirectResponse(
+                    f"/competitions/{rows[0]['competition_id']}/login?role=judge&judge={urllib.parse.quote(code)}",
+                    status_code=302)
+        return RedirectResponse("/competitions", status_code=302)
+    if q.get("role"):
+        return RedirectResponse("/competitions", status_code=302)
     return templates.TemplateResponse(request, "login.html", {"request": request})
+
+
+# ---- R55 公开赛事中心 ----
+@app.get("/competitions", response_class=HTMLResponse)
+async def competitions_page(request: Request):
+    """公开赛事列表：卡片展示全部激活中的赛事。"""
+    conn = db.get_db()
+    comps = db.rows(conn.execute(
+        "SELECT id, name, date, location FROM competitions WHERE active=1 ORDER BY id DESC"))
+    cards = []
+    for c in comps:
+        evs = db.rows(conn.execute(
+            "SELECT status, published FROM events WHERE competition_id=?", (c["id"],)))
+        cards.append({**c, "n_events": len(evs),
+                      "n_published": sum(1 for e in evs if e["published"]),
+                      "n_scoring": sum(1 for e in evs if e["status"] == "scoring")})
+    return templates.TemplateResponse(request, "competitions.html", {
+        "request": request, "cards": cards})
+
+
+@app.get("/competitions/{competition_id}", response_class=HTMLResponse)
+async def competition_home(request: Request, competition_id: int):
+    """赛事专属首页：公开详情（赛程/成绩公告/团体总分）+ 各角色登录入口。
+    仅展示激活中的赛事。"""
+    conn = db.get_db()
+    comp = db.rowdict(conn.execute(
+        "SELECT * FROM competitions WHERE id=? AND active=1", (competition_id,)).fetchone())
+    if not comp:
+        raise HTTPException(status_code=404, detail="赛事不存在或未开放")
+    payload = _public_payload(comp) or {"events": [], "published_results": [],
+                                        "team_standings": {"standings": []}}
+    ca = _compadmin(request)
+    return templates.TemplateResponse(request, "competition_home.html", {
+        "request": request, "comp": comp, "events": payload["events"],
+        "published": payload["published_results"],
+        "standings": payload["team_standings"].get("standings", []),
+        "is_comp_admin": bool(ca and ca["comp_id"] == competition_id)})
+
+
+@app.get("/competitions/{competition_id}/login", response_class=HTMLResponse)
+async def competition_login_page(request: Request, competition_id: int):
+    """赛事专属登录页：登录成功即把会话绑定到本赛事（sessions.comp_id）。"""
+    conn = db.get_db()
+    comp = db.rowdict(conn.execute(
+        "SELECT id, name FROM competitions WHERE id=? AND active=1", (competition_id,)).fetchone())
+    if not comp:
+        raise HTTPException(status_code=404, detail="赛事不存在或未开放")
+    q = request.query_params
+    return templates.TemplateResponse(request, "competition_login.html", {
+        "request": request, "comp": comp,
+        "role": q.get("role") or "", "judge": q.get("judge") or ""})
 
 
 @app.get("/events", response_class=HTMLResponse)

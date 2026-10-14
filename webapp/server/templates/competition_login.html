@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}赛事登录 · {{ comp.name }}{% endblock %}
+{% block nav %}<a href="/competitions/{{ comp.id }}">赛事首页</a><a href="/competitions">公开赛事</a>{% endblock %}
+{% block content %}
+<div class="card" style="max-width:460px;margin:5vh auto">
+  <h1>赛事登录</h1>
+  <p class="muted">{{ comp.name }} 的工作人员与参赛者入口。观众无需登录，可直接
+    <a href="/competitions/{{ comp.id }}">浏览赛事公开详情</a>。</p>
+
+  <label>角色</label>
+  <select id="role">
+    <option value="judge">裁判</option>
+    <option value="marshal">检录长 / 检录员</option>
+    <option value="host">主持人</option>
+    <option value="admin">赛事管理员</option>
+  </select>
+
+  <div id="judge-box" style="display:none"><label>裁判 ID</label><input id="judge_id" placeholder="如 J1"></div>
+  <div id="user-box"><label>用户名</label><input id="username" placeholder="由赛事管理员分发"></div>
+  <div id="pw-box"><label id="pw-label">口令</label><input type="password" id="password"></div>
+
+  <p><button class="btn" id="btn">登录本赛事</button> <span id="msg" class="err"></span></p>
+  <p class="muted">登录后本浏览器将绑定到「{{ comp.name }}」；
+    裁判可用直达链接 <code>/login?role=judge&judge=J1</code>。</p>
+</div>
+{% endblock %}
+{% block scripts %}
+var CID = {{ comp.id }};
+var QROLE = {{ role | tojson }};
+var QJUDGE = {{ judge | tojson }};
+var HOME = {judge: '/judge', marshal: '/staff', host: '/staff', admin: '/events/' + CID + '/schedule'};
+var LABEL = {judge: '裁判 ID', marshal: '检录口令', host: '主持人口令', admin: '赛事管理员口令'};
+
+function syncRole() {
+  var role = document.getElementById('role').value;
+  document.getElementById('judge-box').style.display = role === 'judge' ? '' : 'none';
+  document.getElementById('pw-label').textContent = LABEL[role];
+}
+document.getElementById('role').onchange = syncRole;
+if (QROLE) {
+  var sel = document.getElementById('role');
+  if (Array.from(sel.options).some(function (o) { return o.value === QROLE; })) sel.value = QROLE;
+  if (QJUDGE) document.getElementById('judge_id').value = QJUDGE;
+}
+syncRole();
+
+document.getElementById('btn').onclick = async function () {
+  var role = document.getElementById('role').value;
+  var body = {role: role, competition_id: CID};
+  if (role === 'judge') {
+    body.judge_id = document.getElementById('judge_id').value.trim();
+  } else {
+    body.username = document.getElementById('username').value.trim();
+    body.password = document.getElementById('password').value;
+  }
+  try {
+    await api('POST', '/api/login', body);
+    location.href = HOME[role] || '/';
+  } catch (e) { document.getElementById('msg').textContent = e.message; }
+};
+{% endblock %}

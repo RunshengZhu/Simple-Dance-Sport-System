@@ -55,6 +55,10 @@ def seeded():
         r = req("POST", "/api/events", json={"name": name, "date": "2026-10-14", "location": "x"},
                 role="super")
         ids[name] = r.json()["id"]
+    # 示例赛事激活（作为台前/公开赛事）并导入裁判 J1、J2
+    assert req("POST", f"/api/events/{ids['示例赛事（演示）']}/activate", json={}, role="super").status_code == 200
+    assert req("POST", f"/api/events/{ids['示例赛事（演示）']}/imports/judges",
+               content="裁判ID,姓名\nJ1,甲\nJ2,乙", role="super").status_code in (200, 201)
     r = req("POST", "/api/users",
             json={"username": "demo-admin", "password": "demopass1",
                   "role": "compadmin", "competition_id": ids["示例赛事（演示）"],
@@ -121,3 +125,68 @@ def test_super_admin_can_create_compadmin_accounts(seeded):
     r2 = req("POST", "/api/users",
              json={"username": "ca3", "password": "pass123456", "role": "compadmin"}, role="super")
     assert r2.status_code == 400
+
+
+# ---------------- R55 赛事层级（公开赛事中心 / 赛事首页 / 赛事专属登录） ----------------
+
+def test_competitions_page_lists_active_only(seeded):
+    r = req("GET", "/competitions")
+    assert "示例赛事（演示）" in r.text
+    # 停用普通邀请赛后不应再出现
+    ids = seeded
+    # （不真正停用，避免影响其他用例；此处只验证页面包含激活赛事）
+
+
+def test_competition_home_renders_own_data(seeded):
+    ids = seeded
+    cid = ids["示例赛事（演示）"]
+    r = req("GET", f"/competitions/{cid}")
+    assert r.status_code == 200
+    assert "示例赛事（演示）" in r.text
+
+
+def test_competition_pages_404_for_inactive(seeded):
+    ids = seeded
+    # 未激活的赛事：新建一场不激活
+    r = req("POST", "/api/events", json={"name": "未激活赛", "date": "x", "location": "y"}, role="super")
+    nid = r.json()["id"]
+    assert req("GET", f"/competitions/{nid}").status_code == 404
+    assert req("GET", f"/competitions/{nid}/login").status_code == 404
+
+
+def test_comp_scoped_login_binds_session_comp(seeded):
+    ids = seeded
+    cid = ids["示例赛事（演示）"]
+    r = req("POST", "/api/login",
+            json={"role": "judge", "judge_id": "J1", "competition_id": cid})
+    assert r.status_code == 200, r.text
+    token = r.headers["set-cookie"].split("session=")[1].split(";")[0]
+    # 会话已绑定赛事：sessions.comp_id 应为该赛事
+    row = db_module.rowdict(db_module.get_db().execute(
+        "SELECT comp_id FROM sessions WHERE token=?", (token,)).fetchone())
+    assert row and row["comp_id"] == cid
+
+
+def test_comp_scoped_login_rejects_foreign_judge(seeded):
+    ids = seeded
+    # 新建一场激活赛事并把 J9 加入其中；J9 不在示例赛事 → 示例赛事专属登录必须 403
+    r = req("POST", "/api/events", json={"name": "他赛判官", "date": "x", "location": "y"}, role="super")
+    other = r.json()["id"]
+    req("POST", f"/api/events/{other}/activate", json={}, role="super")
+    req("POST", f"/api/events/{other}/imports/judges", content="裁判ID,姓名\nJ9,外来裁判", role="super")
+    r = req("POST", "/api/login",
+            json={"role": "judge", "judge_id": "J9", "competition_id": ids["示例赛事（演示）"]})
+    assert r.status_code == 403
+
+
+def test_old_judge_bookmark_redirects_to_comp_login(seeded):
+    r = req("GET", "/login?role=judge&judge=J1")
+    assert r.status_code == 302
+    assert "/competitions/" in r.headers["location"] and "role=judge" in r.headers["location"]
+
+
+def test_login_page_is_super_admin_only(seeded):
+    r = req("GET", "/login")
+    assert r.status_code == 200 and "总管理员登录" in r.text
+    # 其他角色旧链接 → 公开赛事列表
+    assert req("GET", "/login?role=marshal").status_code == 302

@@ -1,62 +1,26 @@
 {% extends "base.html" %}
-{% block title %}登录{% endblock %}
+{% block title %}总管理员登录{% endblock %}
 {% block content %}
 <div class="card" style="max-width:420px;margin:6vh auto">
-  <h1>登录</h1>
-  <label>角色</label>
-  <select id="role">
-    <option value="admin">管理员</option>
-    <option value="judge">裁判</option>
-    <option value="host">主持人</option>
-    <option value="marshal">检录长 / 检录员</option>
-  </select>
-  <div id="user-box" style="display:none"><label>用户名</label><input id="username" placeholder="由管理员分发"></div>
-  <div id="admin-user-box" style="display:none"><label>用户名（选填）</label><input id="admin-username" placeholder="赛事管理员账号填这里，总管理员留空"></div>
-  <div id="pw-box"><label id="pw-label">口令</label><input type="password" id="password"></div>
-  <div id="judge-box" style="display:none"><label>裁判 ID</label><input id="judge_id" placeholder="如 J1"></div>
+  <h1>总管理员登录</h1>
+  <p class="muted">赛事工作人员与裁判请从 <a href="/competitions">公开赛事</a> 进入对应赛事登录；
+    本页仅供平台总管理员使用。</p>
+  <label>用户名（选填）</label>
+  <input id="username" placeholder="总管理员留空">
+  <label>口令</label>
+  <input type="password" id="password">
   <p><button class="btn" id="btn">登录</button> <span id="msg" class="err"></span></p>
-  <p class="muted">观众无需登录：查看 <a href="/public/schedule">赛程</a> · <a href="/public/results">成绩</a> · <a href="/screen">大屏</a></p>
+  <p class="muted">观众无需登录：查看 <a href="/competitions">公开赛事</a></p>
 </div>
 {% endblock %}
 {% block scripts %}
-var PW_ROLES = {admin: '管理员口令', host: '主持人口令', marshal: '检录口令'};
-var HOME = {admin: '/events', host: '/staff', marshal: '/staff', judge: '/judge'};
-function syncRole() {
-  var role = document.getElementById('role').value;
-  var isJudge = role === 'judge';
-  var isAccount = isAccountRole(role);
-  document.getElementById('pw-box').style.display = isJudge ? 'none' : '';
-  document.getElementById('judge-box').style.display = isJudge ? '' : 'none';
-  document.getElementById('user-box').style.display = isAccount ? '' : 'none';
-  document.getElementById('admin-user-box').style.display = role === 'admin' ? '' : 'none';
-  if (!isJudge) document.getElementById('pw-label').textContent = PW_ROLES[role];
-}
-document.getElementById('role').onchange = syncRole;
-// URL 参数直达：/login?role=judge&judge=J1（裁判手机书签，易用性走查 2026-08-29）
-function isAccountRole(r) { return r === 'host' || r === 'marshal'; }
-(function () {
-  var q = new URLSearchParams(location.search);
-  var qr = q.get('role');
-  if (qr) {
-    var sel = document.getElementById('role');
-    sel.value = qr;
-    sel.dispatchEvent(new Event('change'));
-    var jid = q.get('judge');
-    if (jid) document.getElementById('judge_id').value = jid;
-  }
-})();
 document.getElementById('btn').onclick = async function () {
-  var role = document.getElementById('role').value;
-  var body = {role: role};
-  if (role === 'judge') body.judge_id = document.getElementById('judge_id').value.trim();
-  else {
-    body.password = document.getElementById('password').value;
-    if (isAccountRole(role)) body.username = document.getElementById('username').value.trim();
-    if (role === 'admin') body.username = document.getElementById('admin-username').value.trim();
-  }
+  var body = {role: 'admin', password: document.getElementById('password').value};
+  var uname = document.getElementById('username').value.trim();
+  if (uname) body.username = uname;
   try {
     await api('POST', '/api/login', body);
-    location.href = HOME[role] || '/';
+    location.href = '/events';
   } catch (e) { document.getElementById('msg').textContent = e.message; }
 };
 {% endblock %}
