@@ -154,11 +154,16 @@ document.querySelectorAll('.wiz-upload-btn').forEach(function (b) {
   });
 });
 
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s == null ? '' : s;
+  return d.innerHTML;
+}
 function loadStaff() {
   api('GET', '/api/users').then(function (d) {
     var rows = '';
     (d.users || []).forEach(function (u) {
-      rows += '<tr><td>' + u.username + '</td><td>' + (u.display_name || '') + '</td><td>' +
+      rows += '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.display_name) + '</td><td>' +
         (u.role === 'host' ? '主持人' : '检录长/检录员') + '</td></tr>';
     });
     document.getElementById('s-rows').innerHTML = rows || '<tr><td colspan="3" class="muted">尚未创建</td></tr>';
