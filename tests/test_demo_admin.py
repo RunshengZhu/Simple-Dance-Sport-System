@@ -217,3 +217,19 @@ def test_schedule_import_unquoted_multivalue_columns():
     dances = [x["name"] for x in db_module.rows(conn.execute(
         "SELECT name FROM event_dances WHERE event_id=? ORDER BY ord", (ev["id"],)))]
     assert dances == ["华尔兹", "探戈"], f"舞种列解析错误: {dances}"
+
+
+def test_compadmin_rebind_on_duplicate(seeded):
+    # 同名 compadmin 再次创建 → 改绑/重置而非报错
+    r = req("POST", "/api/users",
+            json={"username": "demo-admin", "password": "newpass99",
+                  "role": "compadmin", "competition_id": seeded["示例赛事（演示）"]}, role="super")
+    assert r.status_code in (200, 201) and r.json().get("rebound"), r.text
+    _login("ca", {"role": "admin", "username": "demo-admin", "password": "newpass99"})
+    assert req("GET", "/api/events", role="ca").status_code == 200
+
+
+def test_duplicate_marshal_still_rejected(seeded):
+    req("POST", "/api/users", json={"username": "dup-m1", "password": "123456", "role": "marshal"}, role="super")
+    r = req("POST", "/api/users", json={"username": "dup-m1", "password": "123456", "role": "marshal"}, role="super")
+    assert r.status_code == 400

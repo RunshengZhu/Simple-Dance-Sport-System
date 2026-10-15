@@ -763,7 +763,14 @@ async def api_users_create(request: Request = None):
         comp_id = None
     conn = db.get_db()
     dup = db.rowdict(conn.execute(
-        "SELECT id, active FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone())
+        "SELECT id, role, active FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone())
+    if dup and dup["role"] == "compadmin" and role == "compadmin":
+        # R57：同名赛事管理员 → 改绑/重置（总管理员重建演示赛时的固定动作）
+        conn.execute("UPDATE users SET pw_hash=?, comp_id=?, active=1, display_name=? WHERE id=?",
+                     (_hash_pw(password), comp_id, display_name or username, dup["id"]))
+        conn.execute("DELETE FROM sessions WHERE user_id=?", (dup["id"],))
+        conn.commit()
+        return {"ok": True, "username": username, "role": role, "comp_id": comp_id, "rebound": True}
     if dup:
         if not dup["active"]:
             raise HTTPException(status_code=400,
