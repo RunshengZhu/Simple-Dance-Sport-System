@@ -121,10 +121,8 @@ async def main():
         for code in ("P1", "L1"):
             await pg.goto(f"{BASE}/events/{cid}/console/{ids[code]}")
             await pg.wait_for_timeout(1500)
-            await pg.evaluate("document.querySelectorAll('details.card').forEach(function (d) { d.open = true; })")
-            await pg.wait_for_timeout(300)
-            await pg.click("text=全选"); await pg.wait_for_timeout(300)
-            await pg.click("text=开启评分"); await pg.wait_for_timeout(900)
+            await pg.click('button:has-text("一键开启评分")')
+            await pg.wait_for_timeout(1000)
         await shot(pg, "B7_两场次已开场")
 
         # ============ C 检录：部分检录 P1 6/8 ============

@@ -257,9 +257,14 @@ def require_judge(request: Request):
     return s
 
 
-def require_staff(request: Request):
-    """主持人 / 检录长·检录员 共用权限（检录与播报台）。"""
+def require_staff(request: Request, competition_id: int = None):
+    """主持人 / 检录长·检录员 共用权限（检录与播报台）。
+    R57：绑定本赛事的赛事管理员亦可担任检录/播报（小型赛事一人多角）。"""
     s = _session(request)
+    if s and s["role"] == "admin":
+        ca = _compadmin(request)
+        if ca and (competition_id is None or ca["comp_id"] == competition_id):
+            return s
     if not s or s["role"] not in ("host", "marshal"):
         raise HTTPException(status_code=401, detail="需要主持人或检录员登录")
     return s
@@ -1712,7 +1717,7 @@ async def import_sqlite(request: Request = None):
 @app.get("/staff", response_class=HTMLResponse)
 async def staff_page(request: Request):
     """主持台/检录台共用页：赛程 + 逐场检录 + 已完成场次成绩与播报标记。"""
-    s = require_staff(request)
+    s = require_staff(request, _current_competition(request).get("id") if _current_competition(request) else None)
     who = s.get("display_name") or s.get("username") or s["role"]
     comp = _current_competition(request)
     conn = db.get_db()
@@ -1767,7 +1772,7 @@ async def api_checkin_state(ceid: int, request: Request = None):
 async def api_checkin(ceid: int, request: Request = None):
     """批量检录/撤销检录（主持人或检录长·检录员）。仅接受本场上场名单内的背号。
     已完成计算的场次不再接受检录变动（补录需先由管理员退回）。"""
-    s = require_staff(request)
+    s = require_staff(request, _event_or_404(ceid)["competition_id"])
     ev, comp = _require_active_event(ceid)
     if ev["status"] in ("calculated", "published"):
         raise HTTPException(status_code=400, detail="场次已完成计算，检录变动不再生效（如需补录请先退回评分）")
@@ -1807,7 +1812,7 @@ async def api_checkin(ceid: int, request: Request = None):
 @app.post("/api/competition-events/{ceid}/announce")
 async def api_announce(ceid: int, request: Request = None):
     """播报标记（备忘位，可标/可取消，仅 calculated/published 场次，不影响赛程逻辑）。"""
-    s = require_staff(request)
+    s = require_staff(request, _event_or_404(ceid)["competition_id"])
     ev, comp = _require_active_event(ceid)
     if ev["status"] not in ("calculated", "published"):
         raise HTTPException(status_code=400, detail="仅已完成计算的场次可标记播报")
