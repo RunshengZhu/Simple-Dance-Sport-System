@@ -226,7 +226,7 @@ SCENES = [
                 ("#u-compid", "2 绑定赛事 ID（列表第一列）"),
                 ("#u-username", "3 填账号、显示名、口令"),
                 ("button[onclick='createUser()']", "4 创建账号")]),
-    dict(name="a-comp-login", vp="desktop", url_js="/competitions/{cid}/login", role=None,
+    dict(name="a-comp-login", vp="desktop", url_js="/competitions/{cid}/login?role=admin", role=None,
          focus=[("#role", "1 按角色登录（裁判/检录/主持/赛事管理员）"),
                 ("#username", "2 账号口令（裁判免口令）"),
                 ("#btn", "3 登录本赛事")]),
