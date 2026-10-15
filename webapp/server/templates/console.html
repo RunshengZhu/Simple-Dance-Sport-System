@@ -39,7 +39,7 @@
  {% if checked_n < total %}· <span class="err">检录 {{ checked_n }}/{{ total }}（未检录背号裁判无法评分）</span>{% else %}· <span class="ok">检录 {{ checked_n }}/{{ total }}</span>{% endif %}</p>
 {% if ev.status == 'pending' %}
 <p class="lifecycle-bar">
-  <button class="btn" onclick="candAll(1);openEvent(false)">一键开启评分（默认全选上场名单）</button>
+  <button class="btn" onclick="openEvent(false)">开启评分（按已勾选上场名单）</button>
   <label class="muted" style="display:inline-flex;align-items:center;gap:6px;margin-left:12px;cursor:pointer">
     <input type="checkbox" id="auto-publish" {% if comp.auto_publish %}checked{% endif %}
       onchange="toggleAutoPublish(this.checked)"> 收齐评分后自动发布
