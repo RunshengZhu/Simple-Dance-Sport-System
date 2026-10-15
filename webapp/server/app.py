@@ -475,7 +475,7 @@ async def competition_home(request: Request, competition_id: int):
     comp = db.rowdict(conn.execute(
         "SELECT * FROM competitions WHERE id=? AND active=1", (competition_id,)).fetchone())
     if not comp:
-        raise HTTPException(status_code=404, detail="赛事不存在或未开放")
+        raise HTTPException(status_code=404, detail="赛事尚未开放（未激活或不存在）")
     payload = _public_payload(comp) or {"events": [], "published_results": [],
                                         "team_standings": {"standings": []}}
     ca = _compadmin(request)
@@ -540,7 +540,7 @@ async def competition_login_page(request: Request, competition_id: int):
     comp = db.rowdict(conn.execute(
         "SELECT id, name FROM competitions WHERE id=? AND active=1", (competition_id,)).fetchone())
     if not comp:
-        raise HTTPException(status_code=404, detail="赛事不存在或未开放")
+        raise HTTPException(status_code=404, detail="赛事尚未开放（未激活或不存在）")
     q = request.query_params
     return templates.TemplateResponse(request, "competition_login.html", {
         "request": request, "comp": comp,

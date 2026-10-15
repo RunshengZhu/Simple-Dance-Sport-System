@@ -63,14 +63,15 @@ document.getElementById('tbl').addEventListener('click', async function (ev) {
 document.getElementById('create-btn').addEventListener('click', async function () {
   try {
     await api('POST', '/api/events', {name: inputVal('name'), date: inputVal('date'), location: inputVal('location')});
+    var all = await api('GET', '/api/events');
+    var nid = (all.events.find(function (x) { return x.name === inputVal('name'); }) || {}).id;
+    await api('POST', '/api/events/' + nid + '/activate', {});
     var cu = inputVal('ca-username'), cp = inputVal('ca-password');
     if (cu || cp) {
-      var all = await api('GET', '/api/events');
-      var nid = (all.events.find(function (x) { return x.name === inputVal('name'); }) || {}).id;
       await api('POST', '/api/users', {username: cu, password: cp, role: 'compadmin', competition_id: nid});
-      showMsg('赛事与赛事管理员账号已创建', true);
+      showMsg('赛事已创建并激活，赛事管理员账号已就绪', true);
     } else {
-      showMsg('创建成功', true);
+      showMsg('赛事已创建并激活', true);
     }
     inputVal2reset();
     refresh();
