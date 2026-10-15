@@ -11,6 +11,15 @@
 <a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
 {% endblock %}
 {% block content %}
+{% if adv_hints %}
+<div class="card" style="border-color:var(--gold)">
+  <b>下一流程：晋级确认</b>
+  <p class="muted" style="margin:6px 0 0">
+    {% for h in adv_hints %}{{ h.code }}（第{{ h.round }}轮）已发布、设了晋级名额；{% endfor %}
+    请到 <a href="/events/{{ comp.id }}/advancement?project={{ adv_hints[0].project }}&round={{ adv_hints[0].round }}">晋级确认</a>
+    生成并确认晋级名单，选手将自动回填到下一轮。</p>
+</div>
+{% endif %}
 <h1>结果中心 · {{ comp.name }}</h1>
 <div class="card">
   <p>

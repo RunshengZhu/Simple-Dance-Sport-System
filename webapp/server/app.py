@@ -509,6 +509,9 @@ async def api_setup_status(competition_id: int, request: Request = None):
         "SELECT username, display_name, role FROM users WHERE role IN ('host','marshal') ORDER BY role, username"))
     evs = db.rows(conn.execute(
         "SELECT status, published FROM events WHERE competition_id=?", (competition_id,)))
+    first_ev = db.rowdict(conn.execute(
+        "SELECT id, code FROM events WHERE competition_id=? AND status IN ('pending','scoring') "
+        "ORDER BY run_seq IS NULL, run_seq, code LIMIT 1", (competition_id,)))
     return {
         "competitors": conn.execute(
             "SELECT COUNT(*) c FROM competitors WHERE competition_id=?", (competition_id,)).fetchone()["c"],
@@ -518,6 +521,8 @@ async def api_setup_status(competition_id: int, request: Request = None):
         "events_published": sum(1 for e in evs if e["published"]),
         "staff": staff,
         "setup_done": bool(comp["setup_done"]),
+        "auto_publish": bool(comp["auto_publish"]),
+        "first_event": first_ev,
     }
 
 
@@ -634,11 +639,19 @@ async def results_page(request: Request, competition_id: int):
         "SELECT * FROM events WHERE competition_id=? AND status IN ('calculated','published') ORDER BY project_code, round, code",
         (competition_id,)))
     payload = []
+    adv_hints = []
     for ev in evs:
         res = load_results(ev["id"])
         if res:
             payload.append({"ev": ev, "results": res})
-    return templates.TemplateResponse(request, "results.html", {"request": request, "comp": comp, "payload": payload})
+        if (ev["status"] == "published" and ev["round"] == 1 and ev["advancement_count"]):
+            has_next = db.get_db().execute(
+                "SELECT 1 FROM events WHERE competition_id=? AND project_code=? AND round=?",
+                (competition_id, ev["project_code"], ev["round"] + 1)).fetchone()
+            if has_next:
+                adv_hints.append({"code": ev["code"], "round": ev["round"], "project": ev["project_code"]})
+    return templates.TemplateResponse(request, "results.html", {"request": request, "comp": comp,
+        "payload": payload, "adv_hints": adv_hints})
 
 
 @app.get("/judge", response_class=HTMLResponse)
@@ -744,7 +757,12 @@ async def api_users_create(request: Request = None):
     else:
         comp_id = None
     conn = db.get_db()
-    if conn.execute("SELECT 1 FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
+    dup = db.rowdict(conn.execute(
+        "SELECT id, active FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone())
+    if dup:
+        if not dup["active"]:
+            raise HTTPException(status_code=400,
+                                detail="用户名已存在（该同名账号当前为停用状态，可在列表中启用或改用其他用户名）")
         raise HTTPException(status_code=400, detail="用户名已存在（不区分大小写）")
     conn.execute(
         "INSERT INTO users(username, pw_hash, role, display_name, comp_id) VALUES(?,?,?,?,?)",
@@ -1561,7 +1579,14 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
     sse.bus.publish(comp["id"], "score_submitted",
                     {"event_id": ceid, "dance": dance, "judge": s["judge_code"]})
     auto = _auto_calculate_if_ready(_event_or_404(ceid), comp)
-    return {"ok": True, "auto_calculated": auto}
+    auto_pub = False
+    if auto and comp.get("auto_publish"):
+        # R57 自动发布开关：收齐自动算分后直接发布进大屏（按赛事配置，默认关）
+        db.get_db().execute("UPDATE events SET published=1, status='published' WHERE id=?", (ceid,))
+        db.get_db().commit()
+        sse.bus.publish(comp["id"], "results_published", {"event_id": ceid})
+        auto_pub = True
+    return {"ok": True, "auto_calculated": auto, "auto_published": auto_pub}
 
 
 # ---------------------------------------------- R48 数据持久化与容灾
@@ -1974,6 +1999,21 @@ async def team_standings_public_page(request: Request):
 @app.get("/api/screen-control")
 async def api_screen_control_get(request: Request = None):
     return {"mode": SCREEN_CONTROL.get("mode", "auto")}
+
+
+@app.post("/api/events/{competition_id}/auto-publish")
+async def api_auto_publish(competition_id: int, request: Request = None):
+    """R57 自动发布开关：收齐自动算分后直接发布（按赛事配置）。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    body = await request.json()
+    val = 1 if body.get("auto_publish") else 0
+    db.get_db().execute("UPDATE competitions SET auto_publish=? WHERE id=?", (val, competition_id))
+    db.get_db().commit()
+    return {"ok": True, "auto_publish": bool(val)}
 
 
 @app.post("/api/screen-control")

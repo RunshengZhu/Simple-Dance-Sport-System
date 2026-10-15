@@ -4,7 +4,9 @@
 {% block nav %}<span>{{ judge_code }}</span><a href="#" onclick="api('POST','/api/logout').then(()=>location='/login')">退出</a>{% endblock %}
 {% block content %}
 <h1>裁判工作台{% if comp %} · {{ comp.name }}{% endif %}<span id="j-progress"></span></h1>
-{% if not assignments %}<p class="muted">当前没有进行中的评分场次，请等待管理员开场。</p>{% endif %}
+{% if not assignments %}<div class="card"><p style="margin:6px 0">
+    暂无进行中的评分场次。场次由赛事管理员在控制台「开启评分」后才会出现在这里；
+    可稍后刷新本页，或联系赛事管理员。</p></div>{% endif %}
 {% for a in assignments %}
 <div class="card">
   <h2>{{ a.name }} <span class="tag acc">评分中</span> <span class="muted">{{ a.code }} / 第{{ a.round }}轮</span></h2>

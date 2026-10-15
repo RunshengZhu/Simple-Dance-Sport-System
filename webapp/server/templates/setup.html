@@ -98,6 +98,7 @@
     本向导完成后不再自动弹出，需要时从赛程编排页左侧「筹备向导」重新打开。</p>
   <div class="wiz-nav">
     <button class="btn secondary" data-go="5">← 上一步</button>
+    <button class="btn" id="wiz-first-open">开场第一场，直接开始比赛 →</button>
     <button class="btn" id="wiz-finish">完成向导，进入赛程编排 →</button>
   </div>
 </section>
@@ -131,6 +132,20 @@ function loadStatus() {
   });
 }
 
+document.querySelectorAll('.wiz-file').forEach(function (f) {
+  f.addEventListener('change', function () {
+    var kind = f.dataset.kind;
+    var out = document.querySelector('.wiz-result[data-kind="' + kind + '"]');
+    var file = f.files[0];
+    if (!file) { out.textContent = ''; return; }
+    file.text().then(function (t) {
+      var lines = t.split(/\r?\n/).filter(function (x) { return x.trim(); });
+      var cols = lines.length ? lines[0].split(',').length : 0;
+      out.textContent = '已选择：' + file.name + '（' + Math.max(0, lines.length - 1) + ' 行数据 × ' + cols + ' 列）';
+      out.className = 'wiz-result';
+    });
+  });
+});
 document.querySelectorAll('.wiz-upload-btn').forEach(function (b) {
   b.addEventListener('click', function () {
     var kind = b.dataset.kind;
@@ -181,6 +196,18 @@ document.getElementById('s-create').onclick = function () {
     document.getElementById('s-password').value = '';
     loadStaff();
   }).catch(function (e) { document.getElementById('s-msg').textContent = e.message; });
+};
+
+document.getElementById('wiz-first-open').onclick = function () {
+  api('POST', '/events/' + CID + '/setup/complete').then(function () {
+    loadStatus().then(function (d) {
+      if (d.first_event) {
+        location.href = '/events/' + CID + '/console/' + d.first_event.id;
+      } else {
+        location.href = '/events/' + CID + '/schedule';
+      }
+    });
+  });
 };
 
 function loadSummary() {

@@ -37,6 +37,15 @@
 <p>状态：<b id="status">{{ st_names.get(ev.status, ev.status) }}</b>{% if ev.published %} <span class="ok">已发布</span>{% endif %}
  　舞种：{{ dances|join("、") }}
  {% if checked_n < total %}· <span class="err">检录 {{ checked_n }}/{{ total }}（未检录背号裁判无法评分）</span>{% else %}· <span class="ok">检录 {{ checked_n }}/{{ total }}</span>{% endif %}</p>
+{% if ev.status == 'pending' %}
+<p class="lifecycle-bar">
+  <button class="btn" onclick="candAll(1);openEvent(false)">一键开启评分（默认全选上场名单）</button>
+  <label class="muted" style="display:inline-flex;align-items:center;gap:6px;margin-left:12px;cursor:pointer">
+    <input type="checkbox" id="auto-publish" {% if comp.auto_publish %}checked{% endif %}
+      onchange="toggleAutoPublish(this.checked)"> 收齐评分后自动发布
+  </label>
+</p>
+{% endif %}
 {% if ev.status in ('scoring', 'calculated') %}
 <p class="lifecycle-bar">
   <button class="btn secondary" onclick="closeEvent()">关闭评分</button>
@@ -78,6 +87,12 @@ var DANCES = {{ dances|tojson }}, JUDGES = {{ judges|tojson }};
 
 function selectedRoster() {
   return Array.from(document.querySelectorAll('.cand:checked')).map(function (c) { return c.value; });
+}
+async function toggleAutoPublish(on) {
+  try {
+    var r = await api('POST', '/api/events/' + CID + '/auto-publish', {auto_publish: on});
+    toast('收齐后自动发布：' + (r.auto_publish ? '开' : '关'), 'ok');
+  } catch (e) { toast(e.message, 'err'); }
 }
 async function openEvent(reset) {
   var roster = selectedRoster();

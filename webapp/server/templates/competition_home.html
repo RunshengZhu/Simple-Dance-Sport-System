@@ -14,6 +14,7 @@
     <a class="btn secondary" href="/competitions/{{ comp.id }}/login?role=marshal">检录入口</a>
     <a class="btn secondary" href="/competitions/{{ comp.id }}/login?role=host">主持入口</a>
     <a class="btn secondary" href="/competitions/{{ comp.id }}/login?role=admin">赛事管理员入口</a>
+    <button class="btn secondary portal-doc" id="copy-judge-link">复制裁判直达链接</button>
   </div>
   <p class="muted" style="margin:10px 0 0;font-size:.88rem">
     观众无需登录，本页可直接浏览赛程与已发布成绩。</p>
@@ -75,4 +76,12 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
+document.getElementById('copy-judge-link').onclick = function () {
+  var url = location.origin + '/login?role=judge&judge=J1';
+  (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () {
+    this.textContent = '已复制 ✓';
+  }.bind(this)).catch(function () {
+    prompt('裁判直达链接（复制给裁判，J1 可换编号）', url);
+  });
+};
 {% endblock %}

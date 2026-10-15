@@ -16,7 +16,7 @@
   document.documentElement.dataset.theme = t;
 })();
 </script>
-<link rel="stylesheet" href="/static/style.css?v=r57">
+<link rel="stylesheet" href="/static/style.css?v=r58">
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
 <header>
@@ -78,9 +78,13 @@ function softReloadIfIdle() {
   var ae = document.activeElement;
   var typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' ||
                       ae.tagName === 'SELECT' || ae.isContentEditable);
-  if (typing) { setTimeout(softReloadIfIdle, 3000); return; }
+  var recentCheck = window.__lastCheckAt && (Date.now() - window.__lastCheckAt < 8000);
+  if (typing || recentCheck) { setTimeout(softReloadIfIdle, 3000); return; }
   softReload();
 }
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.type === 'checkbox') window.__lastCheckAt = Date.now();
+}, true);
 if (window.CID) { connectSSE('/api/events/' + window.CID + '/stream', {results_published: softReloadIfIdle, competition_event_opened: softReloadIfIdle, competition_event_closed: softReloadIfIdle, schedule_changed: softReloadIfIdle, score_submitted: softReloadIfIdle, calculation_done: softReloadIfIdle, screen_state_changed: softReloadIfIdle, checkin_changed: softReloadIfIdle}, softReloadIfIdle, 8000); }
 </script>{% endif %}
 <script>

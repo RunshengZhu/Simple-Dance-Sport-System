@@ -100,6 +100,12 @@ input, select, textarea {
   font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--card); color: var(--txt); max-width: 100%;
 }
+select {
+  appearance: none; -webkit-appearance: none; padding-right: 30px; cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%238a8377' stroke-width='2' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+select::-ms-expand { display: none; }
 input:focus, select:focus { outline: 2px solid var(--acc-soft); border-color: var(--acc); }
 label { display: block; margin: 10px 0 4px; font-size: .88rem; color: var(--muted); }
 
@@ -724,3 +730,11 @@ body.screen .site-footer { display: none; }
 .wiz-staff-form .btn { grid-column: 1 / -1; }
 .wiz-summary table { margin: 10px 0; }
 @media (max-width: 719px) { .wiz-staff-form { grid-template-columns: 1fr; } }
+
+/* ---------- R57 全站 UI 打磨 ---------- */
+.row { gap: 10px; align-items: center; }
+.row .btn { white-space: nowrap; }
+main { max-width: 1180px; }
+body.judge-sheet main, body.screen main { max-width: none; }
+.card h2 { margin-top: 0; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
