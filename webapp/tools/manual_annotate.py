@@ -211,6 +211,25 @@ SCENES = [
                 (".lookup-row", "2 输入背番号查选手"),
                 ("js:document.querySelectorAll('.card h2').length>1 ? document.querySelectorAll('.card')[2] : document.querySelectorAll('.card')[1]",
                  "3 已发布成绩含选手名")]),
+    dict(name="a-create-form", vp="desktop", url="/events", role="admin",
+         pre_js="(function () {document.getElementById('name').value = '2026北京新生赛';document.getElementById('date').value = '2026-11-15';document.getElementById('location').value = '北京交通大学体育馆';var d = document.querySelector('details.wiz-admin'); if (d) d.open = true;document.getElementById('ca-username').value = 'bjtu-organizer';document.getElementById('ca-password').value = '********';})()",
+         focus=[("#name", "1 填赛事名称 / 日期 / 地点"),
+                ("#ca-username", "2 展开并填赛事管理员账号、口令"),
+                ("#create-btn", "3 创建：自动激活并发账号")]),
+    dict(name="a-create-done", vp="desktop", url="/events", role="admin",
+         pre_js="(function () {document.getElementById('name').value = '2026北京新生赛';document.getElementById('date').value = '2026-11-15';document.getElementById('location').value = '北京交通大学体育馆';var d = document.querySelector('details.wiz-admin'); if (d) d.open = true;document.getElementById('ca-username').value = 'bjtu-organizer';document.getElementById('ca-password').value = '********';document.getElementById('create-btn').click();})()", pre_js_wait=1500,
+         focus=[("#create-msg", "1 反馈：已激活、管理员账号就绪"),
+                ("#tbl tr:nth-child(2)", "2 列表显示「激活中」")]),
+    dict(name="a-users-create", vp="desktop", url="/users", role="admin",
+         pre_js="(function () {document.getElementById('u-role').value = 'compadmin';document.getElementById('u-compid').value = '{cid}';document.getElementById('u-username').value = 'bjtu-organizer';document.getElementById('u-display').value = '北交大组织者';document.getElementById('u-password').value = '********';})()",
+         focus=[("#u-role", "1 角色选「赛事管理员」"),
+                ("#u-compid", "2 绑定赛事 ID（列表第一列）"),
+                ("#u-username", "3 填账号、显示名、口令"),
+                ("button[onclick='createUser()']", "4 创建账号")]),
+    dict(name="a-comp-login", vp="desktop", url_js="/competitions/{cid}/login", role=None,
+         focus=[("#role", "1 按角色登录（裁判/检录/主持/赛事管理员）"),
+                ("#username", "2 账号口令（裁判免口令）"),
+                ("#btn", "3 登录本赛事")]),
     dict(name="p-lookup", vp="mobile", url="/public/results", role=None, pre_lookup="201",
          focus=[("#lookup-num", "1 输入背番号回车"), ("#lookup-result", "2 显示单位与全部成绩")]),
 ]
@@ -278,6 +297,10 @@ async def run():
                     headers:{'Content-Type':'application/json'}, body: JSON.stringify(b)}); }""", body)
                 await page.goto(BASE + url)
                 await page.wait_for_timeout(700)
+            if scene.get("pre_js"):
+                js = scene["pre_js"].replace("{cid}", str(demo))
+                await page.evaluate(js)
+                await page.wait_for_timeout(int(scene.get("pre_js_wait", 900)))
             if scene.get("pre_open_details"):
                 await page.evaluate("(() => { const d = document.querySelector('details.card'); if (d) d.open = true; })()")
             if scene.get("pre_click_accordion"):

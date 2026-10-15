@@ -8,15 +8,29 @@
 <div class="card">
   <h2>三步办好一场赛事（新赛事筹备向导）</h2>
   <p>创建赛事、导入名单、排赛程、建工作人员账号，全部在一个向导里完成。</p>
-  <table>
-    <tr><th style="width:6em">第 1 步</th><td><b>总管理员：建赛并发账号</b>——在赛事管理页填写名称/日期/地点，勾选展开「同时创建赛事管理员账号」，一次提交。<span class="muted">只有总管理员能建赛；赛事管理员口令请当面或私密发给组织者。</span></td></tr>
-    <tr><th>第 2 步</th><td><b>赛事管理员：五步筹备向导</b>——用专属入口登录后自动进入向导：① 确认赛事信息 → ② 导入选手 → ③ 导入裁判 → ④ 导入赛程 → ⑤ 创建检录/主持账号 → 完成。每步都有 CSV 模板下载和导入结果反馈。</td></tr>
-    <tr><th>第 3 步</th><td><b>比赛日</b>——控制台「一键开启评分」→ 检录台点名 → 裁判评分 → 收齐自动算分 → 结果中心发布（可开「自动发布」）→ 主持台播报。</td></tr>
-  </table>
-  <img src="/static/manual/r58/wiz1.png" alt="筹备向导：赛事信息" loading="lazy">
-  <img src="/static/manual/r58/wiz2.png" alt="筹备向导：导入选手" loading="lazy">
-  <p class="muted">向导页示例：① 下载模板 ② 选择 CSV ③ 上传导入；页首步骤条显示进度，页面底部实时显示当前数量。</p>
-  <p class="muted">CSV 三列模板要点——选手：<code>背番号,项目编号,姓名,学校/单位</code>（一人多项目填多行，集体舞用 T 编号）；裁判：<code>裁判ID,姓名</code>（建议 5 或 7 名）；赛程：<code>场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手</code>（评分类型填 SKATING/MARK/SCORE；预赛填晋级人数，决赛填 0 且参赛选手可留空）。</p>
+
+  <h3>第 1 步 · 总管理员：建赛并发账号</h3>
+  <p>赛事管理页填写名称 / 日期 / 地点，展开「同时创建赛事管理员账号」填用户名口令，一次提交（自动激活）。</p>
+  <img src="/static/manual/r50/a-create-form.png" alt="建赛表单（标注）" loading="lazy">
+  <p class="muted">① 名称 / 日期 / 地点　② 赛事管理员账号、口令　③ 创建（自动激活）</p>
+  <img src="/static/manual/r50/a-create-done.png" alt="建赛结果（标注）" loading="lazy">
+  <p class="muted">① 反馈：已激活、管理员账号就绪　② 列表显示「激活中」</p>
+  <p>如有需要，在「用户」页补建检录 / 主持账号：角色选对应项；赛事管理员须绑定赛事 ID。</p>
+  <img src="/static/manual/r50/a-users-create.png" alt="用户页建账号（标注）" loading="lazy">
+  <p class="muted">① 角色选「赛事管理员」　② 绑定赛事 ID　③ 账号信息　④ 创建账号</p>
+  <p>最后把<b>专属登录入口</b> <code>/competitions/赛事ID/login</code> 和账号发给组织者。</p>
+
+  <h3>第 2 步 · 赛事管理员：五步筹备向导</h3>
+  <p>专属入口登录后自动进入向导：① 确认赛事信息 → ② 导入选手 → ③ 导入裁判 → ④ 导入赛程 → ⑤ 创建检录/主持账号 → 完成。</p>
+  <img src="/static/manual/r58/wiz1.png" alt="向导：赛事信息" loading="lazy">
+  <img src="/static/manual/r58/wiz2.png" alt="向导：导入选手" loading="lazy">
+  <p class="muted">CSV 速查——选手：<code>背番号,项目编号,姓名,学校/单位</code>（一人多项目填多行，集体舞用 T 编号）；
+  裁判：<code>裁判ID,姓名</code>（建议 5 或 7 名）；赛程：<code>场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手</code>
+  （评分类型填 SKATING/MARK/SCORE；预赛填晋级人数，决赛填 0 且参赛选手可留空）。</p>
+
+  <h3>第 3 步 · 比赛日</h3>
+  <p>控制台「开启评分（按已勾选上场名单）」→ 检录台点名 → 裁判评分 → 收齐自动算分 → 结果中心发布（可开「自动发布」）→ 主持台播报。
+    详细操作见下方各角色章节。</p>
 </div>
 
 <div class="card">
