@@ -5,6 +5,7 @@ BASE = "https://dancetkt.com"
 SHOTS = "/tmp/e2e_ux"
 SUPER = "CE9DoLRhkb37R9w_bgrpDA55"
 NOTES = []
+STAFF = {}
 T0 = time.time()
 
 def note(msg):
@@ -99,11 +100,13 @@ async def main():
         # 步骤5 工作人员
         await pg.click('[data-go="5"]'); await pg.wait_for_timeout(200)
         await pg.select_option("#s-role", "marshal")
-        await pg.fill("#s-username", "e2e-checkin"); await pg.fill("#s-display", "验收检录员")
+        STAFF["checkin"] = "e2e-checkin-" + str(int(time.time()) % 100000)
+        await pg.fill("#s-username", STAFF["checkin"]); await pg.fill("#s-display", "验收检录员")
         await pg.fill("#s-password", "E2eCheck2026"); await pg.click("#s-create")
         await pg.wait_for_timeout(700)
         await pg.select_option("#s-role", "host")
-        await pg.fill("#s-username", "e2e-host"); await pg.fill("#s-display", "验收主持人")
+        STAFF["host"] = "e2e-host-" + str(int(time.time()) % 100000)
+        await pg.fill("#s-username", STAFF["host"]); await pg.fill("#s-display", "验收主持人")
         await pg.fill("#s-password", "E2eHost2026"); await pg.click("#s-create")
         await pg.wait_for_timeout(700)
         await shot(pg, "B4_向导工作人员步")
@@ -121,14 +124,14 @@ async def main():
         for code in ("P1", "L1"):
             await pg.goto(f"{BASE}/events/{cid}/console/{ids[code]}")
             await pg.wait_for_timeout(1500)
-            await pg.click('button:has-text("一键开启评分")')
+            await pg.click('button[onclick="openEvent(false)"]')
             await pg.wait_for_timeout(1000)
         await shot(pg, "B7_两场次已开场")
 
         # ============ C 检录：部分检录 P1 6/8 ============
         ctxC = await ctx(); pg = await ctxC.new_page()
         await pg.goto(f"{BASE}/competitions/{cid}/login?role=marshal"); await pg.wait_for_timeout(300)
-        await pg.fill("#username", "e2e-checkin"); await pg.fill("#password", "E2eCheck2026")
+        await pg.fill("#username", STAFF["checkin"]); await pg.fill("#password", "E2eCheck2026")
         await pg.click("#btn"); await pg.wait_for_timeout(2000)
         print("C 检录落点:", pg.url, flush=True)
         await shot(pg, "C1_检录台")
@@ -167,7 +170,9 @@ async def main():
         await pg.locator("a.btn", has_text="华尔兹").first.click(); await pg.wait_for_timeout(1000)
         rrows = pg.locator(".rank-row:not(.off)"); rn = await rrows.count()
         print("P1 可评行:", rn, flush=True)
+        p1_checked = []
         for i in range(rn):
+            p1_checked.append(await rrows.nth(i).get_attribute("data-num"))
             await rrows.nth(i).click(); await pg.wait_for_timeout(180)
         await shot(pg, "D3_顺位法排完")
         await pg.click("text=提交名次表"); await pg.wait_for_timeout(1000)
@@ -175,9 +180,9 @@ async def main():
         # J2 J3 快速提交（API 代打，页面体验已由 J1 覆盖）
         for j in (2, 3):
             _, _, ckJ = api("POST", "/api/login", {"role": "judge", "judge_id": f"J{j}"})
+            perm = (p1_checked[::-1] if j == 2 else p1_checked[2:] + p1_checked[:2])
             api("PUT", f"/api/judge/competition-events/{ids['P1']}/dances/{urllib.parse.quote('华尔兹')}/sheet",
-                {"values": {f"10{i}": r for r, i in enumerate(
-                    (list(range(6))[::-1] if j == 2 else [3, 0, 1, 5, 2, 4]), 1)}}, ckJ)
+                {"values": {n: r for r, n in enumerate(perm, 1)}}, ckJ)
         # L1 也让 J2/J3 提交（每人勾前4）
         for j in (2, 3):
             _, _, ckJ = api("POST", "/api/login", {"role": "judge", "judge_id": f"J{j}"})
@@ -207,7 +212,7 @@ async def main():
         await pg.click("text=确认并蛇形回填下一轮"); await pg.wait_for_timeout(1200)
         # 开启 P1F 决赛
         await pg.goto(f"{BASE}/events/{cid}/console/{ids['P1F']}"); await pg.wait_for_timeout(1200)
-        await pg.click("text=开启评分"); await pg.wait_for_timeout(800)
+        await pg.click('button[onclick="openEvent(false)"]'); await pg.wait_for_timeout(1000)
         await shot(pg, "E6_P1F已开场")
         # P1F 检录 + 评分（检录员 + J1 页面）
         await pg.goto(f"{BASE}/staff"); await pg.wait_for_timeout(1500)
@@ -235,7 +240,7 @@ async def main():
         # ============ F 主持人播报 ============
         ctxF = await ctx(); pg = await ctxF.new_page()
         await pg.goto(f"{BASE}/competitions/{cid}/login?role=host"); await pg.wait_for_timeout(300)
-        await pg.fill("#username", "e2e-host"); await pg.fill("#password", "E2eHost2026")
+        await pg.fill("#username", STAFF["host"]); await pg.fill("#password", "E2eHost2026")
         await pg.click("#btn"); await pg.wait_for_timeout(2000)
         await shot(pg, "F1_主持台")
         ann = pg.locator(".ann-btn").first
