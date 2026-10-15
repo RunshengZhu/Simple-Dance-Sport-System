@@ -71,19 +71,18 @@ def test_security_headers_present():
 
 
 def test_general_rate_limit_per_ip():
-    """中间件常规限速（默认 300/10s per IP）：超过后 429 + Retry-After，其他 IP 不受影响。"""
+    """中间件常规限速：阈值调小做确定性断言（5/60s），超限 429 + Retry-After，其他 IP 不受影响。"""
     ip = "192.0.2.9"
-    codes = [req_as(ip, "GET", "/?probe=%d" % i).status_code for i in range(310)]
-    assert codes.count(429) >= 5, f"常规限速未生效: 尾部 {codes[-10:]}"
+    old = app_module.RATE_GENERAL
+    app_module.RATE_GENERAL = (5, 60)
+    try:
+        codes = [req_as(ip, "GET", "/?probe=%d" % i).status_code for i in range(10)]
+        r = req_as(ip, "GET", "/?probe=x")
+    finally:
+        app_module.RATE_GENERAL = old
+    assert codes.count(429) >= 5, f"常规限速未生效: {codes}"
+    assert r.status_code == 429 and r.headers.get("retry-after", "").isdigit()
     assert req_as("198.51.100.7", "GET", "/").status_code == 200
-    # 429 带 Retry-After（拿一个 429 验证）
-    retry = None
-    for i in range(310, 320):
-        r = req_as(ip, "GET", "/?probe=%d" % i)
-        if r.status_code == 429:
-            retry = r.headers.get("retry-after")
-            break
-    assert retry is not None and retry.isdigit()
 
 
 def test_existing_login_failure_lockout_still_works():

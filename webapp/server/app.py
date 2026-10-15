@@ -1053,9 +1053,31 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
             if not code:
                 continue
             rnd = int(r[i_round].strip() or 1)
-            styp = (r[i_type].strip() if i_type is not None and i_type < len(r) else "SKATING").upper()
-            styp = {"SKATING": "顺位法", "MARK": "Mark制", "SCORE": "评分制"}.get(styp, "Mark制")
             proj = r[i_proj].strip() if i_proj is not None and i_proj < len(r) else ""
+            # R57 结构化解析：轮次之后的多值区（舞种… 评分类型 晋级人数 参赛选手…）
+            # 在 Excel 导出的未加引号 CSV 里会各自溢出成多列，无法按列号取值——
+            # 以「评分类型枚举值」为锚点切分：锚点前=舞种（可多个），锚点=评分类型，
+            # 其后依次为 晋级人数、参赛选手（可多个）。
+            tail = [x.strip() for x in ",".join(r[i_dance:]).replace("，", ",").split(",") if x.strip()] \
+                if i_dance is not None and i_dance < len(r) else []
+            stype_idx = next((k for k, v in enumerate(tail)
+                              if v.upper() in ("SKATING", "MARK", "SCORE")), None)
+            if stype_idx is not None:
+                # 结构化切分（多值列溢出场景）
+                dances = tail[:stype_idx]
+                styp = {"SKATING": "顺位法", "MARK": "Mark制", "SCORE": "评分制"}[tail[stype_idx].upper()]
+                rest = tail[stype_idx + 1:]
+                adv = int(rest[0]) if rest and rest[0].isdigit() else 0
+                comps = rest[1:]
+            else:
+                # 无锚点：未溢出的行按列位置解析（兼容旧口径：中文/未知评分类型落 Mark制）
+                styp = (r[i_type].strip().upper() if i_type is not None and i_type < len(r) else "SKATING")
+                styp = {"SKATING": "顺位法", "MARK": "Mark制", "SCORE": "评分制"}.get(styp, "Mark制")
+                dances = ([r[i_dance].strip()] if r[i_dance].strip() else []) \
+                    if i_dance is not None and i_dance < len(r) else []
+                adv = int(r[i_adv].strip()) if i_adv is not None and i_adv < len(r) and r[i_adv].strip().isdigit() else 0
+                comps = [x.strip() for x in (r[i_comps] if i_comps is not None and i_comps < len(r) else "")
+                         .replace("，", ",").split(",") if x.strip()]
             conn.execute("INSERT OR IGNORE INTO projects(competition_id, code, name) VALUES(?,?,?)",
                          (competition_id, proj, proj))
             cur = conn.execute(
@@ -1063,19 +1085,16 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
                 " VALUES(?,?,?,?,?,?,?)",
                 (competition_id, code,
                  r[i_name].strip() if i_name is not None and i_name < len(r) else code,
-                 proj, rnd, styp,
-                 int(r[i_adv]) if i_adv is not None and i_adv < len(r) and r[i_adv].strip().isdigit() else 0))
+                 proj, rnd, styp, adv))
             ev_id = cur.lastrowid
             if ev_id == 0:
                 ev_id = conn.execute("SELECT id FROM events WHERE competition_id=? AND code=?",
                                      (competition_id, code)).fetchone()["id"]
-            if i_dance is not None and i_dance < len(r):
-                conn.execute("DELETE FROM event_dances WHERE event_id=?", (ev_id,))
-                for k, dname in enumerate([x.strip() for x in r[i_dance].replace("，", ",").split(",") if x.strip()]):
-                    conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ev_id, dname, k))
-            if i_comps is not None and i_comps < len(r) and rnd == 1:
+            for k, dname in enumerate(dances):
+                conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ev_id, dname, k))
+            if rnd == 1:
                 conn.execute("DELETE FROM event_competitors WHERE event_id=?", (ev_id,))
-                for num in [x.strip() for x in r[i_comps].replace("，", ",").split(",") if x.strip()]:
+                for num in comps:
                     conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
                                  (ev_id, num))
             count += 1

@@ -195,3 +195,25 @@ def test_login_page_is_super_admin_only(seeded):
     assert r.status_code == 200 and "总管理员登录" in r.text
     # 其他角色旧链接 → 公开赛事列表
     assert req("GET", "/login?role=marshal").status_code == 302
+
+
+def test_schedule_import_unquoted_multivalue_columns():
+    """R57 回归：Excel 导出的 CSV 多值列不加引号，csv.reader 拆成多列——
+    参赛选手/舞种必须把「本列起到下一已知列」重新拼回解析，否则只入库第一个值。"""
+    csv_body = (
+        "场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手\n"
+        "X1,多项舞程,XM,1,华尔兹,探戈,SKATING,6,501,502,503,504\n"
+    )
+    r = req("POST", "/api/events/1/imports/schedule", content=csv_body.replace("\\n", "\n"), role="super")
+    assert r.status_code in (200, 201), r.text
+    _, d, _ = None, None, None
+    conn = db_module.get_db()
+    ev = db_module.rowdict(conn.execute(
+        "SELECT id FROM events WHERE competition_id=1 AND code='X1'").fetchone())
+    assert ev, "场次应已导入"
+    nums = [x["competitor_number"] for x in db_module.rows(conn.execute(
+        "SELECT competitor_number FROM event_competitors WHERE event_id=? ORDER BY competitor_number", (ev["id"],)))]
+    assert nums == ["501", "502", "503", "504"], f"参赛选手只入库了第一个值: {nums}"
+    dances = [x["name"] for x in db_module.rows(conn.execute(
+        "SELECT name FROM event_dances WHERE event_id=? ORDER BY ord", (ev["id"],)))]
+    assert dances == ["华尔兹", "探戈"], f"舞种列解析错误: {dances}"
