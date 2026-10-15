@@ -3,251 +3,172 @@
 {% block nav %}<a href="/">首页</a>{% endblock %}
 {% block content %}
 <h1>赛事评分系统 · 使用说明</h1>
-<p class="muted">本指南面向现场每一类使用者：怎么登录、在赛事的哪个阶段做什么、会看到什么。
-按角色查找你的<b>操作步骤</b>即可，无需了解系统实现。关键步骤配<b>实机标注图</b>（红框 + 编号对应图下说明），
-整体界面另附全页截图。</p>
+<p class="muted">面向体育舞蹈赛事的评分与流程工具。按角色查找你的操作即可；每一步都配实机标注图。</p>
 
 <div class="card">
-  <h2>角色速览：怎么登录、用什么设备</h2>
+  <h2>三步办好一场赛事（新赛事筹备向导）</h2>
+  <p>创建赛事、导入名单、排赛程、建工作人员账号，全部在一个向导里完成。</p>
   <table>
-    <tr><th>角色</th><th>怎么登录</th><th>设备</th><th>参与的阶段</th></tr>
-    <tr><td>管理员</td><td>登录页 → 角色选「管理员」→ 输入管理员口令</td><td>桌面电脑为主</td><td>赛前筹备 · 赛中控制 · 账号管理 · 文件分发 · 赛后收尾</td></tr>
-    <tr><td>检录长 / 检录员</td><td>登录页 → 角色选「检录长/检录员」→ 输入<b>用户名 + 口令</b>（账号由管理员分发）</td><td>手机 / 平板</td><td>每场开始前（检录处）</td></tr>
-    <tr><td>主持人</td><td>登录页 → 角色选「主持人」→ 输入<b>用户名 + 口令</b>（账号由管理员分发）</td><td>手机 / 平板</td><td>开场前补检录 · 成绩播报</td></tr>
-    <tr><td>裁判</td><td><b>免口令直达链接</b>：<code>/login?role=judge&amp;judge=编号</code>（如 J1），建议存为手机书签</td><td>手机</td><td>每场评分</td></tr>
-    <tr><td>观众</td><td>无需登录，直接打开公开页</td><td>手机</td><td>全程查询</td></tr>
-    <tr><td>大屏</td><td>现场屏幕打开大屏页挂机，无需登录</td><td>1080p 大屏</td><td>全程展示</td></tr>
+    <tr><th style="width:6em">第 1 步</th><td><b>总管理员：建赛并发账号</b>——在赛事管理页填写名称/日期/地点，勾选展开「同时创建赛事管理员账号」，一次提交。<span class="muted">只有总管理员能建赛；赛事管理员口令请当面或私密发给组织者。</span></td></tr>
+    <tr><th>第 2 步</th><td><b>赛事管理员：五步筹备向导</b>——用专属入口登录后自动进入向导：① 确认赛事信息 → ② 导入选手 → ③ 导入裁判 → ④ 导入赛程 → ⑤ 创建检录/主持账号 → 完成。每步都有 CSV 模板下载和导入结果反馈。</td></tr>
+    <tr><th>第 3 步</th><td><b>比赛日</b>——控制台「一键开启评分」→ 检录台点名 → 裁判评分 → 收齐自动算分 → 结果中心发布（可开「自动发布」）→ 主持台播报。</td></tr>
   </table>
-  <p class="muted">口令由赛事管理员设定；裁判免口令直达链接请在开赛前向裁判长领取并分发。</p>
+  <img src="/static/manual/r58/wiz1.png" alt="筹备向导：赛事信息" loading="lazy">
+  <img src="/static/manual/r58/wiz2.png" alt="筹备向导：导入选手" loading="lazy">
+  <p class="muted">向导页示例：① 下载模板 ② 选择 CSV ③ 上传导入；页首步骤条显示进度，页面底部实时显示当前数量。</p>
+  <p class="muted">CSV 三列模板要点——选手：<code>背番号,项目编号,姓名,学校/单位</code>（一人多项目填多行，集体舞用 T 编号）；裁判：<code>裁判ID,姓名</code>（建议 5 或 7 名）；赛程：<code>场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手</code>（评分类型填 SKATING/MARK/SCORE；预赛填晋级人数，决赛填 0 且参赛选手可留空）。</p>
 </div>
 
 <div class="card">
   <h2>多场赛事并行</h2>
-  <p>系统支持同时存在<b>多场赛事</b>（如「上半年积分赛」与「秋季公开赛」），各自的数据完全独立。
-  在「赛事管理」页可随时创建新赛事；「激活」不再互斥——多场赛事可同时处于激活中，
-  管理员可在各场的导入、赛程编排、控制台、结果中心之间并行操作。</p>
-  <p>检录台、主持台、裁判工作台、公开赛程/成绩页与现场大屏展示的是其中<b>最新激活</b>的一场（即当前「台前」赛事）。
-  上一场赛事的数据仍然保留，管理员可随时进入其结果中心查看与导出。</p>
+  <p class="muted">多场赛事可同时激活、数据独立；公开页/检录台/裁判台展示最新激活的一场。各赛事由自己的赛事管理员管理，互不干扰。</p>
 </div>
 
 <div class="card">
-  <h2>深浅配色</h2>
-  <p>页面右上角的 🌙 / ☀️ 按钮可切换<b>深色 / 浅色</b>模式，选择会自动记忆（手机、平板、桌面通用）；
-  首次打开时跟随系统偏好。现场大屏页固定为深色，不受切换影响。</p>
+  <h2>角色速览</h2>
+  <table>
+    <tr><th>角色</th><th>怎么登录</th><th>设备</th></tr>
+    <tr><td>总管理员</td><td><code>/login</code>，口令由开发者持有（不发放）</td><td>桌面</td></tr>
+    <tr><td>赛事管理员</td><td>本赛事登录页，角色「赛事管理员」+ 用户名口令</td><td>桌面 / 平板</td></tr>
+    <tr><td>检录长 / 检录员</td><td>本赛事登录页，角色「检录长 / 检录员」+ 用户名口令</td><td>手机 / 平板</td></tr>
+    <tr><td>主持人</td><td>本赛事登录页，角色「主持人」+ 用户名口令</td><td>手机 / 平板</td></tr>
+    <tr><td>裁判</td><td>免口令直达链接 <code>/login?role=judge&amp;judge=编号</code></td><td>手机</td></tr>
+    <tr><td>观众</td><td>免登录，直接浏览</td><td>任意</td></tr>
+  </table>
+  <p class="muted">页面右上角 🌙/☀️ 切换深浅配色；左上角「体育舞蹈工具箱」可随时回到工具箱首页。</p>
 </div>
 
 <div class="manual-lifecycle card">
-  <h2>赛事生命周期：谁在哪个环节上场</h2>
+  <h2>赛事生命周期</h2>
   <div class="lc-flow">
-    <span>赛前筹备<small>管理员</small></span><i>→</i>
-    <span>账号分发<small>管理员</small></span><i>→</i>
-    <span>检录<small>检录长/检录员 → 主持人</small></span><i>→</i>
+    <span>筹备向导<small>赛事管理员</small></span><i>→</i>
+    <span>开场<small>管理员</small></span><i>→</i>
+    <span>检录<small>检录/主持</small></span><i>→</i>
     <span>评分<small>裁判</small></span><i>→</i>
-    <span>计算·晋级·发布<small>管理员</small></span><i>→</i>
-    <span>成绩播报<small>主持人</small></span><i>→</i>
-    <span>公示查询<small>观众</small></span><i>→</i>
-    <span>大屏展示<small>全程</small></span>
+    <span>算分·发布<small>管理员</small></span><i>→</i>
+    <span>晋级<small>管理员</small></span><i>→</i>
+    <span>播报<small>主持</small></span><i>→</i>
+    <span>公示<small>观众</small></span>
   </div>
 </div>
 
 <div class="manual-nav card">
-  <a href="#admin">🧑‍💼 管理员</a>
-  <a href="#marshal">📋 检录长 / 检录员</a>
-  <a href="#host">🎙️ 主持人</a>
+  <a href="#admin">🧑‍💼 赛事管理员</a>
+  <a href="#score-basics">📖 评分基础</a>
+  <a href="#marshal">📋 检录</a>
+  <a href="#host">🎙️ 主持</a>
   <a href="#judge">⚖️ 裁判</a>
   <a href="#public">👀 观众</a>
   <a href="#screen">📺 大屏</a>
 </div>
 
-<h2 id="admin">一、管理员：从建赛到收官</h2>
-
-<h3>阶段 A · 赛前筹备</h3>
-<div class="step"><h3>第 1 步 · 登录</h3>
-  <p>打开登录页，角色选「管理员」，输入管理员口令。</p>
-  <img src="/static/manual/r50/a-login.png" alt="管理员登录（标注）" loading="lazy">
-  <p class="muted">① 角色选「管理员」　② 输入管理员口令　③ 点「登录」进入系统</p>
-</div>
-<div class="step"><h3>第 2 步 · 创建赛事（支持多场并行）</h3>
-  <p>赛事管理页填写赛事名称（必填）、日期、地点，点「创建」。列表里每场赛事都有独立的「导入 / 赛程 / 结果」入口；
-  未激活的赛事可随时「激活」上线，多场可同时处于激活中（见上文「多场赛事并行」）。</p>
-  <img src="/static/manual/r50/a-events.png" alt="赛事管理：创建与多赛事列表（标注）" loading="lazy">
-  <p class="muted">① 填赛事名称点「创建」　② 每场赛事独立进入 导入 / 赛程 / 结果　③ 未激活的赛事可随时「激活」</p>
-</div>
-<div class="step"><h3>第 3 步 · 分发账号（操作全留痕）</h3>
-  <p>「用户」页为检录长、检录员、主持人创建各自账号（用户名 + 口令），并分发裁判免口令直达链接。
-  停用账号立即踢下线；重置口令后请通知本人。</p>
-  <img src="/static/manual/r50/u-users.png" alt="用户与角色管理" loading="lazy">
-  <p>页首「审计日志」记录全部敏感操作——退回评分、撤销检录、重置口令、停用/启用、删除类操作，
-  每条都有时间、操作人、对象与详情，出争议时倒查有据。</p>
-  <img src="/static/manual/r50/a-users-audit.png" alt="审计日志（标注）" loading="lazy">
-  <p class="muted">① 「审计日志」默认收起，点开即看　② 退回评分 / 撤销检录 / 口令 / 停启用 / 删除 全部署名留痕</p>
-</div>
-<div class="step"><h3>第 4 步 · 导入报名数据</h3>
-  <p>「导入」页依次上传三份表格：选手名单（集体队伍以 T 编号报名）、裁判名单、赛程安排。
-  每类数据都有「下载模板」，表头即解析列；传错的部分会逐行提示，可修正后重传。</p>
-  <img src="/static/manual/r50/a-import.png" alt="导入页标注：模板下载与上传入口" loading="lazy">
-  <p class="muted">① 每类数据都有「下载模板」（表头即解析列）　② 按模板填好后上传　③ 赛程模板含全部列</p>
-</div>
-<div class="step"><h3>第 5 步 · 编排赛程与比赛顺序</h3>
-  <p>「赛程编排」页以项目树展示全部场次（可按状态筛选），支持添加、修改、删除未开始场次，
-  每行可直接进控制台。「比赛顺序（防连场）」自动生成选手休息最充分的走场顺序，可逐行微调后保存；
-  相邻场次同批选手连轴上场会以「连场 N 人」徽章提醒。</p>
+<h2 id="admin">一、赛事管理员：赛事日常管理</h2>
+<div class="step"><h3>数据与名单调整</h3>
+  <p>筹备向导覆盖首次导入；之后的增补修改走两个入口：<b>导入页</b>重传整份 CSV（传错逐行提示，可反复重传），
+  或<b>赛程编排页</b>直接添加/修改/删除未开始场次。已开始评分的场次修改名单会清空评分，请谨慎。</p>
+  <img src="/static/manual/r50/a-import.png" alt="导入页（标注）" loading="lazy">
   <img src="/static/manual/r50/a4-schedule-tree.png" alt="赛程编排与防连场" loading="lazy">
 </div>
-
-<h3>阶段 B · 赛中控制</h3>
-<div class="step"><h3>第 6 步 · 开场与现场监控</h3>
-  <p>场次控制台：确认上场名单后「开启评分」。评分中页首常驻裁判提交进度矩阵（自动实时刷新）
-  与「关闭评分 / 退回评分」快捷操作；上场名单收起为可展开面板，含每名选手的检录状态徽章。</p>
-  <img src="/static/manual/r50/a-console-open.png" alt="开场操作标注：全选与开启评分" loading="lazy">
-  <p class="muted">① 全选/全不选/反选上场选手　② 勾选数实时显示　③ 「开启评分」后裁判即可打分</p>
+<div class="step"><h3>控制台：每场比赛的操作台</h3>
+  <p>状态行常驻「<b>开启评分（按已勾选上场名单）</b>」——名单来自导入/晋级回填，默认已勾选，一键开场。
+  开场后页首常驻裁判提交进度矩阵；随时「关闭评分」或「退回评分」。</p>
+  <img src="/static/manual/r50/a-console-open.png" alt="控制台开场（标注）" loading="lazy">
   <img src="/static/manual/r50/a5-console.png" alt="场次控制台全页" loading="lazy">
 </div>
-<div class="step"><h3>第 7 步 · 晋级确认</h3>
-  <p>预赛算完后在「晋级确认」页选择项目与轮次「生成预案」：按各组名额合并出按总分排序的晋级名单（可增删勾选），
-  确认后名单自动蛇形分配排入下一轮各场次。</p>
+<div class="step"><h3>结果中心：发布与晋级</h3>
+  <p>收齐自动算分；「发布」即上大屏与观众页，可撤回。预赛发布后会出现<b>「下一流程：晋级确认」</b>引导条，
+  点击生成预案、勾选晋级者确认，名单自动蛇形回填到下一轮。</p>
+  <img src="/static/manual/r50/a7-results-center.png" alt="结果中心" loading="lazy">
+  <img src="/static/manual/r50/a-results-publish.png" alt="发布操作（标注）" loading="lazy">
   <img src="/static/manual/r50/a6-advancement.png" alt="晋级确认" loading="lazy">
 </div>
-<div class="step"><h3>第 8 步 · 发布成绩</h3>
-  <p>「结果中心」逐场核对后点「发布」：成绩即刻同步观众查询页与大屏。支持原始打分与判定表查看、
-  整场赛事成绩单下载；发错可「撤回」重发（撤回会留痕到审计日志）。</p>
-  <img src="/static/manual/r50/a7-results-center.png" alt="结果中心" loading="lazy">
-  <img src="/static/manual/r50/a-results-publish.png" alt="发布操作标注" loading="lazy">
-  <p class="muted">① 发布后可随时「撤回发布」重发　② 「原始打分」可查看明细与判定表</p>
-</div>
-
-<h3>阶段 C · 赛后收尾</h3>
-<div class="step"><h3>第 9 步 · 核对团体积分与队伍</h3>
-  <p>「单位与队伍」「团体总分」页核对最终名次与积分（管理口径可选「全部已计算」或「仅已发布」即时重算；
-  观众侧始终只看已发布口径）。</p>
+<div class="step"><h3>团体总分与大屏控制</h3>
+  <p>「团体总分」页核对单位积分（口径可选，仅计已发布场次）；「大屏控制」页可锁定现场大屏画面或恢复自动轮播。</p>
   <img src="/static/manual/r50/a11-team-standings.png" alt="团体总分" loading="lazy">
-</div>
-<div class="step"><h3>第 10 步 · 大屏控制</h3>
-  <p>「大屏控制」页可将现场大屏锁定在指定画面（评分进行中 / 成绩公告 / 团体总分榜 / 欢迎页）或恢复自动轮播，
-  变更即时生效。</p>
   <img src="/static/manual/r50/a12-screen-control.png" alt="大屏控制" loading="lazy">
 </div>
-<div class="step"><h3>第 11 步 · 文件分发（成绩册 / 发布包）</h3>
-  <p>「文件」页提供<b>分层托管</b>：新建一个层（<b>public</b> 任何人可下载 / <b>token</b> 凭证才能下载 / <b>admin</b> 仅管理员），
-  上传文件后点「复制链接」即得到可直接分发的下载地址。同名重复上传即为更新，下载次数自动累计
-  （链接预览、探活不计入）。适合发放成绩册、规程、发布包等赛会材料。</p>
-  <img src="/static/manual/r50/a-files.png" alt="文件分发页（标注）" loading="lazy">
-  <p class="muted">① 新建分层：public 公开 / token 凭证 / admin 管理　② 「复制链接」得到可直接分发的下载地址
-  　③ 选文件上传（同名覆盖，下载次数累计）</p>
+<div class="step"><h3>数据安全</h3>
+  <p>所有评分改动都有追加式历史（旧值→新值+操作人）；退回评分/撤销检录等敏感操作全部记入「用户」页审计日志。
+  支持全量导出（JSON/SQLite）与原子恢复；部署层每日自动备份见 <code>docs/DEPLOY.md</code>。</p>
+  <img src="/static/manual/r50/a-users-audit.png" alt="审计日志与用户管理" loading="lazy">
 </div>
 
-<div class="card">
-  <h2>数据备份与恢复</h2>
-  <p>所有评分改动都有<b>追加式历史</b>（每次修改记录旧值 → 新值与操作人），可逐条追溯。</p>
-  <p>管理员可随时通过备份接口导出<b>全量数据</b>（JSON 结构化备份或 SQLite 整库文件两种格式），
-  并可从备份文件<b>原子恢复</b>（导入在单事务中完成，失败自动回滚不影响现网数据）。
-  部署层面的每日自动备份配置见 <code>docs/DEPLOY.md</code> §5。</p>
-</div>
-
-<h2 id="marshal">二、检录长 / 检录员：每场开始前的检录</h2>
+<h2 id="score-basics">二、评分基础：三种评分制</h2>
 <div class="card manual-note">
-  <b>你的任务</b>：确认哪些选手<b>实际到场</b>。检录完成的背号裁判才能打分；未检录的背号在裁判端自动置灰。
-  个别临时到场的选手可由主持人开赛前在检录台补点。检录记录会署名到操作人。
-</div>
-<div class="step"><h3>第 1 步 · 登录检录台</h3>
-  <p>登录页角色选「检录长/检录员」，输入管理员分发的用户名和口令。手机、平板即可操作。</p>
-  <img src="/static/manual/r50/st-login-marshal.png" alt="检录员登录页" loading="lazy">
-</div>
-<div class="step"><h3>第 2 步 · 逐个背号确认到场</h3>
-  <p>本场场次卡上选手以背号芯片排列：<b>点一下变绿 = 检录完成</b>；点错再点一下取消。
-  人数多时用「全部检录」一键全到，再点掉个别缺席者。顶部实时显示「检录 N / M」。
-  可用页首筛选（全部 / 待检录 / 已完成）和编号搜索快速定位场次。</p>
-  <img src="/static/manual/r50/m-checkin-chips.png" alt="检录台标注：芯片/批量/计数" loading="lazy">
-  <p class="muted">① 点背号变绿=到场，再点取消　② 「全部检录」一键全到　③ 「检录 N / M」实时更新。
-  你会看到：裁判端同步——未检录背号在评分页灰显「🔒 未检录」。</p>
-  <img src="/static/manual/r50/m-checkin-locate.png" alt="检录台筛选与搜索标注" loading="lazy">
-  <p class="muted">场次多时：① 按状态筛选场次　② 输入场次编号回车直接定位。</p>
-</div>
-<div class="step"><h3>第 3 步 · 场次索引（场次很多时）</h3>
-  <p>大型赛事动辄几十场：点页首「<b>场次索引</b>」打开抽屉，按「待检录 / 已完成」分组列出全部场次，
-  点场次名直接跳到该场卡片，免反复滚动寻找。</p>
-  <img src="/static/manual/r50/m-index.png" alt="场次索引入口（标注）" loading="lazy">
-  <p class="muted">① 场次很多时先按编号搜索　② 或点「场次索引」按分组浏览</p>
-  <img src="/static/manual/r50/m-index-drawer.png" alt="场次索引抽屉（标注）" loading="lazy">
-  <p class="muted">③ 按「待检录 / 已完成」分组，点场次名即跳转</p>
+  <b>顺位法（Skating，SKATING）</b>——标准舞/拉丁舞决赛标准用法。
+  每位裁判独立给本场全部选手排名次（1=最好，不并列），<b>不打分、只排名</b>。
+  全部裁判交卷后按 Skating 规则汇总：从第 1 名开始逐席检查，谁先被「过半数裁判」排进名次内谁先得席，
+  平票时比较名次之和。多数票机制让单 位裁判无法操纵结果。</div>
+<div class="card manual-note">
+  <b>Mark 制（MARK）</b>——预赛淘汰专用。裁判不排名次，只<b>勾选应当晋级的选手</b>
+  （通常勾选人数 = 晋级名额）；被过半裁判勾选的选手晋级下一轮。只分「晋级 / 淘汰」，最快速。</div>
+<div class="card manual-note">
+  <b>评分制（SCORE）</b>——集体舞等场合使用。每位裁判按表现给 <b>0~10 分</b>（一位小数），
+  系统汇总全部裁判的分数排出名次。适合需要区分优劣程度的场合。</div>
+<p class="muted">三种制式在赛程里按场次指定，裁判端会自动呈现对应的评分界面，无需裁判自己选择。</p>
+
+<h2 id="marshal">三、检录：确认到场</h2>
+<div class="step"><h3>逐个背号确认到场</h3>
+  <p>检录台按场次列出背号芯片：<b>点一下变绿 = 到场</b>，再点取消；人多用「全部检录」。
+  顶部实时显示「检录 N / M」；可用筛选和编号搜索定位场次，场次很多时点「场次索引」按分组跳转。</p>
+  <img src="/static/manual/r50/m-checkin-chips.png" alt="检录台标注" loading="lazy">
+  <img src="/static/manual/r50/m-checkin-locate.png" alt="筛选与搜索（标注）" loading="lazy">
+  <p class="muted">裁判端同步：未检录背号在评分页灰显「🔒 未检录」。</p>
 </div>
 
-<h2 id="host">三、主持人：开场核对与成绩播报</h2>
-<div class="card manual-note">
-  主持台与检录台是同一个页面（角色选「主持人」登录）。你负责两件事：
-  每场开始前<b>核对/补齐检录</b>，以及每场结束后<b>宣读成绩并打上播报标记</b>。
-</div>
-<div class="step"><h3>第 1 步 · 开场前补齐检录</h3>
-  <p>场次卡上的「检录 N / M」就是本场到场情况。检录处没来得及检录的选手，开场前由你在这里点击补齐；
-  评分已开始后再到场的同样补点，裁判页面会自动出现该背号。</p>
-</div>
-<div class="step"><h3>第 2 步 · 查看成绩公告并宣读</h3>
-  <p>场次计算完成后，该场次会出现在「已完成场次」区，默认收起为一行；
-  点「<b>查看成绩 ▾</b>」即在卡片内原位展开<b>成绩公告</b>——与观众查询页同一套样式
-  （名次 / 背番号 / 选手与队伍 / 总分），再点「收起 ▴」收回，一次展开一场互不堆叠；
-  也可在顶部搜索框输入场次编号（如 F1F）回车直接定位。宣读时若需要纸质稿，点「下载本场成绩单」得到 Markdown 文件。</p>
-  <img src="/static/manual/r50/m-accordion.png" alt="成绩公告展开标注" loading="lazy">
-  <p class="muted">① 「收起 ▴」原位收放　② 公告表可对照宣读　③ 需要纸质稿点下载本场成绩单　④ 宣读完打播报标记</p>
-</div>
-<div class="step"><h3>第 3 步 · 打上播报标记</h3>
-  <p>宣读完成后点「<b>标记已播报</b>」，卡片上会显示「已播报 ✓」徽章。这只是备忘：翻阅列表一眼可知哪些场次已念过、哪些还没念，
-  标错随时可取消，不影响任何比赛数据。</p>
+<h2 id="host">四、主持人：播报</h2>
+<div class="step"><h3>查看成绩公告并播报</h3>
+  <p>已算完的场次出现在「已完成场次」区，点「查看成绩 ▾」原位展开公告（名次/背番号/选手队伍/总分），
+  宣读后点「标记已播报」打勾备忘。需要纸质稿点「下载本场成绩单」。</p>
+  <img src="/static/manual/r50/m-accordion.png" alt="成绩公告展开（标注）" loading="lazy">
 </div>
 
-<h2 id="judge">四、裁判：三步完成一场评分</h2>
+<h2 id="judge">五、裁判：三步完成评分</h2>
 <div class="card manual-note">
-  <b>公平性约定</b>：评分时只见背号，不见姓名与单位；<b>只有已检录的背号可以打分</b>（未到场者灰显「🔒 未检录」，
-  点击会提示）。
-</div>
-<div class="step"><h3>第 1 步 · 打开你的专属链接</h3>
-  <p>赛前领取直达链接（形如 <code>/login?role=judge&amp;judge=J1</code>），手机打开即自动登录，建议存为书签。</p>
+  <b>公平性约定</b>：只见背号不见姓名；只有已检录的背号可评（未到场灰显 🔒）。
+  打分过程中页面自动暂存——锁屏/误刷新/断网后重新打开会恢复，提交成功才清空。</div>
+<div class="step"><h3>第 1 步 · 打开专属链接</h3>
+  <p>赛前领取直达链接（形如 <code>/login?role=judge&amp;judge=J1</code>），打开即自动定位到本赛事，建议存为书签。</p>
   <img src="/static/manual/r50/j-login.png" alt="裁判直达登录（标注）" loading="lazy">
-  <p class="muted">① 裁判 ID 已预填　② 直接登录（免口令）</p>
 </div>
-<div class="step"><h3>第 2 步 · 从工作台点进场次</h3>
-  <p>工作台列出所有待评场次与舞种入口，页首实时显示「待评 N / M」计数；有新开场或变动自动更新。</p>
-  <img src="/static/manual/r50/j-workbench.png" alt="裁判工作台标注" loading="lazy">
-  <p class="muted">① 页首实时「待评 N / M」计数　② 点场次卡上的舞种进入评分</p>
+<div class="step"><h3>第 2 步 · 从工作台进场次</h3>
+  <p>工作台列出所有进行中场次与舞种入口，页首实时显示「待评 N / M」。</p>
+  <img src="/static/manual/r50/j-workbench.png" alt="裁判工作台（标注）" loading="lazy">
 </div>
-<div class="step"><h3>第 3 步 · 按场次类型打分并提交</h3>
-  <p><b>顺位法</b>——两种打分习惯都支持，随时切换：<b>顺序点选</b>按名次依次点选手（点第 1 下就是第 1 名）；
-  <b>直接指定</b>先点选手行选中，再在下方名次键盘上点名次（灰色名次已被占用）。</p>
+<div class="step"><h3>第 3 步 · 按制式打分并提交</h3>
+  <p><b>顺位法</b>——两种习惯任选：<b>顺序点选</b>按名次依次点选手；<b>直接指定</b>先点选手再点下方名次键盘。</p>
   <img src="/static/manual/r50/j-skating.png" alt="顺位法双模式（标注）" loading="lazy">
-  <p class="muted">① 两种模式随时切换　② 按名次依次点选手行　③ 排完点提交；未检录背号灰显不可点</p>
-  <p><b>Mark 制</b>（预赛）：点击选手行给予 Mark（通常为晋级名额数），再点取消，页顶实时显示已选人数。</p>
+  <p><b>Mark 制</b>——点击选手行给予 Mark（通常为晋级名额数），再点取消，页顶实时显示已选人数。</p>
   <img src="/static/manual/r50/j4-mark-selected.png" alt="Mark 制评分" loading="lazy">
-  <p><b>评分制</b>（集体项目）：点输入框用数字键盘给 0~10 分。</p>
+  <p><b>评分制</b>——点输入框给 0~10 分。</p>
   <img src="/static/manual/r50/j-score.png" alt="评分制评分（标注）" loading="lazy">
-  <p class="muted">① 点输入框给 0~10 分　② 实时进度；收齐自动算名次</p>
-  <p class="muted"><b>打分暂存保护</b>：评分过程中页面自动暂存你的打分——手机锁屏、误刷新、网络闪断后重新打开页面，
-  已点的名次 / Mark / 分数会自动恢复；点「提交」成功后才清空暂存。
-  提交后如果场次还没关闭，可以修改重交；最后一名裁判提交完，名次自动产生。</p>
+  <p class="muted">提交后场次未关闭可修改重交；最后一名裁判提交完，名次自动产生（开「自动发布」则直接上大屏）。</p>
 </div>
 
-<h2 id="public">五、观众：随时查询</h2>
+<h2 id="public">六、观众：随时查询</h2>
 <div class="step"><h3>看赛程、查成绩、找选手</h3>
-  <p>无需登录：公开赛程看每场进行状态；公开成绩看已发布的名次（含选手与队伍名称）；
-  「按背番号查询」输入背号即可查到该选手的单位与全部已公布成绩；团体总分页实时更新（仅计已发布场次）。</p>
+  <p>公开赛程看每场状态；公开成绩看已发布名次（含选手与队伍）；「按背番号查询」输入背号即查；
+  团体总分实时更新（仅计已发布场次）。</p>
   <img src="/static/manual/r50/p-results.png" alt="公开成绩与查询（标注）" loading="lazy">
-  <p class="muted">① 锚点条快速跳到场次　② 「按背番号查询」输入背号即可　③ 已发布成绩含选手与队伍名</p>
-  <img src="/static/manual/r50/p-lookup.png" alt="按背番号查询结果（标注）" loading="lazy">
-  <p class="muted">① 输入背番号　② 显示单位与全部已发布成绩</p>
+  <img src="/static/manual/r50/p-lookup.png" alt="背番号查询（标注）" loading="lazy">
   <img src="/static/manual/r50/p3-public-standings.png" alt="团体总分榜" loading="lazy">
 </div>
 
-<h2 id="screen">六、大屏：挂机展示</h2>
+<h2 id="screen">七、大屏：挂机展示</h2>
 <div class="step"><h3>现场大屏</h3>
-  <p>大屏打开后自动轮播：欢迎页 → 评分进行中 → 成绩公告（逐场轮换）→ 团体总分榜；
-  有内容才轮播，都无内容时停留在欢迎页。管理员可在「大屏控制」强制锁定某一画面，变更即时推送。
-  整页按 1080p 设计，永不出现滚动条。</p>
+  <p>自动轮播：欢迎页 → 评分进行中 → 成绩公告（逐场）→ 团体总分榜；有内容才轮播。
+  管理员可强制锁定某一画面，变更即时推送。按 1080p 设计，无滚动条。</p>
   <img src="/static/manual/r50/s-screen-results.png" alt="大屏成绩公告" loading="lazy">
 </div>
 
+<div class="card">
+  <h2>文件分发与数据安全</h2>
+  <p class="muted">「文件」页提供分层托管（public/token/admin 三档权限），上传后复制链接即可分发成绩册、规程等材料。
+  数据安全：评分全程留痕、敏感操作审计、全量导出/原子恢复、每日自动备份（见 docs/DEPLOY.md）。</p>
+</div>
 
-<p class="muted" style="margin-top:2rem">赛事评分系统使用说明 v4.3 · 2026-10-04 · 面向使用者 · 关键步骤配标注实机图 ·
-覆盖多场赛事并行 / 操作留痕 / 文件分发 / 数据备份 / 打分暂存 ·
-舞阵、音乐播放器等其余工具的说明见各自应用内「说明」入口与应用货架 ·
-系统实现细节见 docs/DESIGN.md，部署指南见 docs/DEPLOY.md。</p>
+<p class="muted" style="margin-top:2rem">使用说明 v5.0 · 2026-10-15 · 赛事评分系统 · 筹备向导为首推入口 ·
+评分基础与全角色动线 · 系统细节见 docs/DESIGN.md，部署见 docs/DEPLOY.md，演示见 docs/DEMO.md。</p>
 {% endblock %}
 {% block scripts %}
 {% endblock %}
