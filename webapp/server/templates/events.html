@@ -75,10 +75,19 @@ document.getElementById('create-btn').addEventListener('click', async function (
     }
     inputVal2reset();
     refresh();
-  } catch (e) { showMsg(e.message, false); }
+  } catch (e) {
+    var m = String(e.message || e);
+    if (m.indexOf("用户名已存在") >= 0)
+      showMsg("赛事已创建并激活；但赛事管理员账号未创建（" + m + "）。请在「用户」页手动创建并绑定本赛事 ID", false);
+    else
+      showMsg(m, false);
+  }
 });
 function inputVal2reset() {
-  ['name', 'date', 'location'].forEach(function (id) { document.getElementById(id).value = ''; });
+  ["name", "date", "location", "ca-username", "ca-password"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.value = "";
+  });
 }
 document.getElementById('logout-link').addEventListener('click', async function (e) {
   e.preventDefault();
