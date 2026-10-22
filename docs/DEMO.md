@@ -6,8 +6,8 @@
 **演示入口：https://dancetkt.com**
 
 - 公开赛事中心：https://dancetkt.com/competitions （全部激活赛事的卡片列表）
-- 示例赛事首页：https://dancetkt.com/competitions/20 （公开详情 + 各角色登录入口）
-- 示例赛事登录页：https://dancetkt.com/competitions/20/login
+- 示例赛事首页：https://dancetkt.com/competitions/51 （公开详情 + 各角色登录入口）
+- 示例赛事登录页：https://dancetkt.com/competitions/51/login
 
 > 登录即把浏览器会话绑定到该赛事；裁判旧书签 `/login?role=judge&judge=J1` 仍可用
 > （自动 302 到所属赛事的专属登录页）。
