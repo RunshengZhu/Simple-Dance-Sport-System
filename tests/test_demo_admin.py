@@ -65,6 +65,11 @@ def seeded():
                   "display_name": "示例赛事管理员"}, role="super")
     assert r.status_code in (200, 201), r.text
     _login("ca", {"role": "admin", "username": "demo-admin", "password": "demopass1"})
+    # 一场场次，供 staff 页面渲染断言
+    r = req("POST", f"/api/events/{ids['示例赛事（演示）']}/imports/schedule",
+            content="场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手\nP1,预赛,P1,1,华尔兹,SKATING,0,",
+            role="super")
+    print("IMPORT:", r.status_code, r.text[:100])
     return ids
 
 
@@ -233,3 +238,17 @@ def test_duplicate_marshal_still_rejected(seeded):
     req("POST", "/api/users", json={"username": "dup-m1", "password": "123456", "role": "marshal"}, role="super")
     r = req("POST", "/api/users", json={"username": "dup-m1", "password": "123456", "role": "marshal"}, role="super")
     assert r.status_code == 400
+
+
+def test_staff_page_renders_event_cards(seeded):
+    """R57f 回归：staff 路由的 items.append 曾被误删导致检录台永远「暂无场次」。"""
+    ids = seeded
+    cid = ids["示例赛事（演示）"]
+    _login("marshal", {"role": "marshal", "username": "marshal", "password": "marshal123",
+                       "competition_id": ids["示例赛事（演示）"]})
+    r = req("GET", "/staff", role="marshal")
+    open("/tmp/staff_debug.html", "w").write(r.text)
+    print("STAFF:", r.status_code, len(r.text))
+    assert r.status_code == 200
+    assert 'class="card st-event"' in r.text, "staff 页必须渲染场次卡"
+    assert "暂无场次" not in r.text.split("场次流程")[1].split("</div>")[0]

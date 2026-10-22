@@ -1777,7 +1777,8 @@ async def staff_page(request: Request):
                 item["results"] = (res or {}).get("overall_results", [])
                 item["names"] = name_by_number
                 item["is_done"] = True
-                item["competition_id"] = comp["id"]
+            item["competition_id"] = comp["id"]
+            items.append(item)
     return templates.TemplateResponse(request, "staff.html", {
         "request": request, "comp": comp, "items": items, "role": s["role"],
         "who": who})
