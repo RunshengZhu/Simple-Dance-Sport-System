@@ -22,15 +22,19 @@
 
 <!-- 步骤 1 -->
 <section class="card wiz-pane" data-s="1">
-  <h2>赛事信息确认</h2>
-  <table class="wiz-info">
-    <tr><th>赛事名称</th><td>{{ comp.name }}</td></tr>
-    <tr><th>日期</th><td>{{ comp.date or "未填写" }}</td></tr>
-    <tr><th>地点</th><td>{{ comp.location or "未填写" }}</td></tr>
-  </table>
-  <p class="muted">以上信息由平台总管理员创建时填写；如需修改请联系总管理员。
-    接下来的 4 步完成参赛数据与工作人员准备，全部就绪后即可开赛。</p>
-  <div class="wiz-nav"><span></span><button class="btn" data-go="2">下一步：导入选手 →</button></div>
+  <h2>赛事信息</h2>
+  <p class="muted">赛事名称必填；日期、地点选填。修改后记得点「保存」。</p>
+  <label>赛事名称 *</label>
+  <input id="wz-name" value="{{ comp.name }}" maxlength="120">
+  <div class="wiz-two">
+    <div><label>日期</label><input id="wz-date" value="{{ comp.date or "" }}" placeholder="YYYY-MM-DD"></div>
+    <div><label>地点</label><input id="wz-location" value="{{ comp.location or "" }}" placeholder="比赛场馆"></div>
+  </div>
+  <p><button class="btn secondary" id="wz-save">保存赛事信息</button> <span id="wz-msg" class="ok"></span></p>
+  <div class="wiz-nav">
+    <span class="muted">接下来的 4 步完成参赛数据与工作人员准备，全部就绪后即可开赛。</span>
+    <button class="btn" data-go="2">下一步：导入选手 →</button>
+  </div>
 </section>
 
 <!-- 步骤 2/3/4：导入类（模板变量渲染三份） -->
@@ -224,6 +228,24 @@ document.getElementById('wiz-finish').onclick = function () {
   api('POST', '/events/' + CID + '/setup/complete').then(function () {
     location.href = '/events/' + CID + '/schedule';
   });
+};
+
+document.getElementById('wz-save').onclick = function () {
+  var name = document.getElementById('wz-name').value.trim();
+  if (!name) { document.getElementById('wz-msg').textContent = ''; 
+    document.getElementById('wz-msg').className = 'err';
+    document.getElementById('wz-msg').textContent = '赛事名称必填'; return; }
+  api('PUT', '/api/competitions/' + CID, {name: name,
+      date: document.getElementById('wz-date').value.trim(),
+      location: document.getElementById('wz-location').value.trim()})
+    .then(function () {
+      var el = document.getElementById('wz-msg');
+      el.className = 'ok'; el.textContent = '已保存 ✓';
+      setTimeout(function () { el.textContent = ''; }, 2500);
+    }).catch(function (e) {
+      var el = document.getElementById('wz-msg');
+      el.className = 'err'; el.textContent = e.message;
+    });
 };
 
 showStep(1);

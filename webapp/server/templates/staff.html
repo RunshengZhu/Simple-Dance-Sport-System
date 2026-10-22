@@ -22,37 +22,9 @@
   <button class="btn secondary" id="scene-index-btn" aria-expanded="false" aria-haspopup="dialog" style="margin-top:8px">场次索引</button>
 </div>
 
-<h2>待赛 / 评分中场次 · 检录</h2>
-<p class="muted">点击背号即检录/撤销检录（可由检录处或主持人开场前补充完成）；裁判仅能对已检录背号评分。</p>
+<h2>场次流程 <span class="muted">开场 → 检录 → 评分 → 成绩/播报</span></h2>
 {% for ev in items %}
-<div class="card st-event" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-need="{{ 1 if ev.checked_n < ev.total else 0 }}">
-  <h3>{{ ev.code }} {{ ev.name }}
-    <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '评分中' if ev.status == 'scoring' else '待开始' }}</span>
-    <span class="muted">{{ ev.project }} 第{{ ev.round }}轮</span>
-    <span class="tag" id="prog-{{ ev.id }}">检录 {{ ev.checked_n }} / {{ ev.total }}</span>
-  </h3>
-  <div class="chip-row">
-    {% for r in ev.roster %}
-    <button type="button" class="chip {{ 'on' if r.checked else 'off' }}" data-ceid="{{ ev.id }}" data-num="{{ r.number }}"
-            title="{{ '检录人: ' + r.by if r.by else '未检录' }}">{{ r.number }}</button>
-    {% endfor %}
-  </div>
-  {% if ev.total %}
-  <p>
-    <button class="btn secondary" data-all="{{ ev.id }}" data-state="1">全部检录</button>
-    <button class="btn secondary" data-all="{{ ev.id }}" data-state="0">全清</button>
-  </p>
-  {% else %}
-  <p class="muted">暂无上场名单，请由管理员在控制台勾选。</p>
-  {% endif %}
-</div>
-{% endfor %}
-{% if not items %}<div class="card"><p class="muted">暂无待赛/评分中场次。</p></div>{% endif %}
-<p class="muted" id="staff-empty" style="display:none">该筛选条件下没有场次。</p>
-
-<h2>已完成场次 · 成绩与播报</h2>
-<p class="muted">点「查看成绩」在本卡内原位展开成绩公告，再点收起；一次展开一场，互不堆叠。</p>
-{% for ev in done %}
+{% if ev.is_done %}
 <div class="card st-event done-card" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}">
   <div class="done-head">
     <h3>{{ ev.code }} {{ ev.name }}
@@ -75,8 +47,32 @@
     </div>
   </div>
 </div>
+{% else %}
+<div class="card st-event" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-need="{{ 1 if ev.checked_n < ev.total else 0 }}">
+  <h3>{{ ev.code }} {{ ev.name }}
+    <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '评分中' if ev.status == 'scoring' else '待开始' }}</span>
+    <span class="muted">{{ ev.project }} 第{{ ev.round }}轮</span>
+    <span class="tag" id="prog-{{ ev.id }}">检录 {{ ev.checked_n }} / {{ ev.total }}</span>
+  </h3>
+  <div class="chip-row">
+    {% for r in ev.roster %}
+    <button type="button" class="chip {{ 'on' if r.checked else 'off' }}" data-ceid="{{ ev.id }}" data-num="{{ r.number }}"
+            title="{{ '检录人: ' + r.by if r.by else '未检录' }}">{{ r.number }}</button>
+    {% endfor %}
+  </div>
+  {% if ev.total %}
+  <p>
+    <button class="btn secondary" data-all="{{ ev.id }}" data-state="1">全部检录</button>
+    <button class="btn secondary" data-all="{{ ev.id }}" data-state="0">全清</button>
+  </p>
+  {% else %}
+  <p class="muted">暂无上场名单，请由管理员在控制台勾选。</p>
+  {% endif %}
+</div>
+{% endif %}
 {% endfor %}
-{% if not done %}<div class="card"><p class="muted">暂无已完成场次。</p></div>{% endif %}
+{% if not items %}<div class="card"><p class="muted">暂无场次。</p></div>{% endif %}
+<p class="muted" id="staff-empty" style="display:none">该筛选条件下没有场次。</p>
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};

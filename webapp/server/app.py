@@ -455,6 +455,29 @@ async def login_page(request: Request):
 
 
 # ---- R55 公开赛事中心 ----
+@app.put("/api/competitions/{competition_id}")
+async def api_competition_update(competition_id: int, request: Request = None):
+    """R58 赛事信息编辑：名称/日期/地点。总管理员或绑定本赛事的赛事管理员。"""
+    require_admin(request)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可编辑自己的赛事")
+    comp = _comp_or_404(competition_id)
+    body = await request.json()
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="赛事名称必填")
+    if len(name) > 120:
+        raise HTTPException(status_code=400, detail="赛事名称过长")
+    date = str(body.get("date") or "").strip()[:10]
+    location = str(body.get("location") or "").strip()[:120]
+    conn = db.get_db()
+    conn.execute("UPDATE competitions SET name=?, date=?, location=? WHERE id=?",
+                 (name, date, location, competition_id))
+    conn.commit()
+    return {"ok": True}
+
+
 @app.get("/competitions", response_class=HTMLResponse)
 async def competitions_page(request: Request):
     """公开赛事列表：卡片展示全部激活中的赛事。"""
@@ -1728,7 +1751,7 @@ async def staff_page(request: Request):
     who = s.get("display_name") or s.get("username") or s["role"]
     comp = _current_competition(request)
     conn = db.get_db()
-    items, done = [], []
+    items = []
     name_by_number = {}
     if comp:
         name_by_number = {c["number"]: c["name"] for c in db.rows(conn.execute(
@@ -1753,12 +1776,10 @@ async def staff_page(request: Request):
                 res = load_results(ev["id"])
                 item["results"] = (res or {}).get("overall_results", [])
                 item["names"] = name_by_number
+                item["is_done"] = True
                 item["competition_id"] = comp["id"]
-                done.append(item)
-            else:
-                items.append(item)
     return templates.TemplateResponse(request, "staff.html", {
-        "request": request, "comp": comp, "items": items, "done": done, "role": s["role"],
+        "request": request, "comp": comp, "items": items, "role": s["role"],
         "who": who})
 
 

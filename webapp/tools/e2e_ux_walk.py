@@ -45,11 +45,11 @@ async def main():
         await pg.goto(BASE + "/events"); await pg.wait_for_timeout(600)
         await shot(pg, "A1_赛事管理页")
         t = time.time()
-        await pg.fill("#name", "E2E流程验收赛")
+        await pg.fill("#name", "R58全流程验收赛")
         await pg.fill("#date", "2026-10-20")
         await pg.fill("#location", "验收馆")
         await pg.click("details.wiz-admin summary")
-        CA_USER = "e2e-org-" + str(int(time.time()) % 100000)
+        CA_USER = "r58-org"
         await pg.fill("#ca-username", CA_USER)
         await pg.fill("#ca-password", "E2eOrg2026")
         await pg.click("#create-btn"); await pg.wait_for_timeout(1500)
@@ -57,7 +57,7 @@ async def main():
         note(f"[建赛] 表单反馈: {msg!r}；从填表到建赛+发管理员 {round(time.time()-t,1)}s；共 5 个输入项分散在 2 层")
         await shot(pg, "A2_建赛结果")
         _, d, _ = api("GET", "/api/events", cookie=ck)
-        cid = next(e["id"] for e in d["events"] if e["name"] == "E2E流程验收赛")
+        cid = next(e["id"] for e in d["events"] if e["name"] == "R58全流程验收赛")
         _, d, _ = api("GET", f"/api/public/events/{cid}/schedule")
         ids = {e["code"]: e["id"] for e in d["events"]}
         print("cid:", cid, "ids:", ids, flush=True)
@@ -93,6 +93,11 @@ async def main():
             await pg.wait_for_timeout(1000)
             r = await pg.evaluate(f"document.querySelector('.wiz-result[data-kind=\\'{kind}\\']').textContent")
             note(f"[向导·{kind}] 反馈: {r!r}")
+        await pg.fill("#wz-location", "北京交通大学体育馆")
+        await pg.click("#wz-save"); await pg.wait_for_timeout(800)
+        saved = await pg.evaluate("document.getElementById('wz-msg').textContent")
+        NOTES.append("[向导①编辑赛事信息] 保存反馈: " + saved);
+        await shot(pg, "B2a_向导步骤1编辑保存")
         await wiz_import("competitors", "/tmp/e2e_comp.csv")
         await shot(pg, "B3_向导选手步")
         await wiz_import("judges", "/tmp/e2e_judges.csv")
@@ -102,12 +107,12 @@ async def main():
         await pg.select_option("#s-role", "marshal")
         STAFF["checkin"] = "e2e-checkin-" + str(int(time.time()) % 100000)
         await pg.fill("#s-username", STAFF["checkin"]); await pg.fill("#s-display", "验收检录员")
-        await pg.fill("#s-password", "E2eCheck2026"); await pg.click("#s-create")
+        await pg.fill("#s-password", "R58check2026"); await pg.click("#s-create")
         await pg.wait_for_timeout(700)
         await pg.select_option("#s-role", "host")
         STAFF["host"] = "e2e-host-" + str(int(time.time()) % 100000)
         await pg.fill("#s-username", STAFF["host"]); await pg.fill("#s-display", "验收主持人")
-        await pg.fill("#s-password", "E2eHost2026"); await pg.click("#s-create")
+        await pg.fill("#s-password", "R58host2026"); await pg.click("#s-create")
         await pg.wait_for_timeout(700)
         await shot(pg, "B4_向导工作人员步")
         # 完成
@@ -131,7 +136,7 @@ async def main():
         # ============ C 检录：部分检录 P1 6/8 ============
         ctxC = await ctx(); pg = await ctxC.new_page()
         await pg.goto(f"{BASE}/competitions/{cid}/login?role=marshal"); await pg.wait_for_timeout(300)
-        await pg.fill("#username", STAFF["checkin"]); await pg.fill("#password", "E2eCheck2026")
+        await pg.fill("#username", STAFF["checkin"]); await pg.fill("#password", "R58check2026")
         await pg.click("#btn"); await pg.wait_for_timeout(2000)
         print("C 检录落点:", pg.url, flush=True)
         await shot(pg, "C1_检录台")
@@ -240,7 +245,7 @@ async def main():
         # ============ F 主持人播报 ============
         ctxF = await ctx(); pg = await ctxF.new_page()
         await pg.goto(f"{BASE}/competitions/{cid}/login?role=host"); await pg.wait_for_timeout(300)
-        await pg.fill("#username", STAFF["host"]); await pg.fill("#password", "E2eHost2026")
+        await pg.fill("#username", STAFF["host"]); await pg.fill("#password", "R58host2026")
         await pg.click("#btn"); await pg.wait_for_timeout(2000)
         await shot(pg, "F1_主持台")
         ann = pg.locator(".ann-btn").first

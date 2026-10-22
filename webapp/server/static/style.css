@@ -738,3 +738,7 @@ main { max-width: 1180px; }
 body.judge-sheet main, body.screen main { max-width: none; }
 .card h2 { margin-top: 0; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+
+.wiz-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 719px) { .wiz-two { grid-template-columns: 1fr; } }
+#wz-msg.ok { color: var(--ok); }
