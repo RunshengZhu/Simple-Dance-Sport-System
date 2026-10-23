@@ -111,6 +111,8 @@
 var CID = {{ comp.id }};
 var KINDS = ["competitors", "judges", "schedule"];
 var LABELS = {competitors: "选手", judges: "裁判", schedule: "场次"};
+// 接口返回键：场次计数在 events 字段（schedule 是页面 data-kind 名）
+var SKEY = {competitors: "competitors", judges: "judges", schedule: "events"};
 
 function showStep(n) {
   document.querySelectorAll('.wiz-pane').forEach(function (p) { p.hidden = p.dataset.s !== String(n); });
@@ -130,7 +132,7 @@ function loadStatus() {
   return api('GET', '/api/events/' + CID + '/setup/status').then(function (d) {
     KINDS.forEach(function (k) {
       var el = document.querySelector('.wiz-count[data-kind="' + k + '"]');
-      if (el) el.textContent = '当前已有 ' + d[k] + ' 名（条）' + LABELS[k];
+      if (el) el.textContent = '当前已有 ' + (d[SKEY[k]] || 0) + ' 名（条）' + LABELS[k];
     });
     return d;
   });
