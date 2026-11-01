@@ -121,6 +121,12 @@ if (SKATING) {
     });
     var done = rowsAll().filter(function (row) { return getV(row) !== ''; }).length;
     document.getElementById('progress').textContent = '已排 ' + done + ' / ' + CHECKED + (done < CHECKED ? ' · 还差 ' + (CHECKED - done) : ' · 可提交');
+    // R60：拦截提示随排名进度即时刷新/清除，杜绝「还差 5 却提示还有 7」的过期警告
+    var msgEl = document.getElementById('msg');
+    if (msgEl && msgEl.className === 'err') {
+      if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
+      else msgEl.textContent = '还有 ' + (CHECKED - done) + (SKATING ? ' 名选手未排名' : ' 支队伍未评分');
+    }
     var show = assignMode === 'direct' && selected;
     keypad.style.display = show ? 'block' : 'none';
     if (show) {
@@ -195,6 +201,11 @@ if (SKATING) {
   function renderScore() {
     var done = Array.prototype.filter.call(document.querySelectorAll('input.val:not([disabled])'), function (i) { return i.value !== ''; }).length;
     document.getElementById('progress').textContent = '已填 ' + done + ' / ' + CHECKED + (done < CHECKED ? ' · 还差 ' + (CHECKED - done) : ' · 可提交');
+    var msgEl = document.getElementById('msg');   // R60：拦截提示随进度刷新/清除
+    if (msgEl && msgEl.className === 'err') {
+      if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
+      else msgEl.textContent = '还有 ' + (CHECKED - done) + ' 支队伍未评分';
+    }
   }
   document.querySelectorAll('input.val').forEach(function (inp) { inp.addEventListener('input', renderScore); });
   document.querySelectorAll('.score-row.off').forEach(function (row) {
@@ -216,6 +227,11 @@ if (SKATING) {
     if (cnt) cnt.textContent = document.querySelectorAll('input.val:checked').length;
     var done = document.querySelectorAll('input.val:checked').length;
     document.getElementById('progress').textContent = '已选 ' + done + ' / ' + CHECKED;
+    var msgEl = document.getElementById('msg');   // R60：拦截提示随进度刷新/清除
+    if (msgEl && msgEl.className === 'err') {
+      if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
+      else msgEl.textContent = '还有 ' + (CHECKED - done) + ' 支队伍未给 Mark';
+    }
   }
   document.querySelectorAll('.mark-row').forEach(function (row) {
     row.addEventListener('click', function () {

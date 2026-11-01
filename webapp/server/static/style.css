@@ -62,7 +62,8 @@ header nav a {
   padding: 5px 11px; border-radius: 999px; color: var(--txt); font-size: .92rem;
 }
 header nav a:hover { background: var(--acc-soft); text-decoration: none; }
-.badge { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+.badge { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--ok);
+  font-size: 0; line-height: 0; overflow: hidden; }  /* 仅背景圆点；杜绝内部字形溢出（R60 头部右缘裁切） */
 .badge.off { background: var(--mute-border); }
 
 /* ---- 布局 ---- */
@@ -123,12 +124,16 @@ body.screen header .muted { color: #9aa3b2; }
 body.screen main { max-width: 1600px; height: calc(100vh - 58px); overflow: hidden; padding-bottom: 0; }
 body.screen h1 { font-size: 3.2vw; color: #f3c969; margin: 1.2vw 0; }
 body.screen h2 { font-size: 2.2vw; color: #d7dbe3; }
-body.screen table { font-size: 1.7vw; background: transparent; }
-body.screen th { color: #9aa3b2; }
-body.screen td, body.screen th { border-color: #262c38; padding: 0.9vw 1.2vw; }
+body.screen table { font-size: 2vw; background: transparent; }
+/* R60 可读性：通用样式给 th 白底小字，大屏必须压掉——高对比深色表头 + 大字号 td/th */
+body.screen th { background: transparent; color: #c3ccda; font-size: 1.5vw; letter-spacing: .1em; }
+body.screen td { color: #f0eee9; font-size: 2vw; font-weight: 500; }
+body.screen td, body.screen th { border-color: #262c38; padding: 1vw 1.4vw; }
 body.screen tr.rank-1 td { background: #3a2e12; color: #f3c969; }
 body.screen .screen-section { display: none; height: 100%; overflow: hidden; }
-body.screen .screen-section.active { display: block; animation: fade .5s; }
+/* 内容纵向居中，避免短表下方大面积空置 */
+body.screen .screen-section.active { display: flex; flex-direction: column; justify-content: center; animation: fade .5s; }
+body.screen .screen-section.active h1 { margin-top: 0; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---- 裁判移动端 ---- */
@@ -389,6 +394,11 @@ header nav a { font-weight: 500; transition: background .15s ease; }
   .judge-sheet .mode-toggle { margin: .4rem 0; gap: 6px; }
   .judge-sheet .mt-btn { padding: 7px 10px; font-size: .85rem; }
   .judge-sheet .submit-bar { padding: 9px 2px; gap: 8px; }
+  /* 吸底栏三件套改纵向排列：进度/提示各占整行，杜绝窄屏下进度文字被按钮盖住（R60） */
+  .judge-sheet .submit-bar { flex-wrap: wrap; }
+  .judge-sheet .submit-bar #progress { flex: 1 1 100%; white-space: normal; order: 1; text-align: center; }
+  .judge-sheet .submit-bar .btn { order: 2; }
+  .judge-sheet .submit-bar #msg { order: 3; flex: 1 1 100%; text-align: center; }
   /* 查询卡间距 */
   .lookup-row { gap: 6px; }
   /* 吸顶工具条不遮内容 */

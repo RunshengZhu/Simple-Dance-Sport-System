@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """R57 用户体验审计：从零走完 建赛→筹备→检录→裁判→控制/发布→晋级→播报→观众 全闭环。"""
 import asyncio, json, os, time, urllib.request, urllib.parse
-BASE = "https://dancetkt.com"
-SHOTS = "/tmp/e2e_ux"
-SUPER = "CE9DoLRhkb37R9w_bgrpDA55"
+# 环境变量可覆盖：E2E_BASE / E2E_SUPER / E2E_SHOTS（本地跑用 admin123）
+BASE = os.environ.get("E2E_BASE", "https://dancetkt.com")
+SHOTS = os.environ.get("E2E_SHOTS", "/tmp/e2e_ux")
+SUPER = os.environ.get("E2E_SUPER", "CE9DoLRhkb37R9w_bgrpDA55")
 NOTES = []
 STAFF = {}
 T0 = time.time()
@@ -33,8 +34,22 @@ async def main():
         def ctx():
             return browser.new_context(viewport={"width": 1440, "height": 900}, locale="zh-CN")
         async def shot(page, name):
+            # full-page 截图会把 sticky 吸顶元素合成在旧滚动偏移上（R60 审计：E3/E7 导航条画在页中），
+            # 截图期临时降级为 static，截完恢复。
+            await page.evaluate("""() => {
+              const st = document.createElement('style');
+              st.id = 'e2e-nosticky';
+              st.textContent = 'header,.submit-bar,.anchor-bar,.lifecycle-bar,.rank-keypad{position:static !important;}';
+              document.head.appendChild(st);
+              window.scrollTo(0, 0);
+            }""")
+            await pg_wait(page)
             await page.screenshot(path=f"{SHOTS}/{name}.png", full_page=True)
+            await page.evaluate("() => { const st = document.getElementById('e2e-nosticky'); if (st) st.remove(); }")
             print("shot:", name, flush=True)
+
+        async def pg_wait(page):
+            await page.wait_for_timeout(250)
 
         # ============ A 总管理员：建赛 + 一步同建赛事管理员 ============
         ctxA = await ctx(); pg = await ctxA.new_page()
@@ -204,8 +219,12 @@ async def main():
         # 发布 P1（结果中心）
         await pg.goto(f"{BASE}/events/{cid}/results"); await pg.wait_for_timeout(1200)
         await shot(pg, "E2_结果中心")
-        pub = pg.locator("button", has_text="发布").first
-        await pub.click(); await pg.wait_for_timeout(1200)
+        # 只点 P1 卡内的发布按钮（旧写法 .first 会点到列表第一个场次，R60 审计发现取证错位）
+        await pg.locator(f'.card[data-ceid="{ids["P1"]}"] button', has_text="发布（进大屏）").click()
+        await pg.wait_for_timeout(1200)
+        _, dp1, _ = api("GET", f"/api/public/events/{cid}/results", cookie=ck)
+        pub_ok = any(x.get("code") == "P1" for x in dp1.get("results", []))
+        note(f"[发布] P1 published 断言: {pub_ok}")
         await shot(pg, "E3_P1已发布")
         # 晋级确认
         await pg.goto(f"{BASE}/events/{cid}/advancement?project=P1&round=1"); await pg.wait_for_timeout(1200)
@@ -238,8 +257,11 @@ async def main():
                 {"values": {p: r for r, p in enumerate(prop, 1)}}, ckJ)
         # P1F 发布
         await pg.goto(f"{BASE}/events/{cid}/results"); await pg.wait_for_timeout(1200)
-        pub = pg.locator("button", has_text="发布").first
-        await pub.click(); await pg.wait_for_timeout(500); await pub.click(); await pg.wait_for_timeout(1200)
+        await pg.locator(f'.card[data-ceid="{ids["P1F"]}"] button', has_text="发布（进大屏）").click()
+        await pg.wait_for_timeout(1200)
+        _, dpf, _ = api("GET", f"/api/public/events/{cid}/results", cookie=ck)
+        pubf_ok = any(x.get("code") == "P1F" for x in dpf.get("results", []))
+        note(f"[发布] P1F published 断言: {pubf_ok}")
         await shot(pg, "E7_P1F已发布")
 
         # ============ F 主持人播报 ============
