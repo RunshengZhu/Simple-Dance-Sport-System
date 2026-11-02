@@ -90,9 +90,15 @@ function rotate() {
 }
 
 async function refresh() {
-  stateData = await api('GET', '/api/public/events/' + CID + '/screen-state');
-  forcedMode = stateData.forced_mode || 'auto';
-  renderScoring(); renderResults(); renderStandings();
+  // R63 混沌压测修复：弱网下 fetch 失败/响应不完整不得中断轮播——保留上一轮 state，下个周期重试
+  try {
+    var d = await api('GET', '/api/public/events/' + CID + '/screen-state');
+    if (d) {
+      stateData = d;
+      forcedMode = stateData.forced_mode || 'auto';
+      renderScoring(); renderResults(); renderStandings();
+    }
+  } catch (e) { /* 网络异常：静默保留旧数据 */ }
   applyForcedOrRotate();
 }
 

@@ -356,16 +356,13 @@ connectSSE('/api/events/' + CID + '/stream', {
     var m = document.getElementById('msg');
     if (m && !m.textContent) { m.className = 'muted'; m.textContent = '已恢复上次未提交的作答（本机暂存）'; }
   }
-  // 交互后保存（点击/输入，去抖 300ms）
-  var saveTimer = null;
-  document.addEventListener('click', function () {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, 300);
-  });
-  document.addEventListener('input', function () {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, 300);
-  });
+  // R63 根治「软刷新/重载冲掉未提交名次」：赋值即刻同步落盘（原 300ms 去抖窗口内的重载会丢最后的点击），
+  // 通过 __beforeSoftReload 钩子在 softReload 重载前强制保存，pageshow（bfcache 回退/恢复）重应用草稿。
+  window.__saveSheetDraft = save;
+  window.__beforeSoftReload = save;
+  document.addEventListener('click', function () { try { save(); } catch (e) {} });
+  document.addEventListener('input', function () { try { save(); } catch (e) {} });
+  window.addEventListener('pageshow', function () { try { if (restore()) { var m2 = document.getElementById('msg'); if (m2 && !m2.textContent) { m2.className = 'muted'; m2.textContent = '已恢复上次未提交的作答（本机暂存）'; } } } catch (e) {} });
   // 提交成功清除（挂接 submitSheet 的成功写点：观察 msg 变 ok）
   var msgEl = document.getElementById('msg');
   if (msgEl) {

@@ -3,6 +3,7 @@
 // 软刷新：保存滚动位置后重载，load 后恢复（按 URL 键控，10s 内有效）。
 // 结构性事件（计算完成/发布/开闭场）确需重载时一律走这里，避免视口跳顶。
 function softReload() {
+  try { if (window.__beforeSoftReload) window.__beforeSoftReload(); } catch (e) {}   // R63：结构性重载前让页面同步保存未提交作答
   try {
     sessionStorage.setItem('__sr' + location.pathname + location.search,
       JSON.stringify({ y: window.scrollY || 0, t: Date.now() }));
