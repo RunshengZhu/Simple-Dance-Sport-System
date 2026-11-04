@@ -21,7 +21,16 @@
 </div>
 {% endif %}
 <h1>结果中心 · {{ comp.name }}</h1>
+{% set pending_pub = payload | selectattr("ev.status", "equalto", "calculated") | list %}
 <div class="card">
+  {% if pending_pub %}
+  <p style="margin-bottom:10px">
+    <button class="btn" id="bulk-publish-btn" onclick="bulkPublish(this)">
+      一键发布待发布场次（{{ pending_pub | length }}）
+    </button>
+    <span class="muted" id="bulk-pub-msg"></span>
+  </p>
+  {% endif %}
   <p>
     导出（已发布场次）：
     <a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=markdown">Markdown</a>
@@ -57,6 +66,23 @@
 {% if not payload %}<div class="card"><p class="muted">暂无已计算场次。请在场次控制台完成评分与计算。</p></div>{% endif %}
 {% endblock %}
 {% block scripts %}
+async function bulkPublish(btn) {
+  var cards = Array.from(document.querySelectorAll('.card[data-ceid]'))
+    .filter(function (c) { return c.querySelector('.tag.gray'); });
+  if (!cards.length) { toast('没有待发布场次'); return; }
+  if (!confirm('确认发布全部 ' + cards.length + ' 个待发布场次？（发布后进大屏/观众页，可逐场撤回）')) return;
+  btn.disabled = true;
+  var ok = 0, fail = 0;
+  for (var i = 0; i < cards.length; i++) {
+    try {
+      await api('POST', '/api/competition-events/' + cards[i].dataset.ceid + '/publish', {});
+      ok++;
+    } catch (e) { fail++; }
+  }
+  btn.disabled = false;
+  toast('已发布 ' + ok + ' 场' + (fail ? '，失败 ' + fail + ' 场' : ''), fail ? 'err' : 'ok');
+  softReload();
+}
 async function doPub(btn, ceid, publish) {
   try {
     await api('POST', '/api/competition-events/' + ceid + '/' + (publish ? 'publish' : 'unpublish'), {});

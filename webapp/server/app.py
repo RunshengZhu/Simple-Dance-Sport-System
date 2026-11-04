@@ -678,6 +678,8 @@ async def results_page(request: Request, competition_id: int):
                 (competition_id, ev["project_code"], ev["round"] + 1)).fetchone()
             if has_next:
                 adv_hints.append({"code": ev["code"], "round": ev["round"], "project": ev["project_code"]})
+    # R67 突出重点：待发布（已计算）场次置顶，已发布按场次序殿后
+    payload.sort(key=lambda p: (0 if p["ev"]["status"] == "calculated" else 1, p["ev"]["run_seq"] or 0))
     return templates.TemplateResponse(request, "results.html", {"request": request, "comp": comp,
         "payload": payload, "adv_hints": adv_hints})
 

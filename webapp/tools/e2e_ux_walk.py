@@ -63,7 +63,7 @@ async def main():
         await pg.fill("#name", "R58全流程验收赛")
         await pg.fill("#date", "2026-10-20")
         await pg.fill("#location", "验收馆")
-        await pg.click("details.wiz-admin summary")
+        # R67：子表单默认展开，无需再点 summary
         CA_USER = "r58-org"
         await pg.fill("#ca-username", CA_USER)
         await pg.fill("#ca-password", "E2eOrg2026")
