@@ -85,7 +85,7 @@ function softReloadIfIdle() {
 document.addEventListener('change', function (e) {
   if (e.target && e.target.type === 'checkbox') window.__lastCheckAt = Date.now();
 }, true);
-if (window.CID) { connectSSE('/api/events/' + window.CID + '/stream', {results_published: softReloadIfIdle, competition_event_opened: softReloadIfIdle, competition_event_closed: softReloadIfIdle, schedule_changed: softReloadIfIdle, score_submitted: softReloadIfIdle, calculation_done: softReloadIfIdle, screen_state_changed: softReloadIfIdle, checkin_changed: softReloadIfIdle}, softReloadIfIdle, 8000); }
+if (window.CID && !window.__pageOwnSSE) { connectSSE('/api/events/' + window.CID + '/stream', {results_published: softReloadIfIdle, competition_event_opened: softReloadIfIdle, competition_event_closed: softReloadIfIdle, schedule_changed: softReloadIfIdle, score_submitted: softReloadIfIdle, calculation_done: softReloadIfIdle, screen_state_changed: softReloadIfIdle, checkin_changed: softReloadIfIdle}, softReloadIfIdle, 8000); }
 </script>{% endif %}
 <script>
 {% block scripts %}{% endblock %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block cid %}{{ comp.id if comp else 0 }}{% endblock %}
+{% block cid %}{{ comp.id if comp else 0 }}; window.__pageOwnSSE = true{% endblock %}
 {% block title %}{{ '主持台' if role == 'host' else '检录台' }}{% endblock %}
 {% block nav %}
 <a href="#" id="logout">退出</a>
