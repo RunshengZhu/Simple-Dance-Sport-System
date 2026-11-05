@@ -51,6 +51,18 @@ function doLookup() {
         });
         html += '</table>';
       } else html += '<div class="muted">暂无已发布成绩（成绩发布后在此显示）。</div>';
+      if (d.schedule && d.schedule.length) {
+        html += '<h3 style="margin:.8em 0 .3em;font-size:.95em">我的赛程</h3>';
+        html += '<table><tr><th>场次</th><th>舞种</th><th>状态</th><th>晋级 / 名次</th></tr>';
+        d.schedule.forEach(function (r) {
+          var adv = r.advancement === true ? '<span class="ok">已晋级</span>'
+                  : r.advancement === false ? '未晋级' : '';
+          var rank = '';
+          d.published_results.forEach(function (x) { if (x.code === r.code) rank = '第 ' + x.rank + ' 名'; });
+          html += '<tr><td>' + r.code + ' ' + r.name + '</td><td>' + (r.dance || '—') + '</td><td>' + r.status_label + '</td><td>' + (adv || rank || '—') + '</td></tr>';
+        });
+        html += '</table>';
+      }
       box.innerHTML = html;
     })
     .catch(function (e) { box.textContent = e.message; });

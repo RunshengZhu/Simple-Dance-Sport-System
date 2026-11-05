@@ -1,8 +1,22 @@
 {% extends "base.html" %}
 {% block title %}赛程{% endblock %}
+{% block scripts %}
+document.getElementById('unit-export').addEventListener('click', function () {
+  var u = document.getElementById('unit-input').value.trim();
+  if (!u) { document.getElementById('unit-msg').textContent = '请输入单位名称'; return; }
+  window.open('/api/public/events/{{ comp.id }}/exports/schedule?format=html&unit=' + encodeURIComponent(u), '_blank');
+});
+{% endblock %}
 {% block nav %}<a href="/public/team-standings">团体总分</a><a href="/public/results">成绩</a><a href="/screen">大屏</a>{% endblock %}
 {% block content %}
 <h1>{% if comp %}{{ comp.name }}{% endif %} · 赛程</h1>
+<p class="muted" style="margin:6px 0">
+  {% if comp %}<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">打印赛程表</a>
+  <span style="margin-left:8px">按单位：</span>
+  <input id="unit-input" placeholder="输入单位名称" style="max-width:180px">
+  <button class="btn secondary" id="unit-export">导出该单位赛程表</button>
+  <span id="unit-msg" class="muted"></span>{% endif %}
+</p>
 <table>
   <tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
   {% for ev in events %}

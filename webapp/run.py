@@ -5,4 +5,5 @@ import uvicorn
 from server.app import app  # noqa: F401
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(__import__("os").environ.get("DSPORT_PORT", "8321")), workers=1)
+    uvicorn.run(app, host="0.0.0.0", port=int(__import__("os").environ.get("DSPORT_PORT", "8321")), workers=1,
+            proxy_headers=True, forwarded_allow_ips="127.0.0.1")   # R70：Caddy 同机回源，登录限流按真实客户端 IP 分桶

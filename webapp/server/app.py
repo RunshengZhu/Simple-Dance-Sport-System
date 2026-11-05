@@ -207,6 +207,8 @@ async def static_cache_control(request: Request, call_next):
     return resp
 
 
+from fastapi.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1024)   # R70：公开 JSON/HTML 压缩（观众流量大头）
 app.mount("/static", StaticFiles(directory=os.path.join(BASE, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE, "templates"))
 
@@ -2331,6 +2333,71 @@ async def api_run_order_save(competition_id: int, request: Request = None):
     return {"ok": True, "saved": len(order)}
 
 
+@app.get("/api/public/events/{competition_id}/exports/schedule")
+async def api_public_schedule_export(competition_id: int, format: str = "html", unit: str = ""):
+    """R70 材料生产：赛程表导出（秩序册）。全场或按单位过滤；HTML 打印友好，Markdown 供再编辑。
+    公开口径：只含赛程信息（场次/项目/舞种/制式/上场名单），不含成绩。"""
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    unit = (unit or "").strip()
+    evs = db.rows(conn.execute(
+        "SELECT * FROM events WHERE competition_id=? ORDER BY (run_seq IS NULL), run_seq, code",
+        (competition_id,)))
+    name_by_number = {c["number"]: c["name"] for c in db.rows(conn.execute(
+        "SELECT number, name, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+    unit_by_number = {c["number"]: c["unit"] for c in db.rows(conn.execute(
+        "SELECT number, name, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+
+    def _roster_line(ev):
+        nums = [r["competitor_number"] for r in db.rows(conn.execute(
+            "SELECT competitor_number FROM event_competitors WHERE event_id=? ORDER BY id", (ev["id"],)))]
+        pairs = []
+        for n in nums:
+            if unit and unit_by_number.get(n, "") != unit:
+                continue
+            pairs.append("{0} {1}".format(n, name_by_number.get(n, "")))
+        return "、".join(pairs) if pairs else ""
+
+    blocks = []
+    for i, ev in enumerate(evs, 1):
+        line = _roster_line(ev)
+        if unit and not line:
+            continue   # 按单位过滤：本单位无选手的场次不列
+        ev = dict(ev)
+        ev["dances"] = " / ".join(dances_of(ev["id"]))   # events 表无 dances 列，取自 event_dances
+        blocks.append({"seq": i, "ev": ev, "roster": line})
+
+    if format == "markdown":
+        lines = ["# {0} 赛程表{1}".format(comp["name"], (" · " + unit) if unit else ""), ""]
+        for b in blocks:
+            ev = b["ev"]
+            lines.append("## {0}. {1}（{2} 第{3}轮 · {4} · {5}）".format(
+                b["seq"], ev["name"], ev["project_code"], ev["round"], ev["dances"], ev["scoring_type"]))
+            lines.append("上场名单：{0}".format(b["roster"] or "—"))
+            lines.append("")
+        return PlainTextResponse("\n".join(lines), media_type="text/markdown; charset=utf-8")
+    elif format == "html":
+        body = []
+        for b in blocks:
+            ev = b["ev"]
+            body.append(
+                "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3} 第{4}轮</td><td>{5}</td><td>{6}</td><td>{7}</td></tr>".format(
+                    b["seq"], ev["code"], ev["name"], ev["project_code"], ev["round"],
+                    ev["dances"], ev["scoring_type"], b["roster"] or "—"))
+        css = ("body{font-family:sans-serif;margin:2em}"
+               "table{border-collapse:collapse;width:100%}td,th{border:1px solid #999;padding:6px 10px;text-align:left}"
+               "th{background:#f5f3ef}")
+        html = ("<!doctype html><html><head><meta charset='utf-8'><title>" + comp["name"] + " 赛程表"
+                + (" · " + unit if unit else "") + "</title><style>" + css + "</style></head><body>"
+                "<h1>" + comp["name"] + " 赛程表" + (" · " + unit if unit else "") + "</h1>"
+                "<table><tr><th>序</th><th>场次</th><th>名称</th><th>项目/轮次</th><th>舞种</th><th>评分制式</th><th>上场名单</th></tr>"
+                + "".join(body) + "</table>"
+                "<p class=\"muted\" style=\"color:#6b7280\">打印日期：" + time.strftime("%Y-%m-%d %H:%M") + " · dancetkt.com</p>"
+                "</body></html>")
+        return HTMLResponse(html)
+    raise HTTPException(status_code=400, detail="未知格式")
+
+
 @app.get("/api/public/events/{competition_id}/lookup")
 async def api_public_lookup(competition_id: int, num: str = ""):
     """按背番号查询公示信息（姓名/单位/参赛项目/已发布成绩）。"""
@@ -2354,8 +2421,34 @@ async def api_public_lookup(competition_id: int, num: str = ""):
             if str(r["competitor_number"]) == num:
                 results.append({"code": p["code"], "name": p["name"], "round": p["round"],
                                 "rank": r["rank"], "total_score": r["total_score"]})
+    # R70 选手自助赛程：全部参赛场次按出场序，状态公开口径（未发布成绩只示状态不示名次）
+    st_names = {"pending": "待开赛", "scoring": "评分中", "calculated": "成绩整理中", "published": "已发布"}
+    ev_rows = db.rows(conn.execute(
+        "SELECT e.id, e.code, e.name, e.project_code, e.round, e.scoring_type, e.status, e.run_seq, "
+        "(SELECT group_concat(name, ' / ') FROM (SELECT name FROM event_dances WHERE event_id=e.id ORDER BY ord)) AS dances "
+        "FROM event_competitors ec JOIN events e ON e.id=ec.event_id "
+        "WHERE e.competition_id=? AND ec.competitor_number=? "
+        "ORDER BY (e.run_seq IS NULL), e.run_seq, e.code", (comp["id"], num)))
+    schedule = []
+    for ev in ev_rows:
+        # 晋级判定：本场为预赛轮且同项目存在下一轮、且选手在下一轮上场名单中
+        adv = None
+        if ev["round"] == 1 and ev["status"] == "published":
+            nxt = db.rowdict(conn.execute(
+                "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=2",
+                (comp["id"], ev["project_code"])).fetchone())
+            if nxt:
+                in_next = conn.execute(
+                    "SELECT 1 FROM event_competitors WHERE event_id=? AND competitor_number=?",
+                    (nxt["id"], num)).fetchone()
+                adv = bool(in_next)
+        schedule.append({"code": ev["code"], "name": ev["name"], "round": ev["round"],
+                         "dance": ev["dances"], "scoring_type": ev["scoring_type"],
+                         "status": ev["status"], "status_label": st_names.get(ev["status"], ev["status"]),
+                         "advancement": adv})
     return {"number": c["number"], "name": c["name"], "unit": c["unit"], "projects": projects,
-            "published_results": results, "note": "公示口径：仅姓名、单位与已发布成绩"}
+            "published_results": results, "schedule": schedule,
+            "note": "公示口径：仅姓名、单位、赛程状态与已发布成绩"}
 
 
 # ------------------------------------------------------------------ SSE
