@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS competitors (
     number TEXT NOT NULL,
     project_code TEXT DEFAULT '',
     name TEXT DEFAULT '',
+    partner TEXT DEFAULT '',
     unit TEXT DEFAULT '',
     UNIQUE(competition_id, number, project_code)
 );
@@ -133,6 +134,11 @@ def init_db():
         conn.execute("ALTER TABLE events ADD COLUMN run_seq INTEGER")
     if "announced" not in ev_cols:
         conn.execute("ALTER TABLE events ADD COLUMN announced INTEGER DEFAULT 0")   # 播报标记（备忘）
+    # R71 组合语义：搭档姓名（展示列）。背番号仍一人一号（双人项目以男选手号为准，
+    # 女伴名挂搭档列；单人项目留空）——计分/检录/晋级/唯一键全部不动。
+    comp_cols = {r[1] for r in conn.execute("PRAGMA table_info(competitors)")}
+    if "partner" not in comp_cols:
+        conn.execute("ALTER TABLE competitors ADD COLUMN partner TEXT DEFAULT ''")
     ec_cols = {r[1] for r in conn.execute("PRAGMA table_info(event_competitors)")}
     if "checked_in" not in ec_cols:
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_in INTEGER DEFAULT 0")  # 检录

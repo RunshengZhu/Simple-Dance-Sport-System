@@ -968,8 +968,7 @@ async def public_results(request: Request):
     if comp:
         evs = db.rows(db.get_db().execute(
             "SELECT * FROM events WHERE competition_id=? AND published=1 ORDER BY project_code, round, code", (comp["id"],)))
-        name_by_number = {c["number"]: c["name"] for c in db.rows(db.get_db().execute(
-            "SELECT number, name FROM competitors WHERE competition_id=?", (comp["id"],)))}
+        name_by_number = _display_names(db.get_db(), comp["id"])
         for ev in evs:
             res = load_results(ev["id"])
             if res:
@@ -1043,6 +1042,21 @@ async def api_delete_event(competition_id: int, request: Request = None):
     return {"ok": True}
 
 
+def _display_names(conn, competition_id: int):
+    """背番号→显示名：双人项目「张三 / 李四」（partner 为 R71 组合搭档列，纯展示），
+    单人项目即本人。计分/检录/晋级仍按背番号一人一号。"""
+    rows = db.rows(conn.execute(
+        "SELECT number, name, partner FROM competitors WHERE competition_id=?", (competition_id,)))
+    out = {}
+    for r in rows:
+        n = (r["name"] or "").strip()
+        pt = (r["partner"] or "").strip()
+        out[r["number"]] = (n + (" / " + pt if pt else "")) if n else pt
+    return out
+
+
+
+
 def _read_csv_body(raw: bytes):
     text = raw.decode("utf-8-sig", errors="replace")
     reader = csv.reader(io.StringIO(text))
@@ -1073,6 +1087,7 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
     if kind == "competitors":
         i_num, i_name = _col(h, "背番号", "number"), _col(h, "姓名", "name")
         i_unit, i_proj = _col(h, "学校/单位", "单位", "unit"), _col(h, "项目编号", "project")
+        i_partner = _col(h, "搭档姓名", "搭档", "partner")
         if i_num is None:
             raise HTTPException(status_code=400, detail="缺少列：背番号")
         for r in data_rows:
@@ -1080,9 +1095,10 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
             if not num:
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, unit) VALUES(?,?,?,?,?)",
+                "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, unit) VALUES(?,?,?,?,?,?)",
                 (competition_id, num, (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else ""),
                  r[i_name].strip() if i_name is not None and i_name < len(r) else "",
+                 r[i_partner].strip() if i_partner is not None and i_partner < len(r) else "",
                  r[i_unit].strip() if i_unit is not None and i_unit < len(r) else ""))
             count += 1
     elif kind == "judges":
@@ -1097,6 +1113,10 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
                          (competition_id, code, r[i_name].strip() if i_name is not None and i_name < len(r) else ""))
             count += 1
     elif kind == "schedule":
+        # R71 一致性：参赛选手列引用的背号必须已在选手库——坏号不入上场名单（防幽灵号），
+        # 场次仍创建，problems 逐行提示（补导选手后重传赛程即可）
+        known_numbers = {r["number"] for r in db.rows(conn.execute(
+            "SELECT number FROM competitors WHERE competition_id=?", (competition_id,)))}
         i_code = _col(h, "场次编号", "code")
         i_name, i_proj = _col(h, "场次名称", "name"), _col(h, "项目编号", "project")
         i_round, i_dance = _col(h, "轮次", "round"), _col(h, "舞种", "dances")
@@ -1143,17 +1163,22 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
                 (competition_id, code,
                  r[i_name].strip() if i_name is not None and i_name < len(r) else code,
                  proj, rnd, styp, adv))
-            ev_id = cur.lastrowid
-            if ev_id == 0:
-                ev_id = conn.execute("SELECT id FROM events WHERE competition_id=? AND code=?",
-                                     (competition_id, code)).fetchone()["id"]
+            # R71：INSERT OR IGNORE 被忽略（重传同场次）时 lastrowid 是连接上一次插入的 rowid
+            # （可能是 judges/competitors 的），不能信任——显式回查为准（重导幂等的正确路径）
+            row = conn.execute("SELECT id FROM events WHERE competition_id=? AND code=?",
+                               (competition_id, code)).fetchone()
+            ev_id = row["id"] if row else cur.lastrowid
             for k, dname in enumerate(dances):
                 conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ev_id, dname, k))
             if rnd == 1:
                 conn.execute("DELETE FROM event_competitors WHERE event_id=?", (ev_id,))
+                ghost = [n for n in comps if n not in known_numbers]
+                if ghost:
+                    problems.append("场次 {0}：参赛选手背号不在选手库，已跳过：{1}".format(code, ",".join(ghost)))
                 for num in comps:
-                    conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
-                                 (ev_id, num))
+                    if num in known_numbers:
+                        conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
+                                     (ev_id, num))
             count += 1
     else:
         raise HTTPException(status_code=400, detail="未知导入类型")
@@ -1164,9 +1189,10 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
 
 _CSV_TEMPLATES = {
     # 表头与 api_import 解析列一致（FR 导入列名），各带 2 行示例
-    "competitors": [["背番号", "项目编号", "姓名", "学校/单位"],
-                    ["101", "S-CHA", "张三", "北京舞蹈学院"],
-                    ["102", "S-CHA", "李四", "上海体育大学"]],
+    "competitors": [["背番号", "项目编号", "姓名", "搭档姓名", "学校/单位"],
+                    ["101", "S-CHA", "张三", "李四", "北京舞蹈学院"],
+                    ["101", "S-JSW", "张三", "王五", "北京舞蹈学院"],
+                    ["102", "S-JSW", "李四", "", "上海体育大学"]],
     "judges": [["裁判ID", "姓名"],
                ["J1", "王裁判"],
                ["J2", "李裁判"]],
@@ -1758,8 +1784,7 @@ async def staff_page(request: Request):
     items = []
     name_by_number = {}
     if comp:
-        name_by_number = {c["number"]: c["name"] for c in db.rows(conn.execute(
-            "SELECT number, name FROM competitors WHERE competition_id=?", (comp["id"],)))}
+        name_by_number = _display_names(conn, comp["id"])
         events = db.rows(conn.execute(
             "SELECT id,code,name,project_code,round,status,announced FROM events "
             "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
@@ -2081,8 +2106,7 @@ async def api_skating_table(ceid: int, request: Request = None):
     details = res.get("score_details") or {}
     if not details:
         raise HTTPException(status_code=400, detail="该场次无滑冰法判定明细")
-    names = {c["number"]: c["name"] for c in db.rows(db.get_db().execute(
-        "SELECT number, name FROM competitors WHERE competition_id=?", (ev["competition_id"],)))}
+    names = _display_names(db.get_db(), ev["competition_id"])
     dances = {}
     for dance, comp_map in details.items():
         judges = []
@@ -2118,8 +2142,7 @@ def _render_detail_markdown(competition_id, published_only):
         q += " AND published=1"
     evs = db.rows(conn.execute(q + " ORDER BY project_code, round, code", (competition_id,)))
     comp = _comp_or_404(competition_id)
-    names = {c["number"]: c["name"] for c in db.rows(conn.execute(
-        "SELECT number, name FROM competitors WHERE competition_id=?", (competition_id,)))}
+    names = _display_names(conn, competition_id)
     lines = [f"# {comp['name']} 判定明细表", ""]
     for ev in evs:
         if scoring_kind(ev) != "skating":
@@ -2170,8 +2193,7 @@ async def api_detail_scores(ceid: int, request: Request = None):
     rows = db.rows(db.get_db().execute(
         "SELECT judge_code, competitor_number, dance_name, mark, placement FROM score_records WHERE event_id=? ORDER BY dance_name, competitor_number, judge_code",
         (ceid,)))
-    names = {c["number"]: c["name"] for c in db.rows(db.get_db().execute(
-        "SELECT number, name FROM competitors WHERE competition_id=?", (ev["competition_id"],)))}
+    names = _display_names(db.get_db(), ev["competition_id"])
     return {"event": ev["code"], "records": [
         {"judge": r["judge_code"], "number": r["competitor_number"],
          "name": names.get(r["competitor_number"], ""), "dance": r["dance_name"],
@@ -2189,8 +2211,7 @@ def _public_payload(comp=None):
         "SELECT code,name,project_code,round,status,published,id FROM events WHERE competition_id=? ORDER BY project_code, round, code",
         (comp["id"],)))
     published = []
-    name_by_number = {c["number"]: c["name"] for c in db.rows(db.get_db().execute(
-        "SELECT number, name FROM competitors WHERE competition_id=?", (comp["id"],)))}
+    name_by_number = _display_names(db.get_db(), comp["id"])
     for ev in events:
         if ev["published"]:
             res = load_results(ev["id"])
@@ -2343,10 +2364,10 @@ async def api_public_schedule_export(competition_id: int, format: str = "html", 
     evs = db.rows(conn.execute(
         "SELECT * FROM events WHERE competition_id=? ORDER BY (run_seq IS NULL), run_seq, code",
         (competition_id,)))
-    name_by_number = {c["number"]: c["name"] for c in db.rows(conn.execute(
-        "SELECT number, name, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+    name_by_number = _display_names(conn, competition_id)
+    # 团体分/秩序册单位归属 = 主报单位（背番号持有者的单位；跨单位搭档整对归一处）
     unit_by_number = {c["number"]: c["unit"] for c in db.rows(conn.execute(
-        "SELECT number, name, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+        "SELECT number, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
 
     def _roster_line(ev):
         nums = [r["competitor_number"] for r in db.rows(conn.execute(
@@ -2407,10 +2428,12 @@ async def api_public_lookup(competition_id: int, num: str = ""):
         raise HTTPException(status_code=400, detail="请输入背番号")
     conn = db.get_db()
     c = db.rowdict(conn.execute(
-        "SELECT number,name,unit FROM competitors WHERE competition_id=? AND number=?",
+        "SELECT number,name,partner,unit FROM competitors WHERE competition_id=? AND number=?",
         (comp["id"], num)).fetchone())
     if not c:
         raise HTTPException(status_code=404, detail="未找到该背番号")
+    partner = (c["partner"] or "").strip()
+    display_name = ((c["name"] or "").strip() + (" / " + partner if partner else ""))
     projects = sorted({r["project_code"] for r in db.rows(conn.execute(
         "SELECT DISTINCT e.project_code AS project_code FROM event_competitors ec "
         "JOIN events e ON e.id=ec.event_id WHERE e.competition_id=? AND ec.competitor_number=?",
@@ -2446,8 +2469,8 @@ async def api_public_lookup(competition_id: int, num: str = ""):
                          "dance": ev["dances"], "scoring_type": ev["scoring_type"],
                          "status": ev["status"], "status_label": st_names.get(ev["status"], ev["status"]),
                          "advancement": adv})
-    return {"number": c["number"], "name": c["name"], "unit": c["unit"], "projects": projects,
-            "published_results": results, "schedule": schedule,
+    return {"number": c["number"], "name": display_name, "partner": partner, "unit": c["unit"],
+            "projects": projects, "published_results": results, "schedule": schedule,
             "note": "公示口径：仅姓名、单位、赛程状态与已发布成绩"}
 
 
@@ -2499,8 +2522,7 @@ async def api_export(competition_id: int, request: Request = None, format: str =
         evs = db.rows(conn.execute(
             "SELECT * FROM events WHERE competition_id=? AND published=1 ORDER BY project_code, round, code",
             (competition_id,)))
-    name_by_number = {c["number"]: c["name"] for c in db.rows(conn.execute(
-        "SELECT number, name FROM competitors WHERE competition_id=?", (competition_id,)))}
+    name_by_number = _display_names(conn, competition_id)
 
     def _rows(res):
         out = []
