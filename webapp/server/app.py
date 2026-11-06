@@ -968,8 +968,8 @@ async def public_results(request: Request):
     if comp:
         evs = db.rows(db.get_db().execute(
             "SELECT * FROM events WHERE competition_id=? AND published=1 ORDER BY project_code, round, code", (comp["id"],)))
-        name_by_number = _display_names(db.get_db(), comp["id"])
         for ev in evs:
+            name_by_number = _display_names(db.get_db(), comp["id"], ev["project_code"])
             res = load_results(ev["id"])
             if res:
                 payload.append({"ev": ev, "results": res, "names": name_by_number})
@@ -1042,16 +1042,24 @@ async def api_delete_event(competition_id: int, request: Request = None):
     return {"ok": True}
 
 
-def _display_names(conn, competition_id: int):
+def _display_names(conn, competition_id: int, project_code=None):
     """背番号→显示名：双人项目「张三 / 李四」（partner 为 R71 组合搭档列，纯展示），
-    单人项目即本人。计分/检录/晋级仍按背番号一人一号。"""
-    rows = db.rows(conn.execute(
-        "SELECT number, name, partner FROM competitors WHERE competition_id=?", (competition_id,)))
+    单人项目即本人。计分/检录/晋级仍按背番号一人一号。
+    R71b：搭档按场次语义——同号在不同项目可配不同搭档，传 project_code 过滤该项目的行；
+    不传则跨项目聚合（仅限与场次无关的展示）。"""
+    q = "SELECT number, name, partner FROM competitors WHERE competition_id=?"
+    args = [competition_id]
+    if project_code is not None:
+        q += " AND project_code=?"
+        args.append(project_code)
     out = {}
-    for r in rows:
+    for r in db.rows(conn.execute(q, args)):
         n = (r["name"] or "").strip()
         pt = (r["partner"] or "").strip()
-        out[r["number"]] = (n + (" / " + pt if pt else "")) if n else pt
+        disp = (n + (" / " + pt if pt else "")) if n else pt
+        if r["number"] in out:
+            continue   # 同号同项目多行（历史数据）取首行
+        out[r["number"]] = disp
     return out
 
 
@@ -1784,12 +1792,12 @@ async def staff_page(request: Request):
     items = []
     name_by_number = {}
     if comp:
-        name_by_number = _display_names(conn, comp["id"])
         events = db.rows(conn.execute(
             "SELECT id,code,name,project_code,round,status,announced FROM events "
             "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
             (comp["id"],)))
         for ev in events:
+            name_by_number = _display_names(conn, comp["id"], ev["project_code"])
             rows = db.rows(conn.execute(
                 "SELECT competitor_number, checked_in, checked_by FROM event_competitors "
                 "WHERE event_id=? ORDER BY CAST(competitor_number AS INTEGER), competitor_number",
@@ -2106,7 +2114,7 @@ async def api_skating_table(ceid: int, request: Request = None):
     details = res.get("score_details") or {}
     if not details:
         raise HTTPException(status_code=400, detail="该场次无滑冰法判定明细")
-    names = _display_names(db.get_db(), ev["competition_id"])
+    names = _display_names(db.get_db(), ev["competition_id"], ev["project_code"])
     dances = {}
     for dance, comp_map in details.items():
         judges = []
@@ -2142,9 +2150,9 @@ def _render_detail_markdown(competition_id, published_only):
         q += " AND published=1"
     evs = db.rows(conn.execute(q + " ORDER BY project_code, round, code", (competition_id,)))
     comp = _comp_or_404(competition_id)
-    names = _display_names(conn, competition_id)
     lines = [f"# {comp['name']} 判定明细表", ""]
     for ev in evs:
+        names = _display_names(conn, competition_id, ev["project_code"])
         if scoring_kind(ev) != "skating":
             continue
         res = load_results(ev["id"])
@@ -2193,7 +2201,7 @@ async def api_detail_scores(ceid: int, request: Request = None):
     rows = db.rows(db.get_db().execute(
         "SELECT judge_code, competitor_number, dance_name, mark, placement FROM score_records WHERE event_id=? ORDER BY dance_name, competitor_number, judge_code",
         (ceid,)))
-    names = _display_names(db.get_db(), ev["competition_id"])
+    names = _display_names(db.get_db(), ev["competition_id"], ev["project_code"])
     return {"event": ev["code"], "records": [
         {"judge": r["judge_code"], "number": r["competitor_number"],
          "name": names.get(r["competitor_number"], ""), "dance": r["dance_name"],
@@ -2211,8 +2219,8 @@ def _public_payload(comp=None):
         "SELECT code,name,project_code,round,status,published,id FROM events WHERE competition_id=? ORDER BY project_code, round, code",
         (comp["id"],)))
     published = []
-    name_by_number = _display_names(db.get_db(), comp["id"])
     for ev in events:
+        name_by_number = _display_names(db.get_db(), comp["id"], ev["project_code"])
         if ev["published"]:
             res = load_results(ev["id"])
             if res:
@@ -2364,12 +2372,12 @@ async def api_public_schedule_export(competition_id: int, format: str = "html", 
     evs = db.rows(conn.execute(
         "SELECT * FROM events WHERE competition_id=? ORDER BY (run_seq IS NULL), run_seq, code",
         (competition_id,)))
-    name_by_number = _display_names(conn, competition_id)
     # 团体分/秩序册单位归属 = 主报单位（背番号持有者的单位；跨单位搭档整对归一处）
     unit_by_number = {c["number"]: c["unit"] for c in db.rows(conn.execute(
         "SELECT number, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
 
     def _roster_line(ev):
+        name_by_number = _display_names(conn, competition_id, ev["project_code"])
         nums = [r["competitor_number"] for r in db.rows(conn.execute(
             "SELECT competitor_number FROM event_competitors WHERE event_id=? ORDER BY id", (ev["id"],)))]
         pairs = []
@@ -2522,7 +2530,6 @@ async def api_export(competition_id: int, request: Request = None, format: str =
         evs = db.rows(conn.execute(
             "SELECT * FROM events WHERE competition_id=? AND published=1 ORDER BY project_code, round, code",
             (competition_id,)))
-    name_by_number = _display_names(conn, competition_id)
 
     def _rows(res):
         out = []
@@ -2534,6 +2541,7 @@ async def api_export(competition_id: int, request: Request = None, format: str =
     if format == "markdown":
         lines = ["# {0} 成绩".format(comp["name"]), ""]
         for ev in evs:
+            name_by_number = _display_names(conn, competition_id, ev["project_code"])
             res = load_results(ev["id"])
             if not res:
                 continue
@@ -2547,6 +2555,7 @@ async def api_export(competition_id: int, request: Request = None, format: str =
     elif format == "html":
         rows_html = []
         for ev in evs:
+            name_by_number = _display_names(conn, competition_id, ev["project_code"])
             res = load_results(ev["id"])
             if not res:
                 continue
