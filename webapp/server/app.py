@@ -691,6 +691,12 @@ def _direct_link(conn, competition_id: int, role: str, username: str) -> str:
         competition_id, role, urllib.parse.quote(username, safe=""), token)
 
 
+def _abs_url(request, path: str) -> str:
+    """R76c：直达链接输出为可复制直开的完整 URL（Caddy 反代 + proxy_headers，base_url 还原真实域名）。"""
+    base = str(request.base_url).rstrip("/") if request else ""
+    return base + path if base else path
+
+
 @app.get("/competitions/{competition_id}/login", response_class=HTMLResponse)
 async def competition_login_page(request: Request, competition_id: int):
     """赛事专属登录页：登录成功即把会话绑定到本赛事（sessions.comp_id）。"""
@@ -2651,11 +2657,11 @@ async def direct_links_page(competition_id: int, request: Request = None):
             "((role='compadmin' AND comp_id=?) OR role IN ('marshal','host')) ORDER BY role, username",
             (competition_id,))):
         links.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
-                      "url": _direct_link(conn, competition_id, u["role"], u["username"])})
+                      "url": _abs_url(request, _direct_link(conn, competition_id, u["role"], u["username"]))})
     for j in db.rows(conn.execute(
             "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
         links.append({"role": "judge", "username": j["code"], "name": j["name"] or ("裁判" + j["code"]),
-                      "url": _direct_link(conn, competition_id, "judge", j["code"])})
+                      "url": _abs_url(request, _direct_link(conn, competition_id, "judge", j["code"]))})
     return templates.TemplateResponse(request, "direct_links.html", {
         "request": request, "comp": comp, "links": links})
 
@@ -2673,11 +2679,11 @@ async def api_direct_links(competition_id: int, request: Request = None):
             (competition_id,))):
         url_role = "admin" if u["role"] == "compadmin" else u["role"]
         out.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
-                    "url": _direct_link(conn, competition_id, url_role, u["username"])})
+                    "url": _abs_url(request, _direct_link(conn, competition_id, url_role, u["username"]))})
     for j in db.rows(conn.execute(
             "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
         out.append({"role": "judge", "username": j["code"], "name": j["name"] or ("裁判" + j["code"]),
-                    "url": _direct_link(conn, competition_id, "judge", j["code"])})
+                    "url": _abs_url(request, _direct_link(conn, competition_id, "judge", j["code"]))})
     return {"links": out}
 
 
@@ -2700,11 +2706,11 @@ async def api_credentials_export(competition_id: int, request: Request = None):
         url_role = "admin" if u["role"] == "compadmin" else u["role"]
         w.writerow([competition_id, comp["name"], role_name, u["username"], u["display_name"],
                     u["pw_plain"] or "（未记录，重置一次口令即留档）",
-                    _direct_link(conn, competition_id, url_role, u["username"])])
+                    _abs_url(request, _direct_link(conn, competition_id, url_role, u["username"]))])
     for j in db.rows(conn.execute(
             "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
         w.writerow([competition_id, comp["name"], "裁判", j["code"], j["name"] or ("裁判" + j["code"]),
-                    "免口令（直达链接登录）", _direct_link(conn, competition_id, "judge", j["code"])])
+                    "免口令（直达链接登录）", _abs_url(request, _direct_link(conn, competition_id, "judge", j["code"]))])
     return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="credentials-{0}.csv"'.format(competition_id)})
 
