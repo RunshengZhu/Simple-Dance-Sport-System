@@ -23,6 +23,8 @@
 </div>
 <div class="card">
   <h2>赛事列表</h2>
+  <p class="muted" style="margin:4px 0 10px">「口令表」导出该赛事全部角色账号的用户名 / 口令 / 免密直达链接（CSV，Excel 直接打开）；
+    旧账号未留档口令的显示「未记录」，在「用户」页重置一次口令即留档。</p>
   <table id="tbl"><tr><th>ID</th><th>名称</th><th class="hm">日期</th><th class="hm">地点</th><th>状态</th><th>操作</th></tr></table>
 </div>
 {% endblock %}
@@ -45,6 +47,7 @@ async function refresh() {
       + '<a class="btn secondary" href="/events/' + c.id + '/import">导入</a> '
       + '<a class="btn secondary" href="/events/' + c.id + '/schedule">赛程</a> '
       + '<a class="btn secondary" href="/events/' + c.id + '/results">结果</a> '
+      + '<a class="btn secondary" href="/api/events/' + c.id + '/credentials">口令表</a> '
       + (c.active ? '' : '<button class="btn act-btn" data-id="' + c.id + '">激活</button>')
       + ' <button class="btn danger del-btn" data-id="' + c.id + '">删除</button></td>';
   });

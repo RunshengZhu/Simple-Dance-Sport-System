@@ -916,8 +916,8 @@ async def api_users_create(request: Request = None):
         "SELECT id, role, active FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone())
     if dup and dup["role"] == "compadmin" and role == "compadmin":
         # R57：同名赛事管理员 → 改绑/重置（总管理员重建演示赛时的固定动作）
-        conn.execute("UPDATE users SET pw_hash=?, comp_id=?, active=1, display_name=? WHERE id=?",
-                     (_hash_pw(password), comp_id, display_name or username, dup["id"]))
+        conn.execute("UPDATE users SET pw_hash=?, pw_plain=?, comp_id=?, active=1, display_name=? WHERE id=?",
+                     (_hash_pw(password), password, comp_id, display_name or username, dup["id"]))
         conn.execute("DELETE FROM sessions WHERE user_id=?", (dup["id"],))
         conn.commit()
         return {"ok": True, "username": username, "role": role, "comp_id": comp_id, "rebound": True}
@@ -927,8 +927,8 @@ async def api_users_create(request: Request = None):
                                 detail="用户名已存在（该同名账号当前为停用状态，可在列表中启用或改用其他用户名）")
         raise HTTPException(status_code=400, detail="用户名已存在（不区分大小写）")
     conn.execute(
-        "INSERT INTO users(username, pw_hash, role, display_name, comp_id) VALUES(?,?,?,?,?)",
-        (username, _hash_pw(password), role, display_name or username, comp_id))
+        "INSERT INTO users(username, pw_hash, pw_plain, role, display_name, comp_id) VALUES(?,?,?,?,?,?)",
+        (username, _hash_pw(password), password, role, display_name or username, comp_id))
     conn.commit()
     return {"ok": True, "username": username, "role": role, "comp_id": comp_id}
 
@@ -944,8 +944,8 @@ async def api_users_password(user_id: int, request: Request = None):
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="口令至少 6 位")
     conn = db.get_db()
-    cur = conn.execute("UPDATE users SET pw_hash=? WHERE id=? AND role IN ('host','marshal')",
-                       (_hash_pw(password), user_id))
+    cur = conn.execute("UPDATE users SET pw_hash=?, pw_plain=? WHERE id=? AND role IN ('host','marshal')",
+                       (_hash_pw(password), password, user_id))
     conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))   # 重置口令即踢下线
     conn.commit()
     if not cur.rowcount:
@@ -2681,6 +2681,34 @@ async def api_direct_links(competition_id: int, request: Request = None):
     return {"links": out}
 
 
+@app.get("/api/events/{competition_id}/credentials")
+async def api_credentials_export(competition_id: int, request: Request = None):
+    """R76c 口令表导出（赛事管理页每行「口令表」）：本赛事全部角色账号 口令+免密直达链接 一张表。
+    CSV（带 BOM，Excel 直接打开）；口令为设置/重置时留档的明文——此前建的旧账号无留档，
+    标「未记录」，重置一次口令即留档（重置为原值即可，直达链接不受影响）。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["赛事ID", "赛事名称", "角色", "用户名", "显示名", "口令", "直达链接"])
+    for u in db.rows(conn.execute(
+            "SELECT username, display_name, role, pw_plain FROM users WHERE active=1 AND "
+            "((role='compadmin' AND comp_id=?) OR role IN ('marshal','host')) ORDER BY role, username",
+            (competition_id,))):
+        role_name = {"compadmin": "赛事管理员", "marshal": "检录", "host": "主持"}[u["role"]]
+        url_role = "admin" if u["role"] == "compadmin" else u["role"]
+        w.writerow([competition_id, comp["name"], role_name, u["username"], u["display_name"],
+                    u["pw_plain"] or "（未记录，重置一次口令即留档）",
+                    _direct_link(conn, competition_id, url_role, u["username"])])
+    for j in db.rows(conn.execute(
+            "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+        w.writerow([competition_id, comp["name"], "裁判", j["code"], j["name"] or ("裁判" + j["code"]),
+                    "免口令（直达链接登录）", _direct_link(conn, competition_id, "judge", j["code"])])
+    return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": 'attachment; filename="credentials-{0}.csv"'.format(competition_id)})
+
+
 @app.get("/api/events/{competition_id}/exports/competitors")
 async def api_competitors_export(competition_id: int, request: Request = None, format: str = "csv"):
     """R71f 选手信息导出（管理端）：与导入模板同列序，可直接回导（导出→修改→再导入闭环）。"""
@@ -2968,9 +2996,10 @@ def _seed_default_accounts():
         ("marshal", "marshal", "DSPORT_MARSHAL_PASSWORD", "marshal123"),
     ):
         if not conn.execute("SELECT 1 FROM users WHERE role=? LIMIT 1", (role,)).fetchone():
+            pw = os.environ.get(env_key, default)
             conn.execute(
-                "INSERT OR IGNORE INTO users(username, pw_hash, role, display_name) VALUES(?,?,?,?)",
-                (username, _hash_pw(os.environ.get(env_key, default)), role,
+                "INSERT OR IGNORE INTO users(username, pw_hash, pw_plain, role, display_name) VALUES(?,?,?,?,?)",
+                (username, _hash_pw(pw), pw, role,
                  "主持人（默认）" if role == "host" else "检录长（默认）"))
     conn.commit()
 
