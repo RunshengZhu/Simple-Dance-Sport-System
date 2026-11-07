@@ -99,7 +99,7 @@ def _compadmin(request: Request):
 
 _COMPCID_RE = re.compile(r"^/(api/)?events/(\d+)")
 _COMPCID_DENY_PREFIXES = ("/api/users", "/api/import/json", "/api/import/db",
-                          "/api/export/json", "/api/export/db")
+                          "/api/export/json", "/api/export/db", "/api/backup")
 
 
 @app.middleware("http")
@@ -109,6 +109,7 @@ async def compadmin_scope(request: Request, call_next):
     ca = _compadmin(request)
     if not ca:
         return await call_next(request)
+    request.state.is_compadmin = True   # 模板按此隐藏全局能力入口（如数据库备份）
     cid = ca["comp_id"]
     p = request.url.path
     method = request.method

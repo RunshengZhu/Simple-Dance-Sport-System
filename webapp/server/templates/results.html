@@ -36,6 +36,8 @@
     <span class="muted" style="margin:0 10px">|</span>
     选手信息：<a class="btn secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
     <span class="muted" style="margin:0 10px">|</span>
+    口令表：<a class="btn secondary" href="/api/events/{{ comp.id }}/credentials">CSV</a>
+    <span class="muted" style="margin:0 10px">|</span>
     赛程总表（出场抽签）：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">导出</a>
     <span class="muted" style="margin:0 10px">|</span>
     赛程表：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">打印</a>
@@ -44,7 +46,7 @@
     导出（已发布场次）：
     <a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=markdown">Markdown</a>
     <a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=html" target="_blank">打印 HTML</a>
-    <button class="btn secondary" id="backup-btn">数据库备份</button>
+    {% if not request.state.is_compadmin %}<button class="btn secondary" id="backup-btn">数据库备份</button>{% endif %}
     <a class="btn secondary" href="/events/{{ comp.id }}/team-standings">团体总分榜</a>
     <span id="backup-msg" class="muted"></span>
   </p>
