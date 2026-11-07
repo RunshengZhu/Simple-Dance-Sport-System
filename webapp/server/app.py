@@ -346,15 +346,25 @@ async def api_login(request: Request):
             raise HTTPException(status_code=403, detail="用户名或口令错误")
         conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?,?,?,?)",
                      (token, role, urow["id"], bind_cid))
-    elif role == "compadmin":   # 赛事管理员账号（users.role=compadmin，会话角色记 admin）
-        u = db.rowdict(conn.execute(
-            "SELECT id FROM users WHERE username=? AND role='compadmin' AND active=1 AND comp_id=?",
-            (username, competition_id)).fetchone())
-        if not u:
-            raise HTTPException(status_code=403, detail="账号不存在或已停用")
+    elif role == "compadmin":   # R76 兼容别名：等价 role=admin+username（E2E/脚本直调），会话角色记 admin
+        username = str(body.get("username") or "").strip()
+        if not username and bind_cid is not None:
+            u0 = db.rowdict(conn.execute(
+                "SELECT username FROM users WHERE role='compadmin' AND active=1 AND comp_id=?",
+                (bind_cid,)).fetchone())
+            username = u0["username"] if u0 else ""
+        password = str(body.get("password") or "")
+        urow = db.rowdict(conn.execute(
+            "SELECT * FROM users WHERE username=? AND role='compadmin'", (username,)).fetchone()) if username else None
+        if not urow or not urow["active"] or not _verify_pw(password, urow["pw_hash"]):
+            _hash_pw(password)   # 时序抹平：不存在的用户名也执行一次等价哈希
+            login_failures_window(ip).append(time.time())
+            raise HTTPException(status_code=403, detail="用户名或口令错误")
+        if bind_cid is not None and urow["comp_id"] != bind_cid:
+            raise HTTPException(status_code=403, detail="该赛事管理员不属于此赛事")
         conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, 'admin', ?, ?)",
-                     (token_new, u["id"], competition_id))
-        resp = RedirectResponse("/events/" + str(competition_id) + "/schedule", status_code=302)
+                     (token, urow["id"], urow["comp_id"]))
+        role = "admin"   # 响应口径与会话一致
     elif role == "judge":
         code = str(body.get("judge_id") or "")
         row = conn.execute("SELECT * FROM judges WHERE code=? ", (code,)).fetchone()
@@ -2637,7 +2647,8 @@ async def direct_links_page(competition_id: int, request: Request = None):
     conn = db.get_db()
     links = []
     for u in db.rows(conn.execute(
-            "SELECT username, display_name, role FROM users WHERE role IN ('compadmin','marshal','host') AND active=1 AND comp_id=? ORDER BY role, username",
+            "SELECT username, display_name, role FROM users WHERE active=1 AND "
+            "((role='compadmin' AND comp_id=?) OR role IN ('marshal','host')) ORDER BY role, username",
             (competition_id,))):
         links.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
                       "url": _direct_link(conn, competition_id, u["role"], u["username"])})
@@ -2657,7 +2668,8 @@ async def api_direct_links(competition_id: int, request: Request = None):
     base = str(request.base_url).rstrip("/")
     out = []
     for u in db.rows(conn.execute(
-            "SELECT username, display_name, role FROM users WHERE role IN ('compadmin','marshal','host') AND active=1 AND comp_id=? ORDER BY role, username",
+            "SELECT username, display_name, role FROM users WHERE active=1 AND "
+            "((role='compadmin' AND comp_id=?) OR role IN ('marshal','host')) ORDER BY role, username",
             (competition_id,))):
         url_role = "admin" if u["role"] == "compadmin" else u["role"]
         out.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
