@@ -1,13 +1,6 @@
 {% extends "base.html" %}
 {% block title %}赛程{% endblock %}
-{% block scripts %}
-document.getElementById('unit-export').addEventListener('click', function () {
-  var u = document.getElementById('unit-input').value.trim();
-  if (!u) { document.getElementById('unit-msg').textContent = '请输入单位名称'; return; }
-  window.open('/api/public/events/{{ comp.id }}/exports/schedule?format=html&unit=' + encodeURIComponent(u), '_blank');
-});
-{% endblock %}
-{% block nav %}<a href="/public/team-standings">团体总分</a><a href="/public/results">成绩</a><a href="/screen">大屏</a>{% endblock %}
+{% block nav %}<a href="/public/team-standings?comp={{ comp.id }}">团体总分</a><a href="/public/results?comp={{ comp.id }}">成绩</a><a href="/screen">大屏</a>{% endblock %}
 {% block content %}
 <h1>{% if comp %}{{ comp.name }}{% endif %} · 赛程</h1>
 <p class="muted" style="margin:6px 0">
@@ -28,5 +21,10 @@ document.getElementById('unit-export').addEventListener('click', function () {
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
+document.getElementById('unit-export').addEventListener('click', function () {
+  var u = document.getElementById('unit-input').value.trim();
+  if (!u) { document.getElementById('unit-msg').textContent = '请输入单位名称'; return; }
+  window.open('/api/public/events/{{ comp.id }}/exports/schedule?format=html&unit=' + encodeURIComponent(u), '_blank');
+});
 /* R41：观众页不使用 SSE（长连接留给工作人员端），发布/变更由 8s 轮询刷新（上限 8s 延迟，观众场景足够） */
 {% endblock %}

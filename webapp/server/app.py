@@ -381,8 +381,26 @@ async def api_logout(request: Request):
 
 
 def _active_competition():
-    """全局激活赛事（公开页/兜底用）。"""
+    """兜底：最新激活赛事（仅管理端兜底用；公开页请走 _viewer_competition）。"""
     return db.rowdict(db.get_db().execute("SELECT * FROM competitions WHERE active=1 ORDER BY id DESC").fetchone())
+
+
+def _viewer_competition(request: Request):
+    """R71e 公开页赛事解析（用户拍板：无默认入口概念，观众自选赛事）——
+    ?comp=ID 显式指定优先；无参数且仅一个激活赛事时用之；多个激活且未指定 → None（路由重定向列表）。
+    演示赛/压测赛 active=0 对观众隐藏，不出现在候选。"""
+    try:
+        qid = int(request.query_params.get("comp", "") or 0)
+    except (TypeError, ValueError):
+        qid = 0
+    if qid:
+        return db.rowdict(db.get_db().execute(
+            "SELECT * FROM competitions WHERE id=? AND active=1", (qid,)).fetchone())
+    actives = db.rows(db.get_db().execute(
+        "SELECT * FROM competitions WHERE active=1 ORDER BY id DESC"))
+    if len(actives) == 1:
+        return actives[0]
+    return None
 
 
 def _current_competition(request: Request):
@@ -950,11 +968,14 @@ def _etag_page(request: Request, cid: int, page: str, fingerprint: str, render):
 
 @app.api_route("/public/schedule", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def public_schedule(request: Request):
-    comp = _active_competition()
+    comp = _viewer_competition(request)
+    if comp is None:
+        return RedirectResponse("/competitions", status_code=302)
     evs = []
     if comp:
         evs = db.rows(db.get_db().execute(
-            "SELECT code,name,project_code,round,status FROM events WHERE competition_id=? ORDER BY project_code, round, code",
+            "SELECT code,name,project_code,round,status FROM events WHERE competition_id=? "
+            "ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
             (comp["id"],)))
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
     return _etag_page(request, comp["id"] if comp else 0, "schedule", fp, lambda: templates.TemplateResponse(
@@ -963,7 +984,9 @@ async def public_schedule(request: Request):
 
 @app.api_route("/public/results", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def public_results(request: Request):
-    comp = _active_competition()
+    comp = _viewer_competition(request)
+    if comp is None:
+        return RedirectResponse("/competitions", status_code=302)
     payload = []
     if comp:
         evs = db.rows(db.get_db().execute(
@@ -982,7 +1005,9 @@ async def public_results(request: Request):
 
 @app.get("/screen", response_class=HTMLResponse)
 async def screen_page(request: Request):
-    comp = _active_competition()
+    comp = _viewer_competition(request)
+    if comp is None:
+        return RedirectResponse("/competitions", status_code=302)
     return templates.TemplateResponse(request, "screen.html", {"request": request, "comp": comp})
 
 
@@ -1019,6 +1044,17 @@ async def api_activate(competition_id: int, request: Request = None):
     conn.commit()
     # 同步操作人的会话赛事选择
     _session(request)  # 确保 session 存在
+    return {"ok": True}
+
+
+@app.post("/api/events/{competition_id}/deactivate")
+async def api_deactivate(competition_id: int, request: Request = None):
+    """R71d：停用赛事（从公开赛事列表与全局公开入口移除；数据保留，可再激活）。"""
+    require_admin(request)
+    _comp_or_404(competition_id)
+    conn = db.get_db()
+    conn.execute("UPDATE competitions SET active=0 WHERE id=?", (competition_id,))
+    conn.commit()
     return {"ok": True}
 
 
@@ -2301,7 +2337,8 @@ def _roster_set(ceid):
 def _pending_events(competition_id):
     return db.rows(db.get_db().execute(
         "SELECT id,code,name,project_code,round,run_seq FROM events "
-        "WHERE competition_id=? AND status='pending' ORDER BY project_code, round, code",
+        "WHERE competition_id=? AND status='pending' "
+        "ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
         (competition_id,)))
 
 

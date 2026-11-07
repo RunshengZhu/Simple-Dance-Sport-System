@@ -18,7 +18,10 @@
     {% if is_comp_admin %}<a class="btn secondary" href="/events/{{ comp.id }}/setup">编辑赛事信息 →</a>{% endif %}
   </div>
   <p class="muted" style="margin:10px 0 0;font-size:.88rem">
-    观众无需登录，本页可直接浏览赛程与已发布成绩。</p>
+    观众无需登录：<a href="/public/schedule?comp={{ comp.id }}">赛程</a> ·
+      <a href="/public/results?comp={{ comp.id }}">成绩</a> ·
+      <a href="/public/team-standings?comp={{ comp.id }}">团体总分</a> ·
+      <a href="/screen?comp={{ comp.id }}">大屏</a></p>
 </div>
 
 <h2>赛程</h2>

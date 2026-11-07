@@ -9,6 +9,7 @@
 用法：python3 tools/build_demo_showcase.py <BASE> <管理员口令>
 """
 import json
+import os
 import sys
 import urllib.parse
 import urllib.request
@@ -118,7 +119,7 @@ def main():
          "创建示例赛事")
     c, o = req("GET", "/api/events")
     cid = next(e["id"] for e in json.loads(o)["events"] if e["name"] == COMP_NAME)
-    must(*req("POST", f"/api/events/{cid}/activate", {}), "激活示例赛事")
+    must(*req("POST", f"/api/events/{cid}/activate", {}), "激活示例赛事")   # 数据构建依赖激活态
 
     # 演示专用账号（幂等：已存在则忽略；赛事管理员须绑定本赛事）
     for uname, upw, urole in DEMO_STAFF:
@@ -215,6 +216,10 @@ def main():
               {"numbers": ["2%02d" % i for i in range(1, 9)], "state": True}, sess="marshal"), "L1 部分检录 8/12")
 
     # ---- W1 保持待开始（控制台「开启评分」演示位） ----
+    # R71d 收尾：存在其他激活赛事（真实赛事）时演示赛主动让位——
+    # 全局公开入口（_active_competition 取 id 最大的激活赛事）不能被每日演示赛压住
+    req("POST", f"/api/events/{cid}/deactivate", {})
+    print("演示赛已对观众隐藏（active=0，公开赛事列表不出现）")
     print("\n示例赛事就绪 cid=%s 场次=%s" % (cid, ids))
 
 
