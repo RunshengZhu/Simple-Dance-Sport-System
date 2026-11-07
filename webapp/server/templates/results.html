@@ -1,16 +1,10 @@
 {% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
 {% set autorefresh = true %}
 {% block title %}结果中心 · {{ comp.name }}{% endblock %}
-{% block nav %}
-<a href="/events">赛事</a>
-<a href="/events/{{ comp.id }}/schedule">赛程</a>
-<a href="/events/{{ comp.id }}/advancement">晋级确认</a>
-<a href="/events/{{ comp.id }}/teams">队伍</a>
-<a href="/events/{{ comp.id }}/team-standings">团体总分</a>
-<a href="/events/{{ comp.id }}/screen-control">大屏控制</a>
-<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
-{% endblock %}
+{% block nav %}{% endblock %}
 {% block content %}
+{{ bar(comp, 'results') }}
 {% if adv_hints %}
 <div class="card" style="border-color:var(--gold)">
   <b>下一流程：晋级确认</b>
@@ -110,11 +104,12 @@ async function bulkPublish(btn) {
 async function doPub(btn, ceid, publish) {
   try {
     await api('POST', '/api/competition-events/' + ceid + '/' + (publish ? 'publish' : 'unpublish'), {});
+    toast(publish ? '已发布（进大屏/观众页）' : '已撤回发布', 'ok');
     softReload();
   } catch (e) { toast(e.message, 'err'); }
 }
 async function doCalc(btn, ceid) {
-  try { await api('POST', '/api/competition-events/' + ceid + '/calculate', {}); softReload(); }
+  try { await api('POST', '/api/competition-events/' + ceid + '/calculate', {}); toast('已重算', 'ok'); softReload(); }
   catch (e) { toast(e.message, 'err'); }
 }
 async function toggleDetail(btn, ceid) {

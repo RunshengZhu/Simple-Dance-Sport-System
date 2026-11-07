@@ -1,18 +1,12 @@
 {% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
 {% set autorefresh = true %}
 {% block cid %}{{ comp.id }}{% endblock %}
 {% block title %}赛程编排 · {{ comp.name }}{% endblock %}
-{% block nav %}
-<a href="/events">赛事</a>
-<a href="/events/{{ comp.id }}/import">导入</a>
-<a href="/events/{{ comp.id }}/advancement">晋级确认</a>
-<a href="/events/{{ comp.id }}/results">结果中心</a>
-<a href="/events/{{ comp.id }}/team-standings">团体总分</a>
-<a href="/events/{{ comp.id }}/screen-control">大屏控制</a>
-<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
-{% endblock %}
+{% block nav %}{% endblock %}
 {% block content %}
-<h1>赛程编排 · {{ comp.name }} <span class="muted">{{ tree | length }} 个项目</span></h1>
+{{ bar(comp, 'schedule') }}
+<h1>赛程编排 <span class="muted">{{ tree | length }} 个项目</span></h1>
 
 <div class="card">
   <h2>数据与材料</h2>
@@ -87,7 +81,7 @@
   <h3>第 {{ r.round }} 轮
     {% if r.all_done %}<span class="tag ok">已全部计算</span>{% else %}<span class="tag warn">进行中/待开始</span>{% endif %}
   </h3>
-  <table>
+  <div class="tbl-scroll"><table>
     <tr><th>场次</th><th>名称</th><th class="hm">舞种</th><th class="hm">类型</th><th class="num hm">晋级</th><th>状态</th><th class="num hm">人数</th><th>顺</th><th>操作</th></tr>
     {% for ev in r.events %}
     <tr data-code="{{ ev.code }}" data-status="{{ ev.status }}">
@@ -107,8 +101,8 @@
         {% endif %}
       </td>
     </tr>
-    {% endfor %}
-  </table>
+      {% endfor %}
+  </table></div>
   {% endfor %}
 </div>
 {% endfor %}
@@ -295,7 +289,7 @@ document.getElementById('ro-save').addEventListener('click', function () {
 });
 document.getElementById('ro-clear').addEventListener('click', function () {
   api('POST', '/api/events/' + window.CID + '/run-order', {order: []})
-    .then(softReload)
+    .then(function () { toast('已清空出场顺序', 'ok'); softReload(); })
     .catch(function (e) { toast(e.message, 'err'); });
 });
 api('GET', '/api/events/' + window.CID + '/run-order').then(function (d) {

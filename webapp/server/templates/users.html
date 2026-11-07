@@ -61,10 +61,10 @@
 
 <h2>主持 / 检录账号</h2>
 <div class="card">
-  <table>
+  <div class="tbl-scroll"><table>
     <tr><th>用户名</th><th>显示名</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
     <tbody id="user-rows"></tbody>
-  </table>
+  </table></div>
   <p class="muted">停用立即失效其全部会话；重置口令后请通知本人。</p>
 </div>
 {% endblock %}
@@ -106,19 +106,24 @@ function createUser() {
   }
   api('POST', '/api/users', body).then(function () {
     msg.textContent = '已创建';
+    toast('账号已创建：' + body.username, 'ok');
     document.getElementById('u-username').value = '';
     document.getElementById('u-display').value = '';
     document.getElementById('u-password').value = '';
     loadUsers();
-  }).catch(function (e) { msg.textContent = e.message; });
+  }).catch(function (e) { msg.textContent = e.message; toast(e.message, 'err'); });
 }
 function resetPw(id) {
   var pw = prompt('输入新口令（至少 6 位）');
   if (pw === null) return;
-  api('POST', '/api/users/' + id + '/password', {password: pw}).then(loadUsers).catch(function (e) { toast(e.message, 'err'); });
+  api('POST', '/api/users/' + id + '/password', {password: pw})
+    .then(function () { toast('口令已重置，请通知本人', 'ok'); loadUsers(); })
+    .catch(function (e) { toast(e.message, 'err'); });
 }
 function toggleUser(id, active) {
-  api('POST', '/api/users/' + id + '/active', {active: !!active}).then(loadUsers).catch(function (e) { toast(e.message, 'err'); });
+  api('POST', '/api/users/' + id + '/active', {active: !!active})
+    .then(function () { toast(active ? '账号已启用' : '账号已停用（全部会话失效）', 'ok'); loadUsers(); })
+    .catch(function (e) { toast(e.message, 'err'); });
 }
 var AUDIT_LABELS = {
   return_scores: '退回评分', uncheckin: '撤销检录', user_password: '重置口令',

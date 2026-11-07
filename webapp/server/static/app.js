@@ -87,6 +87,41 @@ async function api(method, url, body) {
   return data;
 }
 
+/* ---- R79：按钮级操作反馈兜底——busy 态 + 成功/失败 toast（所有写操作统一走这里） ---- */
+async function btnFlow(btn, fn, okMsg) {
+  if (!btn) return fn();
+  if (btn.dataset.busy) return;
+  btn.dataset.busy = '1';
+  var old = btn.textContent;
+  btn.classList.add('loading');
+  btn.textContent = '处理中…';
+  try {
+    var r = await fn();
+    if (okMsg) toast(typeof okMsg === 'function' ? okMsg(r) : okMsg, 'ok');
+    return r;
+  } catch (e) {
+    toast(e.message || String(e), 'err');
+    throw e;
+  } finally {
+    delete btn.dataset.busy;
+    btn.classList.remove('loading');
+    btn.textContent = old;
+  }
+}
+/* 复制文本到剪贴板 + toast（直达链接页等） */
+function copyText(text, okMsg) {
+  function done() { toast(okMsg || '已复制', 'ok'); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () { fallback(); });
+  } else fallback();
+  function fallback() {
+    var ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { toast('复制失败，请手动复制', 'err'); }
+    ta.remove();
+  }
+}
+
 /* ---- R42：轻量 toast（替代高频 alert）与返回顶部 ---- */
 function toast(msg, type, ms) {
   var wrap = document.getElementById('toast-wrap');

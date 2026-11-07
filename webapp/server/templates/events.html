@@ -25,7 +25,7 @@
   <h2>赛事列表</h2>
   <p class="muted" style="margin:4px 0 10px">「口令表」导出该赛事全部角色账号的用户名 / 口令 / 免密直达链接（CSV，Excel 直接打开）；
     旧账号未留档口令的显示「未记录」，在「用户」页重置一次口令即留档。</p>
-  <table id="tbl"><tr><th>ID</th><th>名称</th><th class="hm">日期</th><th class="hm">地点</th><th>状态</th><th>操作</th></tr></table>
+  <div class="tbl-scroll"><table id="tbl"><tr><th>ID</th><th>名称</th><th class="hm">日期</th><th class="hm">地点</th><th>状态</th><th>操作</th></tr></table></div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -42,8 +42,10 @@ async function refresh() {
   t.innerHTML = '<tr><th>ID</th><th>名称</th><th class="hm">日期</th><th class="hm">地点</th><th>状态</th><th>操作</th></tr>';
   data.events.forEach(function (c) {
     var tr = t.insertRow();
-    tr.innerHTML = '<td>' + c.id + '</td><td>' + c.name + '</td><td class="hm">' + c.date + '</td><td class="hm">' + c.location + '</td>'
+    tr.innerHTML = '<td>' + c.id + '</td><td><a href="/events/' + c.id + '/overview"><b>' + c.name + '</b></a></td>'
+      + '<td class="hm">' + c.date + '</td><td class="hm">' + c.location + '</td>'
       + '<td>' + (c.active ? '<span class="ok">激活中</span>' : '未激活') + '</td><td>'
+      + '<a class="btn secondary" href="/events/' + c.id + '/overview">总览</a> '
       + '<a class="btn secondary" href="/events/' + c.id + '/import">导入</a> '
       + '<a class="btn secondary" href="/events/' + c.id + '/schedule">赛程</a> '
       + '<a class="btn secondary" href="/events/' + c.id + '/results">结果</a> '
@@ -57,33 +59,42 @@ document.getElementById('tbl').addEventListener('click', async function (ev) {
   var id = target.dataset ? target.dataset.id : null;
   if (!id) return;
   if (target.classList.contains('act-btn')) {
-    await api('POST', '/api/events/' + id + '/activate');
+    await btnFlow(target, function () { return api('POST', '/api/events/' + id + '/activate'); }, '赛事已激活');
     refresh();
   } else if (target.classList.contains('del-btn')) {
-    if (confirm('确认删除该赛事及全部数据？')) { await api('DELETE', '/api/events/' + id); refresh(); }
+    if (confirm('确认删除该赛事及全部数据？')) {
+      await btnFlow(target, function () { return api('DELETE', '/api/events/' + id); }, '赛事已删除');
+      refresh();
+    }
   }
 });
 document.getElementById('create-btn').addEventListener('click', async function () {
+  var btn = this;
+  var nm = inputVal('name');
+  if (!nm) { showMsg('请填写赛事名称', false); return; }
+  if (btn.dataset.busy) return;
+  btn.dataset.busy = '1'; btn.classList.add('loading');
+  var old = btn.textContent; btn.textContent = '创建中…';
+  var nid = null;
   try {
-    await api('POST', '/api/events', {name: inputVal('name'), date: inputVal('date'), location: inputVal('location')});
+    await api('POST', '/api/events', {name: nm, date: inputVal('date'), location: inputVal('location')});
     var all = await api('GET', '/api/events');
-    var nid = (all.events.find(function (x) { return x.name === inputVal('name'); }) || {}).id;
+    nid = (all.events.find(function (x) { return x.name === nm; }) || {}).id;
     await api('POST', '/api/events/' + nid + '/activate', {});
     var cu = inputVal('ca-username'), cp = inputVal('ca-password');
     if (cu || cp) {
       await api('POST', '/api/users', {username: cu, password: cp, role: 'compadmin', competition_id: nid});
-      showMsg('赛事已创建并激活，赛事管理员账号已就绪', true);
-    } else {
-      showMsg('赛事已创建并激活', true);
     }
-    inputVal2reset();
-    refresh();
+    toast('赛事已创建并激活，正在进入赛事总览…', 'ok');
+    setTimeout(function () { location.href = '/events/' + nid + '/overview'; }, 600);
   } catch (e) {
     var m = String(e.message || e);
     if (m.indexOf("用户名已存在") >= 0)
       showMsg("赛事已创建并激活；但赛事管理员账号未创建（" + m + "）。请在「用户」页手动创建并绑定本赛事 ID", false);
     else
       showMsg(m, false);
+  } finally {
+    delete btn.dataset.busy; btn.classList.remove('loading'); btn.textContent = old;
   }
 });
 function inputVal2reset() {

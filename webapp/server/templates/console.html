@@ -1,9 +1,9 @@
 {% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
 {% block title %}场次控制台 · {{ ev.name }}{% endblock %}
-{% block nav %}<a href="/events/{{ comp.id }}/schedule">← 赛程</a>
-<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
-{% endblock %}
+{% block nav %}{% endblock %}
 {% block content %}
+{{ bar(comp, 'schedule') }}
 {% macro roster_card() %}
 <details class="card card-roster" {% if ev.status == 'pending' %}open{% endif %}>
   <summary><b>上场选手管理</b> <span class="muted">{{ checked_n }}/{{ total }} 已检录 · {% if ev.status == 'pending' %}默认全部上场，可取消个别后开赛{% else %}展开可调整（评分中调整将清空已有评分）{% endif %}</span></summary>
@@ -104,22 +104,28 @@ async function openEvent(reset) {
     softReload();
   } catch (e) { toast(e.message, 'err'); }
 }
-async function closeEvent() { await api('POST', '/api/competition-events/' + CEID + '/close'); softReload(); }
+async function closeEvent() {
+  await btnFlow(null, function () { return api('POST', '/api/competition-events/' + CEID + '/close'); });
+  toast('已关闭评分', 'ok'); softReload();
+}
 async function returnScores() {
   if (!confirm('退回将清空本场全部评分与结果，裁判需重新提交，确认？')) return;
   try { await api('POST', '/api/competition-events/' + CEID + '/return-scores', {}); softReload(); }
   catch (e) { toast(e.message, 'err'); }
 }
 async function calc() {
-  try { await api('POST', '/api/competition-events/' + CEID + '/calculate'); softReload(); }
+  try { await api('POST', '/api/competition-events/' + CEID + '/calculate'); toast('已重算', 'ok'); softReload(); }
   catch (e) { document.getElementById('calc-msg').textContent = e.message; }
 }
-async function publish() { await api('POST', '/api/competition-events/' + CEID + '/publish'); softReload(); }
+async function publish() {
+  await api('POST', '/api/competition-events/' + CEID + '/publish');
+  toast('已发布（进大屏/观众页）', 'ok'); softReload();
+}
 async function calcPublish() {
   try {
     await api('POST', '/api/competition-events/' + CEID + '/calculate');
     await api('POST', '/api/competition-events/' + CEID + '/publish');
-    softReload();
+    toast('已计算并发布', 'ok'); softReload();
   } catch (e) { document.getElementById('calc-msg').textContent = e.message; }
 }
 function candAll(state) {
@@ -140,7 +146,10 @@ document.addEventListener('change', function (e) {
   if (e.target.matches && e.target.matches('#roster-box input.cand')) candCount();
 });
 candCount();
-async function unpublish() { await api('POST', '/api/competition-events/' + CEID + '/unpublish'); softReload(); }
+async function unpublish() {
+  await api('POST', '/api/competition-events/' + CEID + '/unpublish');
+  toast('已撤回发布', 'ok'); softReload();
+}
 
 var ST_NAMES = {pending: '待开始', scoring: '评分中', calculated: '已计算', published: '已发布'};
 async function refreshProgress() {

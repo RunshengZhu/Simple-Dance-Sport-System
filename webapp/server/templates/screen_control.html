@@ -1,12 +1,9 @@
 {% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
 {% block title %}大屏控制{% endblock %}
-{% block nav %}
-<a href="/events/{{ comp.id }}/schedule">← 赛程</a>
-<a href="/events/{{ comp.id }}/results">结果中心</a>
-<span>{{ comp.name }}</span>
-<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
-{% endblock %}
+{% block nav %}{% endblock %}
 {% block content %}
+{{ bar(comp, 'screen') }}
 <h1>大屏控制（FR-G9 / D4）</h1>
 <div class="card">
   <p class="muted">强制指定大屏显示内容；「自动轮播」恢复按赛程自动切换。观众端大屏即时生效（SSE 推送）。</p>

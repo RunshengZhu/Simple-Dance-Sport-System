@@ -98,6 +98,53 @@ tr.rank-1 td { background: var(--warn-soft); font-weight: 600; }
 .btn.big { padding: 12px 22px; font-size: 1.05rem; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn.small { padding: 4px 11px; font-size: .87rem; }
+.btn.loading { opacity: .6; pointer-events: none; }
+
+/* ---- R79 赛事管理壳：常驻赛事条（阶段化导航，移动端横向滚动） ---- */
+.comp-bar {
+  position: sticky; top: 0; z-index: 40; margin: -18px -18px 18px; padding: 8px 18px 10px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
+}
+.comp-bar-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.comp-bar-head .comp-name { font-weight: 700; font-size: 1.02rem; color: var(--txt); text-decoration: none; }
+.comp-bar-head .comp-meta { color: var(--muted); font-size: .85rem; }
+.comp-bar-head .phase-tag { margin-left: auto; }
+.comp-bar-links { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.comp-bar-links::-webkit-scrollbar { display: none; }
+.comp-bar-links a {
+  flex: none; padding: 6px 13px; border-radius: 999px; font-size: .9rem; color: var(--txt);
+  border: 1px solid var(--line); background: var(--card); text-decoration: none; white-space: nowrap;
+}
+.comp-bar-links a:hover { border-color: var(--acc); text-decoration: none; }
+.comp-bar-links a.active { background: var(--acc); border-color: var(--acc); color: #fff; font-weight: 600; }
+.comp-bar-links a.exit-link { margin-left: auto; color: var(--muted); }
+@media (max-width: 759px) { .comp-bar { margin: -14px -14px 14px; padding: 6px 14px 8px; } }
+
+/* ---- R79 宽表响应式：小屏横向滚动而非压垮布局 ---- */
+.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tbl-scroll table { min-width: 640px; }
+
+/* ---- R79 总览页 ---- */
+.ov-grid { display: grid; gap: 14px; }
+@media (min-width: 900px) { .ov-grid { grid-template-columns: 5fr 4fr; align-items: start; } }
+.ov-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.ov-stat { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--card); }
+.ov-stat b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.ov-stat span { color: var(--muted); font-size: .85rem; }
+.check-list { list-style: none; padding: 0; margin: 6px 0; }
+.check-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.check-list li:last-child { border-bottom: none; }
+.check-list .ck-ico { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: .8rem; }
+.ck-done .ck-ico { background: var(--ok); color: #fff; }
+.ck-todo .ck-ico { border: 2px solid var(--line); color: transparent; }
+.check-list .ck-body { flex: 1; }
+.check-list .ck-link { flex: none; }
+.next-actions { display: grid; gap: 8px; }
+.next-actions .na-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--card); }
+.next-actions .na-row.na-urgent { border-color: var(--acc); }
 
 /* ---- R78 材料清单：每组一行（名称 + 动作），不与相邻组挤行/断行 ---- */
 .mat-list { display: grid; gap: 7px 32px; margin: 6px 0; }

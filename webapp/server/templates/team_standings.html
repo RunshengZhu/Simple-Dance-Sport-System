@@ -1,14 +1,10 @@
 {% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
 {% set autorefresh = true %}
 {% block title %}团体总分 · {{ comp.name }}{% endblock %}
-{% block nav %}
-<a href="/events/{{ comp.id }}/schedule">← 赛程</a>
-<a href="/events/{{ comp.id }}/results">结果中心</a>
-<a href="/events/{{ comp.id }}/teams">队伍</a>
-<span>{{ comp.name }}</span>
-<a href="/users">用户</a><a href="#" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
-{% endblock %}
+{% block nav %}{% endblock %}
 {% block content %}
+{{ bar(comp, 'standings') }}
 <h1>团体总分榜（管理口径：全部已计算场次）</h1>
 <div class="card">
   <p class="muted" style="margin:2px 0 10px">口径：仅计各项目最末轮 · 名次赋分 9-7-6-5-4-3-2-1 · 跨单位归主报单位。</p>

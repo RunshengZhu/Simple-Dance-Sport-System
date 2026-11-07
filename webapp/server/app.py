@@ -120,7 +120,7 @@ async def compadmin_scope(request: Request, call_next):
         return PlainTextResponse(msg, status_code=403)
 
     if p.rstrip("/") in ("/events", "/users", "/files"):
-        return RedirectResponse(f"/events/{cid}/schedule", status_code=302)
+        return RedirectResponse(f"/events/{cid}/overview", status_code=302)
     if p == "/api/users" and method in ("GET", "POST"):
         pass  # R56 筹备向导：赛事管理员可创建/查看工作人员（host/marshal），handler 内钳制角色
     elif p.startswith(_COMPCID_DENY_PREFIXES):
@@ -652,7 +652,8 @@ async def direct_login(competition_id: int, role: str, username: str, token: str
         conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, 'admin', ?, ?)",
                      (token_new, u["id"], competition_id))
         conn.commit()
-        resp = RedirectResponse("/events/" + str(competition_id) + "/schedule", status_code=302)
+        target = "/events/" + str(competition_id) + ("/setup" if not comp["setup_done"] else "/overview")
+        resp = RedirectResponse(target, status_code=302)
     elif role in ("host", "marshal"):
         u = db.rowdict(conn.execute(
             "SELECT id FROM users WHERE username=? AND role=? AND active=1", (username, role)).fetchone())
@@ -717,6 +718,77 @@ async def events_page(request: Request):
     require_admin(request)
     comps = db.rows(db.get_db().execute("SELECT * FROM competitions ORDER BY id DESC"))
     return templates.TemplateResponse(request, "events.html", {"request": request, "comps": comps})
+
+
+@app.get("/events/{competition_id}/overview", response_class=HTMLResponse)
+async def overview_page(request: Request, competition_id: int):
+    """R79 赛事总览（管理员登录首页）：阶段 + 筹备清单 + 数据速览 + 下一步动作 + 数据与材料。
+    链路梳理：总览是各阶段操作的集散地——筹备去导入/赛程，比赛中进控制台/发布，收官看结果。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    evs = db.rows(conn.execute(
+        "SELECT * FROM events WHERE competition_id=? ORDER BY (run_seq IS NULL), run_seq, code",
+        (competition_id,)))
+    n_comp = conn.execute("SELECT COUNT(*) c FROM competitors WHERE competition_id=?",
+                          (competition_id,)).fetchone()["c"]
+    n_judge = conn.execute("SELECT COUNT(*) c FROM judges WHERE competition_id=?",
+                           (competition_id,)).fetchone()["c"]
+    n_unit = conn.execute("SELECT COUNT(DISTINCT unit) c FROM competitors WHERE competition_id=? AND unit!=''",
+                          (competition_id,)).fetchone()["c"]
+    by = {"pending": 0, "scoring": 0, "calculated": 0, "published": 0}
+    for e in evs:
+        by[e["status"]] = by.get(e["status"], 0) + 1
+    pend = [e for e in evs if e["status"] == "pending"]
+    seq_set = sum(1 for e in pend if e["run_seq"])
+    next_ev = next((e for e in evs if e["status"] == "pending"), None)
+    running_ev = next((e for e in evs if e["status"] in ("scoring", "calculated")), None)
+    adv_pending = 0
+    for e in evs:
+        if e["status"] == "published" and e["round"] == 1 and e["advancement_count"]:
+            has_next = conn.execute(
+                "SELECT 1 FROM events WHERE competition_id=? AND project_code=? AND round=?",
+                (competition_id, e["project_code"], e["round"] + 1)).fetchone()
+            if has_next:
+                adv_pending += 1
+    if not evs:
+        phase = "筹备中"
+    elif all(e["status"] == "published" for e in evs):
+        phase = "已收官"
+    elif by["pending"] == len(evs):
+        phase = "待开赛"
+    else:
+        phase = "比赛中"
+    checklist = [
+        {"done": n_comp > 0, "label": "选手名单", "detail": f"{n_comp} 人", "href": f"/events/{competition_id}/import"},
+        {"done": n_judge > 0, "label": "裁判名单", "detail": f"{n_judge} 名", "href": f"/events/{competition_id}/import"},
+        {"done": len(evs) > 0, "label": "赛程编排", "detail": f"{len(evs)} 场", "href": f"/events/{competition_id}/schedule"},
+        {"done": (not pend) or (seq_set == len(pend) and seq_set > 0), "label": "出场顺序",
+         "detail": f"待赛 {len(pend)} 场 · 已排 {seq_set} 场", "href": f"/events/{competition_id}/schedule"},
+    ]
+    actions = []
+    if by["calculated"]:
+        actions.append({"urgent": True, "text": f"{by['calculated']} 场已计算、待发布进大屏",
+                        "href": f"/events/{competition_id}/results", "btn": "去发布"})
+    if running_ev:
+        st = "评分中" if running_ev["status"] == "scoring" else "已计算"
+        actions.append({"urgent": True, "text": f"「{running_ev['name']}」{st}",
+                        "href": f"/events/{competition_id}/console/{running_ev['id']}", "btn": "进控制台"})
+    if adv_pending:
+        actions.append({"urgent": False, "text": f"{adv_pending} 个预赛已发布，晋级名单待确认",
+                        "href": f"/events/{competition_id}/advancement", "btn": "去确认"})
+    if next_ev:
+        actions.append({"urgent": False, "text": f"下一场：{next_ev['name']}（{next_ev['code']}）",
+                        "href": f"/events/{competition_id}/console/{next_ev['id']}", "btn": "开场"})
+    if not actions:
+        actions.append({"urgent": False, "text": "暂无待办——全部场次已发布",
+                        "href": f"/events/{competition_id}/results", "btn": "看结果"})
+    return templates.TemplateResponse(request, "overview.html", {
+        "request": request, "comp": comp, "phase": phase, "checklist": checklist, "actions": actions,
+        "stats": {"competitors": n_comp, "judges": n_judge, "units": n_unit, "events": len(evs),
+                  "pending": by["pending"], "scoring": by["scoring"], "calculated": by["calculated"],
+                  "published": by["published"]},
+        "next_ev": next_ev, "setup_done": bool(comp["setup_done"])})
 
 
 @app.get("/events/{competition_id}/import", response_class=HTMLResponse)

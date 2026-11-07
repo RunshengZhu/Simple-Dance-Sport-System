@@ -1,18 +1,23 @@
 {% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
+{% block cid %}{{ comp.id }}{% endblock %}
 {% block title %}直达链接{% endblock %}
+{% block nav %}{% endblock %}
 {% block content %}
-<h1>各角色免密直达链接 · {{ comp.name }}</h1>
+{{ bar(comp, 'links') }}
+<h1>各角色免密直达链接</h1>
 <p class="muted">链接等同口令，仅分发给对应工作人员；泄露时在「用户」页重置口令即可作废全部旧链接。
 裁判无需账号，点击即以该裁判 ID 登录。</p>
-<table>
-  <tr><th>角色</th><th>账号 / ID</th><th>姓名</th><th>直达链接（点击即登录）</th></tr>
+<div class="tbl-scroll"><table>
+  <tr><th>角色</th><th>账号 / ID</th><th>姓名</th><th>直达链接（点击即登录）</th><th></th></tr>
   {% for l in links %}
   <tr>
     <td>{{ {"compadmin": "赛事管理员", "marshal": "检录长/检录员", "host": "主持人", "judge": "裁判"}.get(l.role, l.role) }}</td>
     <td><b>{{ l.username }}</b></td>
     <td>{{ l.name }}</td>
-    <td class="table-fit"><a href="{{ l.url }}">{{ l.url }}</a></td>
+    <td class="table-fit"><a href="{{ l.url }}" target="_blank">{{ l.url }}</a></td>
+    <td><button class="btn small secondary" onclick="copyText('{{ l.url }}', '已复制 {{ l.username }} 的直达链接')">复制</button></td>
   </tr>
   {% endfor %}
-</table>
+</table></div>
 {% endblock %}

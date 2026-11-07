@@ -99,7 +99,7 @@
   <h2>筹备完成 🎉</h2>
   <div id="wiz-summary" class="wiz-summary"></div>
   <p class="muted">随时可以从「赛程编排」页进入各场次的控制台开赛；
-    本向导完成后不再自动弹出，需要时从赛程编排页左侧「筹备向导」重新打开。</p>
+    本向导完成后不再自动弹出，需要时从「赛事总览」页重新打开。</p>
   <div class="wiz-nav">
     <button class="btn secondary" data-go="5">← 上一步</button>
     <button class="btn" id="wiz-first-open">开场第一场，直接开始比赛 →</button>
@@ -210,7 +210,7 @@ document.getElementById('wiz-first-open').onclick = function () {
       if (d.first_event) {
         location.href = '/events/' + CID + '/console/' + d.first_event.id;
       } else {
-        location.href = '/events/' + CID + '/schedule';
+        location.href = '/events/' + CID + '/overview';
       }
     });
   });
@@ -228,7 +228,7 @@ function loadSummary() {
 }
 document.getElementById('wiz-finish').onclick = function () {
   api('POST', '/events/' + CID + '/setup/complete').then(function () {
-    location.href = '/events/' + CID + '/schedule';
+    location.href = '/events/' + CID + '/overview';
   });
 };
 

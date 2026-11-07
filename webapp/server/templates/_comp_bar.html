@@ -1,0 +1,22 @@
+{% macro bar(comp, current) -%}
+<div class="comp-bar">
+  <div class="comp-bar-head">
+    <a class="comp-name" href="/events/{{ comp.id }}/overview" title="赛事总览">{{ comp.name }}</a>
+    <span class="comp-meta">{% if comp.date %}{{ comp.date }}{% endif %}{% if comp.location %} · {{ comp.location }}{% endif %}</span>
+    {% if request.state.is_compadmin %}<span class="tag gray phase-tag">赛事管理员</span>{% endif %}
+  </div>
+  <div class="comp-bar-links">
+    <a href="/events/{{ comp.id }}/overview" class="{{ 'active' if current == 'overview' }}">总览</a>
+    <a href="/events/{{ comp.id }}/import" class="{{ 'active' if current == 'import' }}">导入</a>
+    <a href="/events/{{ comp.id }}/schedule" class="{{ 'active' if current == 'schedule' }}">赛程编排</a>
+    <a href="/events/{{ comp.id }}/advancement" class="{{ 'active' if current == 'advancement' }}">晋级确认</a>
+    <a href="/events/{{ comp.id }}/results" class="{{ 'active' if current == 'results' }}">结果中心</a>
+    <a href="/events/{{ comp.id }}/team-standings" class="{{ 'active' if current == 'standings' }}">团体总分</a>
+    <a href="/events/{{ comp.id }}/teams" class="{{ 'active' if current == 'teams' }}">队伍</a>
+    <a href="/events/{{ comp.id }}/direct-links" class="{{ 'active' if current == 'links' }}">直达链接</a>
+    <a href="/events/{{ comp.id }}/screen-control" class="{{ 'active' if current == 'screen' }}">大屏控制</a>
+    {% if not request.state.is_compadmin %}<a href="/users">用户</a>{% endif %}
+    <a href="#" class="exit-link" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+  </div>
+</div>
+{%- endmacro %}
