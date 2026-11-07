@@ -8,7 +8,10 @@
   <span style="margin-left:8px">按单位：</span>
   <input id="unit-input" placeholder="输入单位名称" style="max-width:180px">
   <button class="btn secondary" id="unit-export">导出该单位赛程表</button>
-  <span id="unit-msg" class="muted"></span>{% endif %}
+  <span id="unit-msg" class="muted"></span>
+  <span style="margin-left:8px">赛程总表（出场抽签）：</span>
+  <input id="seed-input" placeholder="抽签号(如 20261114)" style="max-width:140px">
+  <button class="btn secondary" id="seed-export">导出总表</button>{% endif %}
 </p>
 <table>
   <tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
@@ -21,6 +24,10 @@
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
+document.getElementById('seed-export').addEventListener('click', function () {
+  var sd = document.getElementById('seed-input').value.trim() || '{{ comp.id }}';
+  window.open('/api/public/events/{{ comp.id }}/exports/runsheet?format=html&seed=' + encodeURIComponent(sd), '_blank');
+});
 document.getElementById('unit-export').addEventListener('click', function () {
   var u = document.getElementById('unit-input').value.trim();
   if (!u) { document.getElementById('unit-msg').textContent = '请输入单位名称'; return; }

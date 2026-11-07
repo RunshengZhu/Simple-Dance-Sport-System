@@ -2410,6 +2410,67 @@ async def api_run_order_save(competition_id: int, request: Request = None):
     return {"ok": True, "saved": len(order)}
 
 
+@app.get("/api/public/events/{competition_id}/exports/runsheet")
+async def api_runsheet_export(competition_id: int, request: Request = None, format: str = "html", seed: str = ""):
+    """R72 赛程总表（出场单）：所有能确认参赛选手的场次（预赛/单轮决赛；待回填决赛无名单不列），
+    每场含全部参赛选手。打乱机制：出场顺序按 seed 随机抽签——同 seed 可复现（公平可审计），
+    换 seed 即重抽；每场用 seed+场次码 派生独立流，场间互不影响。"""
+    import random
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    seed = (seed or "").strip() or time.strftime("%Y%m%d")
+    evs = db.rows(conn.execute(
+        "SELECT * FROM events WHERE competition_id=? "
+        "ORDER BY COALESCE(run_seq, 9999), project_code, round, code", (competition_id,)))
+    blocks = []
+    for ev in evs:
+        roster = db.rows(conn.execute(
+            "SELECT competitor_number FROM event_competitors WHERE event_id=? ORDER BY id", (ev["id"],)))
+        if not roster:
+            continue   # 待回填决赛等无名单场次不列
+        names = _display_names(conn, competition_id, ev["project_code"])
+        unit_by_number = {c["number"]: (c["unit"] or "") for c in db.rows(conn.execute(
+            "SELECT number, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+        rng = random.Random("{0}:{1}".format(seed, ev["code"]))
+        nums = [r["competitor_number"] for r in roster]
+        rng.shuffle(nums)
+        dancers = "; ".join(sorted({(ev["dances"] or "") for _ in [0]})) if False else None
+        blocks.append({"ev": ev, "nums": nums, "names": names, "units": unit_by_number})
+
+    if format == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["出场序", "场次编号", "场次名称", "背番号", "选手 / 组合", "单位"])
+        for bi, b in enumerate(blocks, 1):
+            ev = b["ev"]
+            for oi, num in enumerate(b["nums"], 1):
+                w.writerow([oi, ev["code"], ev["name"], num,
+                            b["names"].get(num, ""), b["units"].get(num, "")])
+        return PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8",
+                                 headers={"Content-Disposition": 'attachment; filename="runsheet-{0}-{1}.csv"'.format(competition_id, seed)})
+
+    # html：每场一块出场单（打印友好）
+    body = []
+    for bi, b in enumerate(blocks, 1):
+        ev = b["ev"]
+        rows = "".join("<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>".format(
+            oi, num, b["names"].get(num, ""), b["units"].get(num, "")) for oi, num in enumerate(b["nums"], 1))
+        body.append("<h2>{0}. {1}（{2} · {3}）</h2>"
+                    "<p class='muted'>出场序抽签 seed：{4}（同 seed 可复现）</p>"
+                    "<table><tr><th>出场</th><th>背番号</th><th>选手 / 组合</th><th>单位</th></tr>{5}</table>".format(
+                        bi, ev["name"], ev["code"], ev["scoring_type"], seed, rows))
+    css = ("body{font-family:sans-serif;margin:2em}"
+           "table{border-collapse:collapse;width:100%}td,th{border:1px solid #999;padding:5px 10px;text-align:left}"
+           "th{background:#f5f3ef}h2{margin-top:1.6em}"
+           ".muted{color:#6b7280;font-size:.85em}")
+    html = ("<!doctype html><html><head><meta charset='utf-8'><title>" + comp["name"] + " 赛程总表</title>"
+            "<style>" + css + "</style></head><body>"
+            "<h1>" + comp["name"] + " 赛程总表（出场序抽签）</h1>"
+            "<p class='muted'>抽签 seed：" + seed + " · 打印日期：" + time.strftime("%Y-%m-%d %H:%M") + " · dancetkt.com</p>"
+            + "".join(body) + "</body></html>")
+    return HTMLResponse(html)
+
+
 @app.get("/api/events/{competition_id}/exports/competitors")
 async def api_competitors_export(competition_id: int, request: Request = None, format: str = "csv"):
     """R71f 选手信息导出（管理端）：与导入模板同列序，可直接回导（导出→修改→再导入闭环）。"""

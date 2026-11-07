@@ -34,6 +34,8 @@
   <p>
     选手信息：<a class="btn secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
     <span class="muted" style="margin:0 10px">|</span>
+    赛程总表（出场抽签）：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">导出</a>
+    <span class="muted" style="margin:0 10px">|</span>
     赛程表：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">打印</a>
     <a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=markdown">Markdown</a>
     <span class="muted" style="margin:0 10px">|</span>
