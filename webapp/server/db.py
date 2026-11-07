@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS competitors (
     project_code TEXT DEFAULT '',
     name TEXT DEFAULT '',
     partner TEXT DEFAULT '',
+    partner_unit TEXT DEFAULT '',
     unit TEXT DEFAULT '',
     UNIQUE(competition_id, number, project_code)
 );
@@ -139,6 +140,8 @@ def init_db():
     comp_cols = {r[1] for r in conn.execute("PRAGMA table_info(competitors)")}
     if "partner" not in comp_cols:
         conn.execute("ALTER TABLE competitors ADD COLUMN partner TEXT DEFAULT ''")
+    if "partner_unit" not in comp_cols:
+        conn.execute("ALTER TABLE competitors ADD COLUMN partner_unit TEXT DEFAULT ''")   # R71h：搭档单位（跨单位对半拆分的数据基础）
     ec_cols = {r[1] for r in conn.execute("PRAGMA table_info(event_competitors)")}
     if "checked_in" not in ec_cols:
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_in INTEGER DEFAULT 0")  # 检录

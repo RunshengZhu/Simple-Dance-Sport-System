@@ -1132,6 +1132,7 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
         i_num, i_name = _col(h, "背番号", "number"), _col(h, "姓名", "name")
         i_unit, i_proj = _col(h, "学校/单位", "单位", "unit"), _col(h, "项目编号", "project")
         i_partner = _col(h, "搭档姓名", "搭档", "partner")
+        i_punit = _col(h, "搭档单位", "搭档学校", "partner_unit")
         if i_num is None:
             raise HTTPException(status_code=400, detail="缺少列：背番号")
         no_partner = {}   # R71c：未填搭档的行——双人项目漏填预警（单人项目可忽略）；
@@ -1141,10 +1142,11 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
                 continue
             nm = r[i_name].strip() if i_name is not None and i_name < len(r) else ""
             pt = r[i_partner].strip() if i_partner is not None and i_partner < len(r) else ""
+            pu = r[i_punit].strip() if i_punit is not None and i_punit < len(r) else ""
             conn.execute(
-                "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, unit) VALUES(?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, partner_unit, unit) VALUES(?,?,?,?,?,?,?)",
                 (competition_id, num, (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else ""),
-                 nm, pt,
+                 nm, pt, pu,
                  r[i_unit].strip() if i_unit is not None and i_unit < len(r) else ""))
             if not pt:
                 no_partner[num] = nm
@@ -1241,10 +1243,10 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
 
 _CSV_TEMPLATES = {
     # 表头与 api_import 解析列一致（FR 导入列名），各带 2 行示例
-    "competitors": [["背番号", "项目编号", "姓名", "搭档姓名", "学校/单位"],
-                    ["101", "S-CHA", "张三", "李四", "北京舞蹈学院"],
-                    ["101", "S-JSW", "张三", "王五", "北京舞蹈学院"],
-                    ["102", "S-JSW", "李四", "", "上海体育大学"]],
+    "competitors": [["背番号", "项目编号", "姓名", "搭档姓名", "搭档单位", "学校/单位"],
+                    ["101", "S-CHA", "张三", "李四", "", "北京舞蹈学院"],
+                    ["101", "S-JSW", "张三", "王五", "", "北京舞蹈学院"],
+                    ["102", "S-JSW", "李四", "", "", "上海体育大学"]],
     "judges": [["裁判ID", "姓名"],
                ["J1", "王裁判"],
                ["J2", "李裁判"]],
@@ -2415,13 +2417,14 @@ async def api_competitors_export(competition_id: int, request: Request = None, f
     comp = _comp_or_404(competition_id)
     conn = db.get_db()
     rows = db.rows(conn.execute(
-        "SELECT number, project_code, name, partner, unit FROM competitors WHERE competition_id=? "
+        "SELECT number, project_code, name, partner, partner_unit, unit FROM competitors WHERE competition_id=? "
         "ORDER BY project_code, CAST(number AS INTEGER), number", (competition_id,)))
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["背番号", "项目编号", "姓名", "搭档姓名", "学校/单位"])
+    w.writerow(["背番号", "项目编号", "姓名", "搭档姓名", "搭档单位", "学校/单位"])
     for r in rows:
-        w.writerow([r["number"], r["project_code"], r["name"], r["partner"] or "", r["unit"] or ""])
+        w.writerow([r["number"], r["project_code"], r["name"], r["partner"] or "",
+                    r["partner_unit"] or "", r["unit"] or ""])
     return PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="competitors-{0}.csv"'.format(competition_id)})
 
