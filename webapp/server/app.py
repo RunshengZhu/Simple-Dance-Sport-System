@@ -2407,6 +2407,24 @@ async def api_run_order_save(competition_id: int, request: Request = None):
     return {"ok": True, "saved": len(order)}
 
 
+@app.get("/api/events/{competition_id}/exports/competitors")
+async def api_competitors_export(competition_id: int, request: Request = None, format: str = "csv"):
+    """R71f 选手信息导出（管理端）：与导入模板同列序，可直接回导（导出→修改→再导入闭环）。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    rows = db.rows(conn.execute(
+        "SELECT number, project_code, name, partner, unit FROM competitors WHERE competition_id=? "
+        "ORDER BY project_code, CAST(number AS INTEGER), number", (competition_id,)))
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["背番号", "项目编号", "姓名", "搭档姓名", "学校/单位"])
+    for r in rows:
+        w.writerow([r["number"], r["project_code"], r["name"], r["partner"] or "", r["unit"] or ""])
+    return PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": 'attachment; filename="competitors-{0}.csv"'.format(competition_id)})
+
+
 @app.get("/api/public/events/{competition_id}/exports/schedule")
 async def api_public_schedule_export(competition_id: int, format: str = "html", unit: str = ""):
     """R70 材料生产：赛程表导出（秩序册）。全场或按单位过滤；HTML 打印友好，Markdown 供再编辑。
