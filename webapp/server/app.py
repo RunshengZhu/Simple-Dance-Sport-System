@@ -975,7 +975,7 @@ async def public_schedule(request: Request):
     if comp:
         evs = db.rows(db.get_db().execute(
             "SELECT code,name,project_code,round,status FROM events WHERE competition_id=? "
-            "ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
+            "ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
             (comp["id"],)))
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
     return _etag_page(request, comp["id"] if comp else 0, "schedule", fp, lambda: templates.TemplateResponse(
@@ -1854,7 +1854,7 @@ async def staff_page(request: Request):
     if comp:
         events = db.rows(conn.execute(
             "SELECT id,code,name,project_code,round,status,announced FROM events "
-            "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
+            "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
             (comp["id"],)))
         for ev in events:
             name_by_number = _display_names(conn, comp["id"], ev["project_code"])
@@ -2316,7 +2316,7 @@ def _public_payload(comp=None):
         return None
     events = db.rows(db.get_db().execute(
         "SELECT code,name,project_code,round,status,published,id FROM events WHERE competition_id=? "
-        "ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
+        "ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
         (comp["id"],)))
     published = []
     for ev in events:
@@ -2394,7 +2394,7 @@ def _pending_events(competition_id):
     return db.rows(db.get_db().execute(
         "SELECT id,code,name,project_code,round,run_seq FROM events "
         "WHERE competition_id=? AND status='pending' "
-        "ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
+        "ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
         (competition_id,)))
 
 
@@ -2425,23 +2425,34 @@ async def api_run_order_proposal(competition_id: int, request: Request = None):
         pending_pr[(e["project_code"], e["round"])] = pending_pr.get((e["project_code"], e["round"]), 0) + 1
     order, overlaps = [], []
     last = set()
+    # R75 分层贪心：按轮次分层（先全部 R1，再全部 R2…），层内贪心选与上一场重叠最小者——
+    # 保证「预赛段在前、决赛段在后」的段落结构（同项目预决赛之间自然隔开全部其他场次，
+    # 留出算分与校对时间），层内防连场不变。
+    max_round = max((e["round"] for e in pending), default=1)
     remaining = {e["id"]: e for e in pending}
-    while remaining:
-        ready = [e for e in remaining.values()
-                 if all(pending_pr.get((e["project_code"], r), 0) == 0
-                        for r in range(1, e["round"]))]
-        if not ready:
-            ready = list(remaining.values())   # 依赖兜底（不应发生）
-        if last:
-            best = min(ready, key=lambda e: (len(rosters[e["id"]] & last), e["round"], e["project_code"], e["code"]))
-        else:
-            best = min(ready, key=lambda e: (e["round"], len(rosters[e["id"]]), e["project_code"], e["code"]))
-        order.append(best)
-        overlaps.append(len(rosters[best["id"]] & last) if last else 0)
-        last = rosters[best["id"]]
-        pr = (best["project_code"], best["round"])
-        pending_pr[pr] -= 1
-        del remaining[best["id"]]
+    for rnd in range(1, max_round + 1):
+        layer = [e for e in remaining.values() if e["round"] == rnd]
+        # 依赖兜底：若某项目低轮缺失，其高轮随所在层排（不应发生）
+        for e in layer:
+            pass
+        layer.sort(key=lambda e: (len(rosters[e["id"]]), e["project_code"], e["code"]))
+        while layer:
+            if last:
+                best = min(layer, key=lambda e: len(rosters[e["id"]] & last))
+            else:
+                best = min(layer, key=lambda e: len(rosters[e["id"]]))
+            order.append(best)
+            overlaps.append(len(rosters[best["id"]] & last) if last else 0)
+            last = rosters[best["id"]]
+            layer.remove(best)
+            del remaining[best["id"]]
+        # 低轮未排完不得进高轮（轮次依赖）；若 remaining 还有低轮（异常），下一轮循环兜底
+        leftover_low = [e for e in remaining.values() if e["round"] <= rnd]
+        if leftover_low:
+            for e in leftover_low:
+                order.append(e)
+                overlaps.append(0)
+                del remaining[e["id"]]
     items = [{"ceid": e["id"], "code": e["code"], "name": e["name"], "project": e["project_code"],
               "round": e["round"], "roster": sorted(rosters[e["id"]])} for e in order]
     return {"order": items, "overlaps": overlaps}
@@ -2474,7 +2485,7 @@ async def api_runsheet_export(competition_id: int, request: Request = None, form
     seed = (seed or "").strip() or time.strftime("%Y%m%d")
     evs = db.rows(conn.execute(
         "SELECT * FROM events WHERE competition_id=? "
-        "ORDER BY COALESCE(run_seq, 9999), project_code, round, code", (competition_id,)))
+        "ORDER BY COALESCE(run_seq, 9999), round, project_code, code", (competition_id,)))
     blocks = []
     for ev in evs:
         roster = db.rows(conn.execute(
