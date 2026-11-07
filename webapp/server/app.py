@@ -2260,7 +2260,8 @@ def _public_payload(comp=None):
     if not comp:
         return None
     events = db.rows(db.get_db().execute(
-        "SELECT code,name,project_code,round,status,published,id FROM events WHERE competition_id=? ORDER BY project_code, round, code",
+        "SELECT code,name,project_code,round,status,published,id FROM events WHERE competition_id=? "
+        "ORDER BY COALESCE(run_seq, 9999), project_code, round, code",
         (comp["id"],)))
     published = []
     for ev in events:
