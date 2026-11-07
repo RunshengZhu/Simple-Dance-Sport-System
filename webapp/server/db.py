@@ -232,6 +232,14 @@ CREATE TABLE IF NOT EXISTS snapshot_meta (
     if "auto_publish" not in comp_cols:
         conn.execute("ALTER TABLE competitions ADD COLUMN auto_publish INTEGER DEFAULT 0")
 
+    if "app_meta" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='app_meta'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+""")
+        conn.commit()
     if "visit_stats" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='visit_stats'")}:
         conn.executescript("""
 CREATE TABLE IF NOT EXISTS visit_stats (

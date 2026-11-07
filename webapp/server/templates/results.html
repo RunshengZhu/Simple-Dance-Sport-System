@@ -32,6 +32,8 @@
   </p>
   {% endif %}
   <p>
+    各角色免密直达链接：<a class="btn secondary" href="/events/{{ comp.id }}/direct-links" target="_blank">查看</a>
+    <span class="muted" style="margin:0 10px">|</span>
     选手信息：<a class="btn secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
     <span class="muted" style="margin:0 10px">|</span>
     赛程总表（出场抽签）：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">导出</a>

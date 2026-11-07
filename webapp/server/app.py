@@ -346,6 +346,15 @@ async def api_login(request: Request):
             raise HTTPException(status_code=403, detail="用户名或口令错误")
         conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?,?,?,?)",
                      (token, role, urow["id"], bind_cid))
+    elif role == "compadmin":   # 赛事管理员账号（users.role=compadmin，会话角色记 admin）
+        u = db.rowdict(conn.execute(
+            "SELECT id FROM users WHERE username=? AND role='compadmin' AND active=1 AND comp_id=?",
+            (username, competition_id)).fetchone())
+        if not u:
+            raise HTTPException(status_code=403, detail="账号不存在或已停用")
+        conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, 'admin', ?, ?)",
+                     (token_new, u["id"], competition_id))
+        resp = RedirectResponse("/events/" + str(competition_id) + "/schedule", status_code=302)
     elif role == "judge":
         code = str(body.get("judge_id") or "")
         row = conn.execute("SELECT * FROM judges WHERE code=? ", (code,)).fetchone()
@@ -378,6 +387,31 @@ async def api_logout(request: Request):
     resp = JSONResponse({"ok": True})
     resp.delete_cookie("session")
     return resp
+
+
+# ---- R76 免密直达链接：HMAC 签名（角色+账号+赛事），点开即建会话跳角色首页 ----
+def _link_secret(conn):
+    row = db.rowdict(conn.execute("SELECT value FROM app_meta WHERE key='link_secret'").fetchone())
+    if row:
+        return row["value"]
+    val = secrets.token_hex(32)
+    conn.execute("INSERT OR REPLACE INTO app_meta(key, value) VALUES('link_secret', ?)", (val,))
+    conn.commit()
+    return val
+
+
+def _sign_direct(conn, role: str, username: str, competition_id) -> str:
+    import hmac as _h
+    key = _link_secret(conn).encode()
+    msg = f"{competition_id}|{role}|{username}".encode()
+    return _h.new(key, msg, "sha256").hexdigest()[:32]
+
+
+def _check_direct(conn, competition_id, role, username, token) -> bool:
+    import hmac as _h
+    key = _link_secret(conn).encode()
+    msg = f"{competition_id}|{role}|{username}".encode()
+    return _h.compare_digest(_h.new(key, msg, "sha256").hexdigest()[:32], token or "")
 
 
 def _active_competition():
@@ -584,6 +618,67 @@ async def setup_complete(competition_id: int, request: Request = None):
     db.get_db().execute("UPDATE competitions SET setup_done=1 WHERE id=?", (competition_id,))
     db.get_db().commit()
     return {"ok": True}
+
+
+@app.get("/competitions/{competition_id}/direct/{role}/{username}/{token}")
+async def direct_login(competition_id: int, role: str, username: str, token: str):
+    """R76 免密直达：签名链接点开即登录并跳角色首页。链接等同口令，请勿外传。"""
+    conn = db.get_db()
+    comp = db.rowdict(conn.execute(
+        "SELECT * FROM competitions WHERE id=? AND active=1", (competition_id,)).fetchone())
+    if not comp:
+        raise HTTPException(status_code=404, detail="赛事尚未开放（未激活或不存在）")
+    if not _check_direct(conn, competition_id, role, username, token):
+        raise HTTPException(status_code=403, detail="直达链接无效（赛事或账号可能已变更）")
+    token_new = secrets.token_urlsafe(32)
+    ip = None
+    if role == "admin":   # 赛事管理员（compadmin 账号，会话角色 admin + comp_id 钳制）
+        u = db.rowdict(conn.execute(
+            "SELECT id FROM users WHERE username=? AND role='compadmin' AND active=1 AND comp_id=?",
+            (username, competition_id)).fetchone())
+        if not u:
+            raise HTTPException(status_code=403, detail="账号不存在或已停用")
+        conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, 'admin', ?, ?)",
+                     (token_new, u["id"], competition_id))
+        conn.commit()
+        resp = RedirectResponse("/events/" + str(competition_id) + "/schedule", status_code=302)
+    elif role in ("host", "marshal"):
+        u = db.rowdict(conn.execute(
+            "SELECT id FROM users WHERE username=? AND role=? AND active=1", (username, role)).fetchone())
+        if not u:
+            raise HTTPException(status_code=403, detail="账号不存在或已停用")
+        conn.execute("INSERT INTO sessions(token, role, user_id) VALUES(?, ?, ?)",
+                     (token_new, role, u["id"]))
+        conn.commit()
+        resp = RedirectResponse("/staff", status_code=302)
+    elif role == "compadmin":   # 赛事管理员账号（users.role=compadmin，会话角色记 admin）
+        u = db.rowdict(conn.execute(
+            "SELECT id FROM users WHERE username=? AND role='compadmin' AND active=1 AND comp_id=?",
+            (username, competition_id)).fetchone())
+        if not u:
+            raise HTTPException(status_code=403, detail="账号不存在或已停用")
+        conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, 'admin', ?, ?)",
+                     (token_new, u["id"], competition_id))
+        resp = RedirectResponse("/events/" + str(competition_id) + "/schedule", status_code=302)
+    elif role == "judge":
+        j = conn.execute("SELECT 1 FROM judges WHERE competition_id=? AND code=?",
+                         (competition_id, username)).fetchone()
+        if not j:
+            raise HTTPException(status_code=403, detail="裁判不存在")
+        conn.execute("INSERT INTO sessions(token, role, judge_code, comp_id) VALUES(?, 'judge', ?, ?)",
+                     (token_new, username, competition_id))
+        conn.commit()
+        resp = RedirectResponse("/judge", status_code=302)
+    else:
+        raise HTTPException(status_code=400, detail="未知角色")
+    resp.set_cookie("session", token_new, httponly=True, samesite="lax")
+    return resp
+
+
+def _direct_link(conn, competition_id: int, role: str, username: str) -> str:
+    token = _sign_direct(conn, role, username, competition_id)
+    return "/competitions/{0}/direct/{1}/{2}/{3}".format(
+        competition_id, role, urllib.parse.quote(username, safe=""), token)
 
 
 @app.get("/competitions/{competition_id}/login", response_class=HTMLResponse)
@@ -2533,6 +2628,45 @@ async def api_runsheet_export(competition_id: int, request: Request = None, form
             "<p class='muted'>抽签 seed：" + seed + " · 打印日期：" + time.strftime("%Y-%m-%d %H:%M") + " · dancetkt.com</p>"
             + "".join(body) + "</body></html>")
     return HTMLResponse(html)
+
+
+@app.get("/events/{competition_id}/direct-links", response_class=HTMLResponse)
+async def direct_links_page(competition_id: int, request: Request = None):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    links = []
+    for u in db.rows(conn.execute(
+            "SELECT username, display_name, role FROM users WHERE role IN ('compadmin','marshal','host') AND active=1 AND comp_id=? ORDER BY role, username",
+            (competition_id,))):
+        links.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
+                      "url": _direct_link(conn, competition_id, u["role"], u["username"])})
+    for j in db.rows(conn.execute(
+            "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+        links.append({"role": "judge", "username": j["code"], "name": j["name"] or ("裁判" + j["code"]),
+                      "url": _direct_link(conn, competition_id, "judge", j["code"])})
+    return templates.TemplateResponse(request, "direct_links.html", {
+        "request": request, "comp": comp, "links": links})
+
+
+@app.get("/api/events/{competition_id}/direct-links")
+async def api_direct_links(competition_id: int, request: Request = None):
+    """R76 为本赛事全部角色签发免密直达链接（总管理员）。链接等同口令，泄露即可重置口令作废。"""
+    require_admin(request)
+    conn = db.get_db()
+    base = str(request.base_url).rstrip("/")
+    out = []
+    for u in db.rows(conn.execute(
+            "SELECT username, display_name, role FROM users WHERE role IN ('compadmin','marshal','host') AND active=1 AND comp_id=? ORDER BY role, username",
+            (competition_id,))):
+        url_role = "admin" if u["role"] == "compadmin" else u["role"]
+        out.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
+                    "url": _direct_link(conn, competition_id, url_role, u["username"])})
+    for j in db.rows(conn.execute(
+            "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+        out.append({"role": "judge", "username": j["code"], "name": j["name"] or ("裁判" + j["code"]),
+                    "url": _direct_link(conn, competition_id, "judge", j["code"])})
+    return {"links": out}
 
 
 @app.get("/api/events/{competition_id}/exports/competitors")

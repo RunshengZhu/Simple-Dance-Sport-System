@@ -15,7 +15,8 @@
     <a class="btn secondary" href="/competitions/{{ comp.id }}/login?role=host">主持入口</a>
     <a class="btn secondary" href="/competitions/{{ comp.id }}/login?role=admin">赛事管理员入口</a>
     <button class="btn secondary portal-doc" id="copy-judge-link">复制裁判直达链接</button>
-    {% if is_comp_admin %}<a class="btn secondary" href="/events/{{ comp.id }}/setup">编辑赛事信息 →</a>{% endif %}
+    {% if is_comp_admin %}<a class="btn secondary" href="/events/{{ comp.id }}/setup">编辑赛事信息 →</a>
+      <a class="btn secondary" href="/events/{{ comp.id }}/direct-links" target="_blank">各角色免密直达链接 →</a>{% endif %}
   </div>
   <p class="muted" style="margin:10px 0 0;font-size:.88rem">
     观众无需登录：<a href="/public/schedule?comp={{ comp.id }}">赛程</a> ·
