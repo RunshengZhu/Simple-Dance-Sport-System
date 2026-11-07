@@ -135,6 +135,8 @@ def init_db():
         conn.execute("ALTER TABLE events ADD COLUMN run_seq INTEGER")
     if "announced" not in ev_cols:
         conn.execute("ALTER TABLE events ADD COLUMN announced INTEGER DEFAULT 0")   # 播报标记（备忘）
+    if "team_mode" not in ev_cols:
+        conn.execute("ALTER TABLE events ADD COLUMN team_mode TEXT DEFAULT 'standard'")   # R73：项目团体计分模式（standard/freshman_half）
     # R71 组合语义：搭档姓名（展示列）。背番号仍一人一号（双人项目以男选手号为准，
     # 女伴名挂搭档列；单人项目留空）——计分/检录/晋级/唯一键全部不动。
     comp_cols = {r[1] for r in conn.execute("PRAGMA table_info(competitors)")}
@@ -142,6 +144,10 @@ def init_db():
         conn.execute("ALTER TABLE competitors ADD COLUMN partner TEXT DEFAULT ''")
     if "partner_unit" not in comp_cols:
         conn.execute("ALTER TABLE competitors ADD COLUMN partner_unit TEXT DEFAULT ''")   # R71h：搭档单位（跨单位对半拆分的数据基础）
+    if "role" not in comp_cols:
+        conn.execute("ALTER TABLE competitors ADD COLUMN role TEXT DEFAULT ''")            # R73：选手身份（新生/老生…，老带新计分用）
+    if "partner_role" not in comp_cols:
+        conn.execute("ALTER TABLE competitors ADD COLUMN partner_role TEXT DEFAULT ''")    # R73：搭档身份
     ec_cols = {r[1] for r in conn.execute("PRAGMA table_info(event_competitors)")}
     if "checked_in" not in ec_cols:
         conn.execute("ALTER TABLE event_competitors ADD COLUMN checked_in INTEGER DEFAULT 0")  # 检录

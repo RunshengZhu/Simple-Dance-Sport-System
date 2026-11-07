@@ -1133,6 +1133,8 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
         i_unit, i_proj = _col(h, "学校/单位", "单位", "unit"), _col(h, "项目编号", "project")
         i_partner = _col(h, "搭档姓名", "搭档", "partner")
         i_punit = _col(h, "搭档单位", "搭档学校", "partner_unit")
+        i_role = _col(h, "选手身份", "身份", "role")
+        i_prole = _col(h, "搭档身份", "partner_role")
         if i_num is None:
             raise HTTPException(status_code=400, detail="缺少列：背番号")
         no_partner = {}   # R71c：未填搭档的行——双人项目漏填预警（单人项目可忽略）；
@@ -1143,11 +1145,13 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
             nm = r[i_name].strip() if i_name is not None and i_name < len(r) else ""
             pt = r[i_partner].strip() if i_partner is not None and i_partner < len(r) else ""
             pu = r[i_punit].strip() if i_punit is not None and i_punit < len(r) else ""
+            rl = r[i_role].strip() if i_role is not None and i_role < len(r) else ""
+            prl = r[i_prole].strip() if i_prole is not None and i_prole < len(r) else ""
             conn.execute(
-                "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, partner_unit, unit) VALUES(?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, partner_unit, unit, role, partner_role) VALUES(?,?,?,?,?,?,?,?,?)",
                 (competition_id, num, (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else ""),
                  nm, pt, pu,
-                 r[i_unit].strip() if i_unit is not None and i_unit < len(r) else ""))
+                 r[i_unit].strip() if i_unit is not None and i_unit < len(r) else "", rl, prl))
             if not pt:
                 no_partner[num] = nm
             count += 1
@@ -1176,6 +1180,7 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
         i_round, i_dance = _col(h, "轮次", "round"), _col(h, "舞种", "dances")
         i_type = _col(h, "评分类型", "scoring_type")
         i_adv = _col(h, "晋级人数", "advancement_count")
+        i_tmode = _col(h, "团体计分", "team_mode")
         i_comps = _col(h, "参赛选手", "competitors")
         if i_code is None or i_round is None:
             raise HTTPException(status_code=400, detail="缺少列：场次编号/轮次")
@@ -1193,13 +1198,18 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
                 if i_dance is not None and i_dance < len(r) else []
             stype_idx = next((k for k, v in enumerate(tail)
                               if v.upper() in ("SKATING", "MARK", "SCORE")), None)
+            tmode_raw = (r[i_tmode].strip() if i_tmode is not None and i_tmode < len(r) else "")
             if stype_idx is not None:
-                # 结构化切分（多值列溢出场景）
+                # 结构化切分（多值列溢出场景）：锚点后依次 晋级人数、团体计分（可选）、参赛选手…
                 dances = tail[:stype_idx]
                 styp = {"SKATING": "顺位法", "MARK": "Mark制", "SCORE": "评分制"}[tail[stype_idx].upper()]
                 rest = tail[stype_idx + 1:]
                 adv = int(rest[0]) if rest and rest[0].isdigit() else 0
-                comps = rest[1:]
+                rest = rest[1:]
+                if rest and rest[0] and not rest[0].isdigit():
+                    tmode_raw = rest[0]   # 团体计分列溢出到多值区（标准/老带新）
+                    rest = rest[1:]
+                comps = rest
             else:
                 # 无锚点：未溢出的行按列位置解析（兼容旧口径：中文/未知评分类型落 Mark制）
                 styp = (r[i_type].strip().upper() if i_type is not None and i_type < len(r) else "SKATING")
@@ -1211,17 +1221,21 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
                          .replace("，", ",").split(",") if x.strip()]
             conn.execute("INSERT OR IGNORE INTO projects(competition_id, code, name) VALUES(?,?,?)",
                          (competition_id, proj, proj))
+            # R73：tmode_raw 已在多值区解析时确定（团体计分列或溢出吞出）——此处不得重复赋值覆盖
+            tmode = "freshman_half" if ("老带新" in tmode_raw or tmode_raw == "freshman_half") else "standard"
             cur = conn.execute(
-                "INSERT OR IGNORE INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count)"
-                " VALUES(?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode)"
+                " VALUES(?,?,?,?,?,?,?,?)",
                 (competition_id, code,
                  r[i_name].strip() if i_name is not None and i_name < len(r) else code,
-                 proj, rnd, styp, adv))
+                 proj, rnd, styp, adv, tmode))
             # R71：INSERT OR IGNORE 被忽略（重传同场次）时 lastrowid 是连接上一次插入的 rowid
             # （可能是 judges/competitors 的），不能信任——显式回查为准（重导幂等的正确路径）
             row = conn.execute("SELECT id FROM events WHERE competition_id=? AND code=?",
                                (competition_id, code)).fetchone()
             ev_id = row["id"] if row else cur.lastrowid
+            if row:
+                conn.execute("UPDATE events SET team_mode=? WHERE id=?", (tmode, ev_id))   # 重导同步计分模式
             for k, dname in enumerate(dances):
                 conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (ev_id, dname, k))
             if rnd == 1:
@@ -1243,16 +1257,16 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
 
 _CSV_TEMPLATES = {
     # 表头与 api_import 解析列一致（FR 导入列名），各带 2 行示例
-    "competitors": [["背番号", "项目编号", "姓名", "搭档姓名", "搭档单位", "学校/单位"],
-                    ["101", "S-CHA", "张三", "李四", "", "北京舞蹈学院"],
-                    ["101", "S-JSW", "张三", "王五", "", "北京舞蹈学院"],
-                    ["102", "S-JSW", "李四", "", "", "上海体育大学"]],
+    "competitors": [["背番号", "项目编号", "姓名", "搭档姓名", "搭档单位", "选手身份", "搭档身份", "学校/单位"],
+                    ["101", "S-CHA", "张三", "李四", "", "新生", "新生", "北京舞蹈学院"],
+                    ["101", "S-JSW", "张三", "王五", "", "新生", "新生", "北京舞蹈学院"],
+                    ["102", "S-JSW", "李四", "", "", "新生", "", "上海体育大学"]],
     "judges": [["裁判ID", "姓名"],
                ["J1", "王裁判"],
                ["J2", "李裁判"]],
-    "schedule": [["场次编号", "场次名称", "项目编号", "轮次", "舞种", "评分类型", "晋级人数", "参赛选手"],
-                 ["S-CHA-R1", "恰恰初赛", "S-CHA", "1", "恰恰", "SKATING", "12", "101,102,103"],
-                 ["S-CHA-R2", "恰恰决赛", "S-CHA", "2", "恰恰", "SKATING", "0", "101,102"]],
+    "schedule": [["场次编号", "场次名称", "项目编号", "轮次", "舞种", "评分类型", "晋级人数", "团体计分", "参赛选手"],
+                 ["S-CHA-R1", "恰恰初赛", "S-CHA", "1", "恰恰", "SKATING", "12", "标准", "101,102,103"],
+                 ["S-CHA-R2", "恰恰决赛", "S-CHA", "2", "恰恰", "SKATING", "0", "标准", "101,102"]],
 }
 
 
@@ -1981,8 +1995,14 @@ def _team_standings(competition_id, published_only):
     if published_only:
         q += " AND published=1"
     events = db.rows(conn.execute(q + " ORDER BY project_code, round, code", (competition_id,)))
-    unit_by_number = {c["number"]: (c["unit"] or "") for c in db.rows(conn.execute(
-        "SELECT number, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+    # R73 成员信息：每组合行含主报成员与搭档的 (单位, 身份)。身份含「老」=老生（老带新项目老生不计分）。
+    comp_rows = db.rows(conn.execute(
+        "SELECT number, project_code, unit, partner_unit, role, partner_role FROM competitors WHERE competition_id=?",
+        (competition_id,)))
+    member_by_key = {}
+    for c in comp_rows:
+        member_by_key[(c["project_code"], c["number"])] = c
+    unit_by_number = {c["number"]: (c["unit"] or "") for c in comp_rows}
     # 口径（用户拍板 2026-08-29）：团体总分只统计每个项目的「最末轮」——
     # 该项目有结果的轮次中轮号最大者（初赛名次不计，仅最终名次赋分）。
     with_results = []
@@ -1998,10 +2018,37 @@ def _team_standings(competition_id, published_only):
     for ev, data in with_results:
         if ev["round"] != last_round[ev["project_code"]]:
             continue
+        pr = ev["project_code"]
+        mode = ev["team_mode"] if "team_mode" in ev.keys() else "standard"
         for r in data.get("overall_results") or []:
             num = str(r["competitor_number"])
-            entries.append({"project": ev["project_code"], "number": num,
-                            "unit": unit_by_number.get(num, ""), "rank": r["rank"]})
+            m = member_by_key.get((pr, num))
+            u1 = (m["unit"] or "").strip() if m else unit_by_number.get(num, "")
+            u2 = (m["partner_unit"] or "").strip() if m else ""
+            r1 = (m["role"] or "").strip() if m else ""
+            r2 = (m["partner_role"] or "").strip() if m else ""
+            if mode == "freshman_half":
+                # 老带新：均分只在新生成员间进行（各 0.5），老生权重 0；身份未填按新生处理
+                parts = []
+                if not ("老" in r1):
+                    parts.append((u1, 0.5))
+                if u2 and not ("老" in r2):
+                    parts.append((u2 if u2 else u1, 0.5))
+                if not parts:
+                    continue   # 全老生组合：不计分
+                # 同单位聚合（两新生同院 → 该院 1.0）
+                agg = {}
+                for u, sh in parts:
+                    agg[u] = agg.get(u, 0.0) + sh
+                for u, sh in agg.items():
+                    entries.append({"project": pr, "number": num, "unit": u, "rank": r["rank"], "share": sh})
+            else:
+                # 标准（含跨学院平分）：组合总分均分给成员——同学院聚合=全额，跨学院各 0.5
+                agg = {u1: 1.0}
+                if u2 and u2 != u1:
+                    agg = {u1: 0.5, u2: 0.5}
+                for u, sh in agg.items():
+                    entries.append({"project": pr, "number": num, "unit": u, "rank": r["rank"], "share": sh})
     from core.team_standing import compute_team_standings
     return compute_team_standings(entries)
 
@@ -2076,8 +2123,14 @@ async def team_standings_admin_page(request: Request, competition_id: int, best:
     events = db.rows(conn.execute(
         "SELECT * FROM events WHERE competition_id=? AND status IN ('calculated','published') ORDER BY project_code, round, code",
         (competition_id,)))
-    unit_by_number = {c["number"]: (c["unit"] or "") for c in db.rows(conn.execute(
-        "SELECT number, unit FROM competitors WHERE competition_id=?", (competition_id,)))}
+    # R73 成员信息：每组合行含主报成员与搭档的 (单位, 身份)。身份含「老」=老生（老带新项目老生不计分）。
+    comp_rows = db.rows(conn.execute(
+        "SELECT number, project_code, unit, partner_unit, role, partner_role FROM competitors WHERE competition_id=?",
+        (competition_id,)))
+    member_by_key = {}
+    for c in comp_rows:
+        member_by_key[(c["project_code"], c["number"])] = c
+    unit_by_number = {c["number"]: (c["unit"] or "") for c in comp_rows}
     entries = []
     last_round = {}
     with_results = []

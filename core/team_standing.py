@@ -50,7 +50,12 @@ def compute_team_standings(entries, points=None, best_n=None):
         if not unit:
             unattributed.append(e)
             continue
-        pts = entry_points(e.get("rank"), table)
+        # R73 计分逻辑扩展：share 条目权重（跨学院平分 0.5/0.5、老带新生侧减半）——默认 1 向后兼容
+        try:
+            share = float(e.get("share", 1) or 1)
+        except (TypeError, ValueError):
+            share = 1.0
+        pts = entry_points(e.get("rank"), table) * share
         bucket = per_unit_project.setdefault(unit, {})
         bucket.setdefault(str(e.get("project") or ""), []).append(
             (e.get("rank"), str(e.get("number") or ""), pts))
