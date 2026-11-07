@@ -15,9 +15,9 @@
 <div class="card" style="border-color:var(--gold)">
   <b>下一流程：晋级确认</b>
   <p class="muted" style="margin:6px 0 0">
-    {% for h in adv_hints %}{{ h.code }}（第{{ h.round }}轮）已发布、设了晋级名额；{% endfor %}
-    请到 <a href="/events/{{ comp.id }}/advancement?project={{ adv_hints[0].project }}&round={{ adv_hints[0].round }}">晋级确认</a>
-    生成并确认晋级名单，选手将自动回填到下一轮。</p>
+    {{ adv_hints | map(attribute='code') | join('、') }} 已发布且设晋级名额——
+    到 <a href="/events/{{ comp.id }}/advancement?project={{ adv_hints[0].project }}&round={{ adv_hints[0].round }}">晋级确认</a>
+    生成预案并确认，选手将自动回填到下一轮。</p>
 </div>
 {% endif %}
 <h1>结果中心 · {{ comp.name }}</h1>
@@ -31,25 +31,38 @@
     <span class="muted" id="bulk-pub-msg"></span>
   </p>
   {% endif %}
-  <p>
-    各角色免密直达链接：<a class="btn secondary" href="/events/{{ comp.id }}/direct-links" target="_blank">查看</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    选手信息：<a class="btn secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    口令表：<a class="btn secondary" href="/api/events/{{ comp.id }}/credentials">CSV</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    赛程总表（出场抽签）：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">导出</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    赛程表：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">打印</a>
-    <a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=markdown">Markdown</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    导出（已发布场次）：
-    <a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=markdown">Markdown</a>
-    <a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=html" target="_blank">打印 HTML</a>
-    {% if not request.state.is_compadmin %}<button class="btn secondary" id="backup-btn">数据库备份</button>{% endif %}
-    <a class="btn secondary" href="/events/{{ comp.id }}/team-standings">团体总分榜</a>
-    <span id="backup-msg" class="muted"></span>
-  </p>
+  <div class="mat-list">
+    <div class="mat-item"><span class="mat-label">赛程总表（出场抽签）</span>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">打印</a>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=csv">CSV</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">赛程表（秩序册）</span>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">打印</a>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=markdown">Markdown</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">选手信息（可回导）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">口令表（含直达链接）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/credentials">CSV</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">成绩（已发布场次）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports?format=markdown" target="_blank">Markdown</a>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports?format=html" target="_blank">打印</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">免密直达链接</span>
+      <a class="btn small secondary" href="/events/{{ comp.id }}/direct-links" target="_blank">查看</a>
+    </div>
+    {% if not request.state.is_compadmin %}
+    <div class="mat-item"><span class="mat-label">数据库备份</span>
+      <button class="btn small secondary" id="backup-btn">立即备份</button>
+      <span id="backup-msg" class="muted"></span>
+    </div>
+    {% endif %}
+    <div class="mat-item"><span class="mat-label">团体总分榜</span>
+      <a class="btn small secondary" href="/events/{{ comp.id }}/team-standings">查看</a>
+    </div>
+  </div>
   <p class="muted">仅「已发布」场次进入公开页/大屏/导出与团体总分（D5 发布制）；评分明细仅本页可见（FR-E4）。</p>
 </div>
 {% for p in payload %}

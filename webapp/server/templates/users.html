@@ -41,10 +41,8 @@
 <div class="card">
   <h2>创建账号</h2>
   <div class="grid c2">
-    <div>
-      <label>用户名（登录用，唯一）</label><input id="u-username" placeholder="如 marshal-wang">
-      <label>显示名（检录记录署名）</label><input id="u-display" placeholder="如 检录员-王老师">
-    </div>
+    <div><label>用户名（登录用，唯一）</label><input id="u-username" placeholder="如 marshal-wang"></div>
+    <div><label>显示名（检录记录署名）</label><input id="u-display" placeholder="如 检录员-王老师"></div>
     <div>
       <label>角色</label>
       <select id="u-role">
@@ -52,11 +50,13 @@
         <option value="host">主持人</option>
         <option value="compadmin">赛事管理员（需绑定赛事）</option>
       </select>
-      <label>赛事 ID（仅赛事管理员需要，填赛事管理页列表里的 ID）</label><input id="u-compid" placeholder="如 20">
-      <label>初始口令</label><input id="u-password" type="password" placeholder="至少 6 位">
+    </div>
+    <div><label>赛事 ID（仅赛事管理员需要，填赛事管理页列表里的 ID）</label><input id="u-compid" placeholder="如 20"></div>
+    <div><label>初始口令</label><input id="u-password" type="password" placeholder="至少 6 位"></div>
+    <div style="display:flex; align-items:flex-end; gap:12px; padding-bottom:2px">
+      <button class="btn" onclick="createUser()">创建账号</button><span id="u-msg"></span>
     </div>
   </div>
-  <p><button class="btn" onclick="createUser()">创建账号</button> <span id="u-msg"></span></p>
 </div>
 
 <h2>主持 / 检录账号</h2>

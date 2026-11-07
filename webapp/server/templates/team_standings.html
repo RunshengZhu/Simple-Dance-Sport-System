@@ -11,13 +11,14 @@
 {% block content %}
 <h1>团体总分榜（管理口径：全部已计算场次）</h1>
 <div class="card">
-  <p>口径（仅计各项目最末轮 · 名次赋分 9-7-6-5-4-3-2-1 · 跨单位归主报单位）·
-     每单位每项目计入：
-     {% for n in ["全部", "1", "2", "3"] %}
-       {% set bn = None if n == "全部" else (n | int) %}
-       <a class="btn secondary" href="?best={{ '' if n == '全部' else n }}">{{ n }}</a>
-     {% endfor %}
-     <span class="muted">当前：{{ "全部计入" if not best_n else "最佳 " ~ best_n ~ " 项" }}</span>
+  <p class="muted" style="margin:2px 0 10px">口径：仅计各项目最末轮 · 名次赋分 9-7-6-5-4-3-2-1 · 跨单位归主报单位。</p>
+  <p style="margin:2px 0">
+    <b>每单位每项目计入：</b>
+    {% for n in ["全部", "1", "2", "3"] %}
+      {% set bn = None if n == "全部" else (n | int) %}
+      <a class="btn small secondary" href="?best={{ '' if n == '全部' else n }}">{{ n }}</a>
+    {% endfor %}
+    <span class="muted" style="margin-left:8px">当前：{{ "全部计入" if not best_n else "最佳 " ~ best_n ~ " 项" }}</span>
   </p>
   <table>
     <tr><th>名次</th><th>单位</th><th class="num">总分</th><th class="num">计入条目</th><th>各项目得分</th></tr>

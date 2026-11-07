@@ -16,25 +16,33 @@
 
 <div class="card">
   <h2>数据与材料</h2>
-  <p>
-    赛程总表（出场抽签）：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">打印</a>
-    <a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=csv">CSV</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    赛程表：<a class="btn secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">全场打印</a>
-    <input id="unit-input" placeholder="按单位" style="max-width:130px">
-    <button class="btn secondary" id="unit-export" type="button">导出该单位</button>
-    <span class="muted" style="margin:0 10px">|</span>
-    选手信息：<a class="btn secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    成绩（已发布）：<a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=markdown" target="_blank">Markdown</a>
-    <a class="btn secondary" href="/api/events/{{ comp.id }}/exports?format=html" target="_blank">打印</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    团体总分：<a class="btn secondary" href="/events/{{ comp.id }}/team-standings">查看</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    各角色免密直达链接：<a class="btn secondary" href="/events/{{ comp.id }}/direct-links" target="_blank">查看</a>
-    <span class="muted" style="margin:0 10px">|</span>
-    口令表：<a class="btn secondary" href="/api/events/{{ comp.id }}/credentials">CSV</a>
-  </p>
+  <div class="mat-list">
+    <div class="mat-item"><span class="mat-label">赛程总表（出场抽签）</span>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">打印</a>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=csv">CSV</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">赛程表</span>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">全场打印</a>
+      <input id="unit-input" placeholder="按单位导出">
+      <button class="btn small secondary" id="unit-export" type="button">导出该单位</button>
+    </div>
+    <div class="mat-item"><span class="mat-label">选手信息（可回导）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">成绩（已发布场次）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports?format=markdown" target="_blank">Markdown</a>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports?format=html" target="_blank">打印</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">团体总分</span>
+      <a class="btn small secondary" href="/events/{{ comp.id }}/team-standings">查看</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">免密直达链接</span>
+      <a class="btn small secondary" href="/events/{{ comp.id }}/direct-links" target="_blank">查看</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">口令表（含直达链接）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/credentials">CSV</a>
+    </div>
+  </div>
   <p class="muted">成绩导出与团体总分仅含「已发布」场次；口令表含全部账号口令与免密直达链接，等同钥匙，请勿外传。</p>
 </div>
 

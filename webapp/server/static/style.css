@@ -97,6 +97,21 @@ tr.rank-1 td { background: var(--warn-soft); font-weight: 600; }
 .btn.danger { background: var(--card); color: var(--acc); border-color: var(--acc); }
 .btn.big { padding: 12px 22px; font-size: 1.05rem; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.small { padding: 4px 11px; font-size: .87rem; }
+
+/* ---- R78 材料清单：每组一行（名称 + 动作），不与相邻组挤行/断行 ---- */
+.mat-list { display: grid; gap: 7px 32px; margin: 6px 0; }
+@media (min-width: 1100px) { .mat-list { grid-template-columns: 1fr 1fr; } }
+.mat-list.onecol { grid-template-columns: 1fr !important; max-width: 780px; }
+.mat-item { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 32px; }
+.mat-item .mat-label { color: var(--muted); font-size: .9rem; flex: 0 0 9.5em; }
+.mat-item .btn.small { flex: none; }
+.mat-item input { max-width: 150px; }
+
+/* ---- R78 控制台进度矩阵：裁判列收紧，整表限宽不留半屏空白 ---- */
+#matrix { max-width: 560px; }
+#matrix th:first-child, #matrix td:first-child { width: 1%; white-space: nowrap; }
+#matrix td:not(:first-child) { white-space: nowrap; }
 input, select, textarea {
   font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--card); color: var(--txt); max-width: 100%;
