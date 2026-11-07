@@ -1098,17 +1098,25 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
         i_partner = _col(h, "搭档姓名", "搭档", "partner")
         if i_num is None:
             raise HTTPException(status_code=400, detail="缺少列：背番号")
-        for r in data_rows:
+        no_partner = {}   # R71c：未填搭档的行——双人项目漏填预警（单人项目可忽略）；
+        for r in data_rows:   # 补全后同背番号重导即覆盖恢复（REPLACE 幂等）
             num = r[i_num].strip()
             if not num:
                 continue
+            nm = r[i_name].strip() if i_name is not None and i_name < len(r) else ""
+            pt = r[i_partner].strip() if i_partner is not None and i_partner < len(r) else ""
             conn.execute(
                 "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, unit) VALUES(?,?,?,?,?,?)",
                 (competition_id, num, (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else ""),
-                 r[i_name].strip() if i_name is not None and i_name < len(r) else "",
-                 r[i_partner].strip() if i_partner is not None and i_partner < len(r) else "",
+                 nm, pt,
                  r[i_unit].strip() if i_unit is not None and i_unit < len(r) else ""))
+            if not pt:
+                no_partner[num] = nm
             count += 1
+        if no_partner:
+            preview = "、".join("{0} {1}".format(n, m) for n, m in list(no_partner.items())[:8])
+            more = " 等 {0} 行".format(len(no_partner)) if len(no_partner) > 8 else ""
+            problems.append("未填搭档（单人项目可忽略；双人项目请补齐后重新导入，背号不变即可覆盖）：{0}{1}".format(preview, more))
     elif kind == "judges":
         i_id, i_name = _col(h, "裁判ID", "裁判 ID", "judge"), _col(h, "姓名", "name")
         if i_id is None:
