@@ -1975,6 +1975,8 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
     ev, comp = _require_active_event(ceid)
     if ev["status"] != "scoring":
         raise HTTPException(status_code=400, detail="场次已关闭评分")
+    if dance not in dances_of(ceid):   # R82：舞种必须属于本场次——防自动化/误操作污染评分记录
+        raise HTTPException(status_code=400, detail="舞种不属于该场次")
     body = await request.json()
     roster_list = set(roster(ceid))
     checked = set(checked_roster(ceid))
