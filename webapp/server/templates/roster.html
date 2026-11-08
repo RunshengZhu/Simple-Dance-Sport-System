@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
+{% set autorefresh = true %}
+{% block cid %}{{ comp.id }}{% endblock %}
+{% block title %}名单 · {{ comp.name }}{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+{{ bar(comp, 'roster') }}
+<h1>名单 <span class="muted">{{ entries | length }} 条报项 · {{ judges | length }} 名裁判</span></h1>
+
+{% set by_proj = entries | groupby("project_code") %}
+{% for proj, rows in by_proj %}
+<div class="card">
+  <h2>{{ proj }} <span class="muted">{{ project_names.get(proj, proj) }}</span>
+    <span class="tag gray">{{ rows | length }} 条</span></h2>
+  <div class="tbl-scroll"><table>
+    <tr><th>背番号</th><th>选手姓名</th><th class="hm">单位</th><th class="hm">搭档</th><th class="hm">搭档单位</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td><b>{{ r.number }}</b></td><td>{{ r.name }}</td><td class="hm">{{ r.unit or "—" }}</td>
+      <td class="hm">{{ r.partner or "—" }}</td><td class="hm">{{ r.partner_unit or "" }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endfor %}
+{% if not entries %}
+<div class="card"><p class="muted">暂无报项数据——到「导入」页上传报名总表（CSV/Excel），保存后自动生成默认赛程。</p></div>
+{% endif %}
+
+<div class="card" id="judges">
+  <h2>裁判名单 <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/judges" style="float:right">下载 CSV</a></h2>
+  {% if judges %}
+  <table>
+    <tr><th>编号</th><th>姓名</th><th class="hm">单位（可选）</th></tr>
+    {% for j in judges %}
+    <tr><td><b>{{ j.code }}</b></td><td>{{ j.name }}</td><td class="hm">{{ j.unit or "—" }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">尚未导入裁判——到「导入」页上传（姓名必填、单位可选、编号自动分配）。</p>{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+{% endblock %}

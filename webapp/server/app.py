@@ -760,11 +760,11 @@ async def overview_page(request: Request, competition_id: int):
     else:
         phase = "比赛中"
     checklist = [
-        {"done": n_comp > 0, "label": "选手名单", "detail": f"{n_comp} 人", "href": f"/events/{competition_id}/import"},
-        {"done": n_judge > 0, "label": "裁判名单", "detail": f"{n_judge} 名", "href": f"/events/{competition_id}/import"},
+        {"done": n_comp > 0, "label": "报项名单", "detail": f"{n_comp} 条", "href": f"/events/{competition_id}/roster"},
+        {"done": n_judge > 0, "label": "裁判名单", "detail": f"{n_judge} 名", "href": f"/events/{competition_id}/roster#judges"},
         {"done": len(evs) > 0, "label": "赛程编排", "detail": f"{len(evs)} 场", "href": f"/events/{competition_id}/schedule"},
         {"done": (not pend) or (seq_set == len(pend) and seq_set > 0), "label": "出场顺序",
-         "detail": f"待赛 {len(pend)} 场 · 已排 {seq_set} 场", "href": f"/events/{competition_id}/schedule"},
+         "detail": f"待赛 {len(pend)} 场 · 已排 {seq_set} 场", "href": f"/events/{competition_id}/schedule#run-order-card"},
     ]
     actions = []
     if by["calculated"]:
@@ -789,6 +789,23 @@ async def overview_page(request: Request, competition_id: int):
                   "pending": by["pending"], "scoring": by["scoring"], "calculated": by["calculated"],
                   "published": by["published"]},
         "next_ev": next_ev, "setup_done": bool(comp["setup_done"])})
+
+
+@app.get("/events/{competition_id}/roster", response_class=HTMLResponse)
+async def roster_page(request: Request, competition_id: int):
+    """R81 名单页：报项名单（按项目分组）+ 裁判名单——总览「查看」的落点，数据随时可看。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    names = _project_display_names(conn, competition_id)
+    entries = db.rows(conn.execute(
+        "SELECT number, project_code, name, partner, partner_unit, unit FROM competitors WHERE competition_id=? "
+        "ORDER BY project_code, CAST(number AS INTEGER), number", (competition_id,)))
+    judges = db.rows(conn.execute(
+        "SELECT code, name, unit FROM judges WHERE competition_id=? ORDER BY code", (competition_id,)))
+    return templates.TemplateResponse(request, "roster.html", {
+        "request": request, "comp": comp, "entries": entries, "judges": judges,
+        "project_names": names})
 
 
 @app.get("/events/{competition_id}/import", response_class=HTMLResponse)
@@ -1302,19 +1319,100 @@ def _col(header_map, *names):
     return None
 
 
+@app.post("/api/events/{competition_id}/imports/file")
+async def api_import_file(competition_id: int, request: Request = None):
+    """R81 文件导入端点：xlsx（报名总表，读第一个工作表）或 CSV，base64 上传，统一走 api_import 同款解析。"""
+    require_admin(request)
+    _comp_or_404(competition_id)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="请求体须为 JSON")
+    import base64 as _b64
+    kind = str(body.get("kind") or "competitors")
+    try:
+        raw = _b64.b64decode(str(body.get("data_b64") or ""))
+    except Exception:
+        raise HTTPException(status_code=400, detail="文件数据无效")
+    if not raw:
+        raise HTTPException(status_code=400, detail="文件为空")
+    if raw[:4] == b"PK\x03\x04":   # xlsx（zip 容器）
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+            ws = wb.worksheets[0]
+            rows = [[("" if c is None else str(c).strip()) for c in row]
+                    for row in ws.iter_rows(values_only=True)]
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Excel 解析失败：" + str(e)[:80])
+        rows = [r for r in rows if any(x for x in r)]
+        if len(rows) < 2:
+            raise HTTPException(status_code=400, detail="表格至少需要表头和一行数据")
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        for r in rows:
+            w.writerow(r)
+        header, data_rows = _read_csv_body(buf.getvalue().encode("utf-8-sig"))
+    else:
+        header, data_rows = _read_csv_body(raw)
+    conn = db.get_db()
+    count, problems = _import_rows_impl(conn, competition_id, kind, header, data_rows)
+    conn.commit()
+    sse.bus.publish(competition_id, "schedule_changed")
+    auto = _maybe_auto_schedule(conn, competition_id) if kind == "competitors" and count else None
+    if auto is not None:
+        conn.commit()
+    resp = {"ok": True, "imported": count, "problems": problems}
+    if auto is not None:
+        resp["auto_schedule"] = {"created": auto, "note": "已按报项自动生成默认赛程，请到「赛程编排」检查调整"}
+    return resp
+
+
+_CSV_TEMPLATES = {
+    # R81 唯一格式：报名总表（表头驱动解析；项目名称列用于自动赛程的场次名与导出）
+    "competitors": [["项目编号", "项目名称", "背番号", "选手姓名", "选手单位", "搭档姓名", "搭档单位"],
+                    ["P01", "新人组平四单项", "101", "张三", "北京舞蹈学院", "李四", "北京舞蹈学院"],
+                    ["P01", "新人组平四单项", "102", "王五", "上海体育大学", "", ""],
+                    ["P02", "新人组华尔兹单项", "103", "赵六", "北京舞蹈学院", "钱七", "中央民族大学"]],
+    "judges": [["姓名", "单位"],
+               ["王裁判", "北京舞蹈学院"],
+               ["李裁判", ""]],
+    "schedule": [["场次编号", "场次名称", "项目编号", "轮次", "舞种", "评分类型", "晋级人数", "团体计分", "参赛选手"],
+                 ["S-CHA-R1", "恰恰初赛", "S-CHA", "1", "恰恰", "SKATING", "12", "标准", "101,102,103"],
+                 ["S-CHA-R2", "恰恰决赛", "S-CHA", "2", "恰恰", "SKATING", "0", "标准", "101,102"]],
+}
+
+
 @app.post("/api/events/{competition_id}/imports/{kind}")
 async def api_import(competition_id: int, kind: str, request: Request = None):
     require_admin(request)
     _comp_or_404(competition_id)
     raw = await request.body()
     header, data_rows = _read_csv_body(raw)
-    h = {name: i for i, name in enumerate(header)}
     conn = db.get_db()
+    count, problems = _import_rows_impl(conn, competition_id, kind, header, data_rows)
+    conn.commit()
+    sse.bus.publish(competition_id, "schedule_changed")
+    auto = _maybe_auto_schedule(conn, competition_id) if kind == "competitors" and count else None
+    if auto is not None:
+        conn.commit()
+    resp = {"ok": True, "imported": count, "problems": problems}
+    if auto is not None:
+        resp["auto_schedule"] = {"created": auto, "note": "已按报项自动生成默认赛程，请到「赛程编排」检查调整"}
+    return resp
+
+
+def _import_rows_impl(conn, competition_id, kind, header, data_rows):
+    """R81：从 api_import 提取的解析核心（header 驱动），CSV 与 xlsx 文件端点共用。"""
+    h = {name: i for i, name in enumerate(header)}
     count, problems = 0, []
 
     if kind == "competitors":
-        i_num, i_name = _col(h, "背番号", "number"), _col(h, "姓名", "name")
-        i_unit, i_proj = _col(h, "学校/单位", "单位", "unit"), _col(h, "项目编号", "project")
+        i_num, i_name = _col(h, "背番号", "number"), _col(h, "姓名", "选手姓名", "name")
+        i_unit, i_proj = _col(h, "学校/单位", "单位", "选手单位", "unit"), _col(h, "项目编号", "project")
+        i_pname = _col(h, "项目名称", "project_name")
         i_partner = _col(h, "搭档姓名", "搭档", "partner")
         i_punit = _col(h, "搭档单位", "搭档学校", "partner_unit")
         i_role = _col(h, "选手身份", "身份", "role")
@@ -1326,6 +1424,7 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
             num = r[i_num].strip()
             if not num:
                 continue
+            proj = (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else "")
             nm = r[i_name].strip() if i_name is not None and i_name < len(r) else ""
             pt = r[i_partner].strip() if i_partner is not None and i_partner < len(r) else ""
             pu = r[i_punit].strip() if i_punit is not None and i_punit < len(r) else ""
@@ -1333,9 +1432,13 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
             prl = r[i_prole].strip() if i_prole is not None and i_prole < len(r) else ""
             conn.execute(
                 "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, partner_unit, unit, role, partner_role) VALUES(?,?,?,?,?,?,?,?,?)",
-                (competition_id, num, (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else ""),
-                 nm, pt, pu,
+                (competition_id, num, proj, nm, pt, pu,
                  r[i_unit].strip() if i_unit is not None and i_unit < len(r) else "", rl, prl))
+            pn = r[i_pname].strip() if i_pname is not None and i_pname < len(r) else ""
+            if pn and proj:   # R81：报项唯一格式携带项目名称——自动赛程/导出用它生成场次名
+                conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
+                             "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
+                             (competition_id, proj, pn))
             if not pt:
                 no_partner[num] = nm
             count += 1
@@ -1344,15 +1447,25 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
             more = " 等 {0} 行".format(len(no_partner)) if len(no_partner) > 8 else ""
             problems.append("未填搭档（单人项目可忽略；双人项目请补齐后重新导入，背号不变即可覆盖）：{0}{1}".format(preview, more))
     elif kind == "judges":
+        # R81 极简格式：姓名必填，编号可省略（自动 J1..Jn 续号），单位可选
         i_id, i_name = _col(h, "裁判ID", "裁判 ID", "judge"), _col(h, "姓名", "name")
-        if i_id is None:
-            raise HTTPException(status_code=400, detail="缺少列：裁判ID")
+        i_unit = _col(h, "单位", "学校/单位", "unit")
+        if i_name is None:
+            raise HTTPException(status_code=400, detail="缺少列：姓名")
+        seq = conn.execute("SELECT COUNT(*) c FROM judges WHERE competition_id=?",
+                           (competition_id,)).fetchone()["c"]
         for r in data_rows:
-            code = r[i_id].strip()
-            if not code:
+            nm = r[i_name].strip() if i_name is not None and i_name < len(r) else ""
+            if not nm:
                 continue
-            conn.execute("INSERT OR REPLACE INTO judges(competition_id, code, name) VALUES(?,?,?)",
-                         (competition_id, code, r[i_name].strip() if i_name is not None and i_name < len(r) else ""))
+            code = r[i_id].strip() if i_id is not None and i_id < len(r) else ""
+            if not code:
+                seq += 1
+                code = "J{0}".format(seq)
+            unit = r[i_unit].strip() if i_unit is not None and i_unit < len(r) else ""
+            conn.execute("INSERT INTO judges(competition_id, code, name, unit) VALUES(?,?,?,?) "
+                         "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name, unit=excluded.unit",
+                         (competition_id, code, nm, unit))
             count += 1
     elif kind == "schedule":
         # R71 一致性：参赛选手列引用的背号必须已在选手库——坏号不入上场名单（防幽灵号），
@@ -1434,24 +1547,83 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
             count += 1
     else:
         raise HTTPException(status_code=400, detail="未知导入类型")
+    return count, problems
+
+
+def _maybe_auto_schedule(conn, competition_id):
+    """R81：报项导入后赛程为空则自动生成默认编排；已有赛程则不动（管理员赛程页可手动重建）。"""
+    n = conn.execute("SELECT COUNT(*) c FROM events WHERE competition_id=?",
+                     (competition_id,)).fetchone()["c"]
+    if n:
+        return None
+    return _auto_schedule(conn, competition_id, replace=False)
+
+
+def _auto_schedule(conn, competition_id, replace=False):
+    """R81 按报项自动生成默认赛程：每项目 ≤8 人单场决赛（顺位法）；>8 人预赛（Mark制、晋级 8）+ 决赛（顺位法）。
+    场次名取报项里的项目名称（projects 表），舞种默认华尔兹（管理员可在赛程编排调整）。
+    replace=True 重建：仅当全部场次待赛（未开场/未发布）时允许。"""
+    evs = db.rows(conn.execute("SELECT id, status FROM events WHERE competition_id=?", (competition_id,)))
+    if evs:
+        if not replace:
+            raise HTTPException(status_code=400, detail="已有赛程；如需按报项重建请确认覆盖")
+        if any(e["status"] != "pending" for e in evs):
+            raise HTTPException(status_code=409, detail="存在已开场/已发布场次，不能重建赛程（先退回并清理）")
+        for e in evs:
+            conn.execute("DELETE FROM event_dances WHERE event_id=?", (e["id"],))
+            conn.execute("DELETE FROM event_competitors WHERE event_id=?", (e["id"],))
+        conn.execute("DELETE FROM events WHERE competition_id=?", (competition_id,))
+    projs = db.rows(conn.execute(
+        "SELECT DISTINCT c.project_code AS code, p.name AS name FROM competitors c "
+        "LEFT JOIN projects p ON p.competition_id=c.competition_id AND p.code=c.project_code "
+        "WHERE c.competition_id=? ORDER BY c.project_code", (competition_id,)))
+    known = {r["number"] for r in db.rows(conn.execute(
+        "SELECT number FROM competitors WHERE competition_id=?", (competition_id,)))}
+    created = 0
+    for p in projs:
+        code = p["code"]
+        if not code:
+            continue
+        nums = sorted({r["number"] for r in db.rows(conn.execute(
+            "SELECT number FROM competitors WHERE competition_id=? AND project_code=?",
+            (competition_id, code)))}, key=lambda x: (len(x), x))
+        pname = (p["name"] or "").strip() or code
+        plan = ([("R1", "预赛", "Mark制", 8, nums), ("R2", "决赛", "顺位法", 0, [])]
+                if len(nums) > 8 else [("R1", "决赛", "顺位法", 0, nums)])
+        for suffix, rnd_name, styp, adv, roster in plan:
+            cur = conn.execute(
+                "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode) "
+                "VALUES(?,?,?,?,?,?,?, 'standard')",
+                (competition_id, "{0}-{1}".format(code, suffix),
+                 "{0} {1}".format(pname, rnd_name), code, int(suffix[1]), styp, adv))
+            conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,0)", (cur.lastrowid, "华尔兹"))
+            if roster:   # 预赛/单场决赛带全名单；多轮制的决赛轮留空（晋级确认后自动回填）
+                for n in roster:
+                    if n in known:
+                        conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
+                                     (cur.lastrowid, n))
+            created += 1
+    return created
+
+
+@app.post("/api/events/{competition_id}/schedule/auto")
+async def api_schedule_auto(competition_id: int, request: Request = None):
+    """R81 按报项自动生成默认赛程（replace=true 重建，仅全部待赛时可）。"""
+    s = require_admin(request)
+    _comp_or_404(competition_id)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    conn = db.get_db()
+    created = _auto_schedule(conn, competition_id, replace=bool(body.get("replace")))
     conn.commit()
+    if created:   # R81 重建是破坏性动作（清出场序/舞种/计分模式）——必须留痕
+        _audit(_actor_name(s), "schedule_auto", "comp:{0}".format(competition_id),
+               "按报项生成默认赛程 {0} 场{1}".format(created, "（覆盖重建）" if body.get("replace") else ""),
+               _client_ip(request))
     sse.bus.publish(competition_id, "schedule_changed")
-    return {"ok": True, "imported": count, "problems": problems}
-
-
-_CSV_TEMPLATES = {
-    # 表头与 api_import 解析列一致（FR 导入列名），各带 2 行示例
-    "competitors": [["背番号", "项目编号", "姓名", "搭档姓名", "搭档单位", "选手身份", "搭档身份", "学校/单位"],
-                    ["101", "S-CHA", "张三", "李四", "", "新生", "新生", "北京舞蹈学院"],
-                    ["101", "S-JSW", "张三", "王五", "", "新生", "新生", "北京舞蹈学院"],
-                    ["102", "S-JSW", "李四", "", "", "新生", "", "上海体育大学"]],
-    "judges": [["裁判ID", "姓名"],
-               ["J1", "王裁判"],
-               ["J2", "李裁判"]],
-    "schedule": [["场次编号", "场次名称", "项目编号", "轮次", "舞种", "评分类型", "晋级人数", "团体计分", "参赛选手"],
-                 ["S-CHA-R1", "恰恰初赛", "S-CHA", "1", "恰恰", "SKATING", "12", "标准", "101,102,103"],
-                 ["S-CHA-R2", "恰恰决赛", "S-CHA", "2", "恰恰", "SKATING", "0", "标准", "101,102"]],
-}
+    return {"ok": True, "created": created}
 
 
 @app.get("/api/templates/{kind}")
@@ -2788,23 +2960,88 @@ async def api_credentials_export(competition_id: int, request: Request = None):
                              headers={"Content-Disposition": 'attachment; filename="credentials-{0}.csv"'.format(competition_id)})
 
 
+def _project_display_names(conn, competition_id):
+    """R81 项目展示名：projects 表（报项导入写入）优先（等于编号的占位名不算），回退赛程事件名（最末轮）。"""
+    pname = {r["code"]: (r["name"] or "").strip() for r in db.rows(conn.execute(
+        "SELECT code, name FROM projects WHERE competition_id=?", (competition_id,)))}
+    evname = {}
+    for r in db.rows(conn.execute(
+            "SELECT project_code, name FROM events WHERE competition_id=? ORDER BY round DESC",
+            (competition_id,))):
+        evname.setdefault(r["project_code"], r["name"])
+    out = {}
+    for code in set(list(pname.keys()) + list(evname.keys())):
+        real = (pname.get(code) or "").strip()
+        if real == code:   # 占位名（旧赛程导入曾以编号充名）不作为展示名
+            real = ""
+        out[code] = real or evname.get(code) or code
+    return out
+
+
 @app.get("/api/events/{competition_id}/exports/competitors")
 async def api_competitors_export(competition_id: int, request: Request = None, format: str = "csv"):
-    """R71f 选手信息导出（管理端）：与导入模板同列序，可直接回导（导出→修改→再导入闭环）。"""
+    """R81 报名总表导出（唯一格式，可回导）：CSV 7 列 / Excel 双工作表（报名总表 + 跨单位搭档）。
+    导出 → 修改 → 再导入 即覆盖更新（表头驱动解析，旧 6 列 CSV 亦兼容）。"""
     require_admin(request)
     comp = _comp_or_404(competition_id)
     conn = db.get_db()
     rows = db.rows(conn.execute(
         "SELECT number, project_code, name, partner, partner_unit, unit FROM competitors WHERE competition_id=? "
         "ORDER BY project_code, CAST(number AS INTEGER), number", (competition_id,)))
+    names = _project_display_names(conn, competition_id)
+    header = ["项目编号", "项目名称", "背番号", "选手姓名", "选手单位", "搭档姓名", "搭档单位"]
+
+    def row_cells(r):
+        return [r["project_code"], names.get(r["project_code"], r["project_code"]), r["number"],
+                r["name"] or "", r["unit"] or "", r["partner"] or "", r["partner_unit"] or ""]
+
+    if format == "xlsx":
+        try:
+            import openpyxl
+        except ImportError:
+            raise HTTPException(status_code=500, detail="服务器未安装 openpyxl，无法导出 Excel")
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "报名总表"
+        ws.append(header)
+        for r in rows:
+            ws.append(row_cells(r))
+        ws2 = wb.create_sheet("跨单位搭档")
+        ws2.append(header)
+        for r in rows:
+            pu = (r["partner_unit"] or "").strip()
+            if pu and pu != (r["unit"] or "").strip():
+                ws2.append(row_cells(r))
+        buf = io.BytesIO()
+        wb.save(buf)
+        from urllib.parse import quote as _q
+        fname = _q("报名总表-系统导出.xlsx")
+        return Response(
+            content=buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=registration-{0}.xlsx; filename*=UTF-8''{1}".format(competition_id, fname)})
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["背番号", "项目编号", "姓名", "搭档姓名", "搭档单位", "学校/单位"])
+    w.writerow(header)
     for r in rows:
-        w.writerow([r["number"], r["project_code"], r["name"], r["partner"] or "",
-                    r["partner_unit"] or "", r["unit"] or ""])
-    return PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8",
+        w.writerow(row_cells(r))
+    return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="competitors-{0}.csv"'.format(competition_id)})
+
+
+@app.get("/api/events/{competition_id}/exports/judges")
+async def api_judges_export(competition_id: int, request: Request = None):
+    """R81 裁判名单导出（裁判ID,姓名,单位）——可改后回导（姓名必填，编号可自动分配）。"""
+    require_admin(request)
+    _comp_or_404(competition_id)
+    conn = db.get_db()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["裁判ID", "姓名", "单位"])
+    for j in db.rows(conn.execute(
+            "SELECT code, name, unit FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+        w.writerow([j["code"], j["name"] or "", j["unit"] or ""])
+    return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": 'attachment; filename="judges-{0}.csv"'.format(competition_id)})
 
 
 @app.get("/api/public/events/{competition_id}/exports/schedule")

@@ -13,9 +13,9 @@
 
 <div class="wiz-steps" id="wiz-steps">
   <div class="wstep" data-s="1"><i>1</i>赛事信息</div>
-  <div class="wstep" data-s="2"><i>2</i>导入选手</div>
+  <div class="wstep" data-s="2"><i>2</i>报项导入</div>
   <div class="wstep" data-s="3"><i>3</i>导入裁判</div>
-  <div class="wstep" data-s="4"><i>4</i>导入赛程</div>
+  <div class="wstep" data-s="4"><i>4</i>生成赛程</div>
   <div class="wstep" data-s="5"><i>5</i>工作人员</div>
   <div class="wstep" data-s="6"><i>✓</i>完成</div>
 </div>
@@ -33,21 +33,18 @@
   <p><button class="btn secondary" id="wz-save">保存赛事信息</button> <span id="wz-msg" class="ok"></span></p>
   <div class="wiz-nav">
     <span class="muted">接下来的 4 步完成参赛数据与工作人员准备，全部就绪后即可开赛。</span>
-    <button class="btn" data-go="2">下一步：导入选手 →</button>
+    <button class="btn" data-go="2">下一步：报项导入 →</button>
   </div>
 </section>
 
-<!-- 步骤 2/3/4：导入类（模板变量渲染三份） -->
+<!-- 步骤 2/3：报项/裁判导入（CSV / Excel 同一格式） -->
 {% set import_steps = [
-  ("2", "导入选手名单", "competitors",
-   "背番号,项目编号,姓名,学校/单位",
-   "一人报多个项目请填多行；集体舞以 T 编号报名（队名填姓名列）"),
+  ("2", "报项导入（报名总表）", "competitors",
+   "项目编号,项目名称,背番号,选手姓名,选手单位,搭档姓名,搭档单位",
+   "唯一数据格式（CSV/Excel 均可）：导入后自动生成默认赛程；修改后重传同背番号即覆盖更新；一人多项目填多行，集体舞以 T 编号报名（队名填姓名列）"),
   ("3", "导入裁判名单", "judges",
-   "裁判ID,姓名",
-   "建议 5 或 7 名（顺位法按多数票计算名次）；裁判 ID 即裁判登录时的编号"),
-  ("4", "导入赛程", "schedule",
-   "场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手",
-   "评分类型填 SKATING（顺位法）/ MARK（Mark 制）/ SCORE（评分制）；预赛填晋级人数（如 6），决赛填 0；决赛轮参赛选手可留空，晋级确认后自动回填"),
+   "姓名,单位（可选）",
+   "有姓名即可：单位可选、编号自动分配（J1…Jn）；建议 5 或 7 名（顺位法按多数票计算名次）"),
 ] %}
 {% for s in import_steps %}
 <section class="card wiz-pane" data-s="{{ s[0] }}" hidden>
@@ -55,7 +52,7 @@
   <p class="muted">{{ s[4] }}</p>
   <div class="wiz-upload">
     <a class="btn secondary" href="/api/templates/{{ s[2] }}">① 下载模板</a>
-    <label>② 选择填好的 CSV<input type="file" class="wiz-file" data-kind="{{ s[2] }}" accept=".csv"></label>
+    <label>② 选择填好的文件（CSV / Excel）<input type="file" class="wiz-file" data-kind="{{ s[2] }}" accept=".csv,.xlsx"></label>
     <button class="btn wiz-upload-btn" data-kind="{{ s[2] }}">③ 上传导入</button>
   </div>
   <p class="wiz-result" data-kind="{{ s[2] }}"></p>
@@ -66,6 +63,23 @@
   </div>
 </section>
 {% endfor %}
+
+<!-- 步骤 4：生成赛程（报项导入已自动生成，可重建/覆盖） -->
+<section class="card wiz-pane" data-s="4" hidden>
+  <h2>生成赛程</h2>
+  <p class="muted">报项导入后已自动按项目生成默认编排：<b>≤8 人</b>单场决赛（顺位法）；<b>＞8 人</b>预赛（Mark 制、取前 8）+ 决赛（顺位法）。
+    报项有增删后可在此重新生成覆盖，再到「赛程编排」逐场调整舞种与出场顺序。</p>
+  <div class="wiz-upload">
+    <button class="btn" id="wiz-gen-schedule">① 生成 / 重建默认赛程</button>
+    <a class="btn secondary" href="/events/{{ comp.id }}/schedule" target="_blank">② 前往赛程编排调整 →</a>
+  </div>
+  <p class="wiz-result" data-kind="schedule"></p>
+  <p class="wiz-count" data-kind="schedule"></p>
+  <div class="wiz-nav">
+    <button class="btn secondary" data-go="3">← 上一步</button>
+    <button class="btn" data-go="5">下一步 →</button>
+  </div>
+</section>
 
 <!-- 步骤 5 -->
 <section class="card wiz-pane" data-s="5" hidden>
@@ -110,7 +124,7 @@
 {% block scripts %}
 var CID = {{ comp.id }};
 var KINDS = ["competitors", "judges", "schedule"];
-var LABELS = {competitors: "选手", judges: "裁判", schedule: "场次"};
+var LABELS = {competitors: "报项", judges: "裁判", schedule: "场次"};
 // 接口返回键：场次计数在 events 字段（schedule 是页面 data-kind 名）
 var SKEY = {competitors: "competitors", judges: "judges", schedule: "events"};
 
@@ -157,23 +171,38 @@ document.querySelectorAll('.wiz-upload-btn').forEach(function (b) {
     var kind = b.dataset.kind;
     var file = document.querySelector('.wiz-file[data-kind="' + kind + '"]').files[0];
     var out = document.querySelector('.wiz-result[data-kind="' + kind + '"]');
-    if (!file) { out.textContent = '请先选择 CSV 文件'; out.className = 'wiz-result err'; return; }
+    if (!file) { out.textContent = '请先选择 CSV 或 Excel 文件'; out.className = 'wiz-result err'; return; }
     out.textContent = '上传中…'; out.className = 'wiz-result';
-    file.text().then(function (text) {
-      fetch('/api/events/' + CID + '/imports/' + kind,
-            {method: 'POST', headers: {'Content-Type': 'text/csv; charset=utf-8'}, body: text})
-      .then(async function (r) {
-        var d = null; try { d = await r.json(); } catch (e) {}
-        if (!r.ok) throw new Error((d && d.detail) || ('HTTP ' + r.status));
-        var msg = '导入成功 ' + d.imported + ' 条';
-        if ((d.problems || []).length) msg += '；问题行：' + d.problems.join('；');
-        out.textContent = msg;
-        out.className = (d.problems || []).length ? 'wiz-result err' : 'wiz-result ok';
-        loadStatus();
-      }).catch(function (e) { out.textContent = e.message; out.className = 'wiz-result err'; });
-    });
+    file.arrayBuffer().then(function (buf) {
+      var bytes = new Uint8Array(buf), bin = '';
+      for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return fetch('/api/events/' + CID + '/imports/file', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({kind: kind, data_b64: btoa(bin), filename: file.name})});
+    }).then(async function (r) {
+      var d = null; try { d = await r.json(); } catch (e) {}
+      if (!r.ok) throw new Error((d && d.detail) || ('HTTP ' + r.status));
+      var msg = '导入成功 ' + d.imported + ' 条';
+      if ((d.problems || []).length) msg += '；问题行：' + d.problems.join('；');
+      if (d.auto_schedule) msg += '；' + d.auto_schedule.note;
+      out.textContent = msg;
+      out.className = (d.problems || []).length ? 'wiz-result err' : 'wiz-result ok';
+      loadStatus();
+    }).catch(function (e) { out.textContent = e.message; out.className = 'wiz-result err'; });
   });
 });
+
+/* R81 步骤④：生成/重建默认赛程 */
+document.getElementById('wiz-gen-schedule').onclick = function () {
+  var btn = this, out = document.querySelector('.wiz-result[data-kind="schedule"]');
+  btnFlow(btn, function () {
+    return api('POST', '/api/events/' + CID + '/schedule/auto', {replace: true});
+  }, function (r) { return '已生成 ' + r.created + ' 场默认赛程'; }).then(function () {
+    out.textContent = '已生成默认赛程——建议到「赛程编排」核对舞种与出场顺序。';
+    out.className = 'wiz-result ok';
+    loadStatus();
+  }).catch(function () { out.textContent = '生成失败（存在已开场/已发布场次时不可重建）'; out.className = 'wiz-result err'; });
+};
 
 function esc(s) {
   var d = document.createElement('div');

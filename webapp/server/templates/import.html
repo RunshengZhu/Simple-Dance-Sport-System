@@ -7,45 +7,95 @@
 {% block content %}
 {{ bar(comp, 'import') }}
 <h1>数据导入</h1>
-<p class="muted">支持 UTF-8 CSV。列格式见 README（选手：背番号,项目编号,姓名,学校/单位；赛程：场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手；裁判：裁判ID,姓名）。集体队伍以 T 编号作为选手行导入（FR-I1）。</p>
-{% for kind, label in [("competitors","选手"),("judges","裁判"),("schedule","赛程")] %}
+<p class="muted"><b>报名总表是唯一数据格式</b>（CSV / Excel 均可，列：项目编号,项目名称,背番号,选手姓名,选手单位,搭档姓名,搭档单位）。
+  「下载当前数据」导出的文件即是此格式——修改后直接上传即可覆盖更新；报项导入后系统按项目自动生成默认赛程，到「赛程编排」调整。
+  赛程表 / 选手信息 / 单位赛程属于查看与维护材料，见「总览 → 数据与材料」。</p>
+
 <div class="card">
-  <h2>{{ label }}导入</h2>
+  <h2>报项导入（报名总表）</h2>
   <div class="row">
-    <input type="file" id="f-{{ kind }}" accept=".csv">
-    <button class="btn" onclick="doImport('{{ kind }}')">上传导入</button>
-    <a class="btn secondary" href="/api/templates/{{ kind }}" target="_blank">下载模板</a>
-    <span id="msg-{{ kind }}" class="muted"></span>
+    <input type="file" id="f-competitors" accept=".csv,.xlsx">
+    <button class="btn" id="go-competitors">上传导入（覆盖更新）</button>
+    <a class="btn secondary" href="/api/templates/competitors" target="_blank">下载空模板</a>
+    <span id="msg-competitors" class="muted"></span>
   </div>
-  <div id="rep-{{ kind }}"></div>
+  <p class="muted" style="margin:6px 0 0">当前数据：
+    <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">下载 CSV</a>
+    <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=xlsx">下载 Excel（报名总表-系统导出）</a>
+    <span class="muted">同背番号+同项目重传即覆盖该行；修改单位/搭档后重传即可更正</span></p>
+  <div id="rep-competitors"></div>
 </div>
-{% endfor %}
+
+<div class="card">
+  <h2>裁判导入</h2>
+  <div class="row">
+    <input type="file" id="f-judges" accept=".csv,.xlsx">
+    <button class="btn" id="go-judges">上传导入</button>
+    <a class="btn secondary" href="/api/templates/judges" target="_blank">下载空模板</a>
+    <span id="msg-judges" class="muted"></span>
+  </div>
+  <p class="muted" style="margin:6px 0 0">只需极少信息：<b>姓名必填</b>，单位可选，编号自动分配（J1…Jn）。
+    当前数据：<a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/judges">下载 CSV</a>
+    <span class="muted">同名重传即覆盖；建议 5 或 7 名（顺位法按多数票计）</span></p>
+  <div id="rep-judges"></div>
+</div>
+
+<div class="card">
+  <h2>赛程：自动生成，无需导入</h2>
+  <p class="muted">报项导入后，系统按每个项目的报项人数自动产生默认编排：
+    <b>≤8 人</b>单场决赛（顺位法）；<b>＞8 人</b>预赛（Mark 制、取前 8）+ 决赛（顺位法）。
+    场次名取报名总表中的「项目名称」，舞种默认华尔兹——都可在「赛程编排」页逐场调整、拖动出场顺序。</p>
+  <p>
+    <a class="btn secondary" href="/events/{{ comp.id }}/schedule">前往赛程编排 →</a>
+    <button class="btn" id="gen-auto">按当前报项生成默认赛程</button>
+    <span id="msg-gen" class="muted"></span>
+  </p>
+</div>
+
 <div class="grid c2">
-  <div class="card"><a class="btn" href="/events/{{ comp.id }}/schedule">下一步：赛程管理 →</a></div>
-  <div class="card"><a class="btn secondary" href="/events/{{ comp.id }}/teams">单位与队伍 →</a></div>
+  <div class="card"><a class="btn" href="/events/{{ comp.id }}/schedule">下一步：赛程编排 →</a></div>
+  <div class="card"><a class="btn secondary" href="/events/{{ comp.id }}/roster">查看名单 →</a></div>
 </div>
 {% endblock %}
 {% block scripts %}
 async function doImport(kind) {
   var f = document.getElementById('f-' + kind).files[0];
+  var btn = document.getElementById('go-' + kind);
   var el = document.getElementById('msg-' + kind);
   var box = document.getElementById('rep-' + kind);
-  if (!f) { el.textContent = '请选择 CSV 文件'; return; }
-  el.textContent = '导入中…';
-  var text = await f.text();
-  var resp = await fetch('/api/events/{{ comp.id }}/imports/' + kind, {
-    method: 'POST', headers: {'Content-Type': 'text/csv; charset=utf-8'}, body: text});
-  var data = await resp.json();
-  if (!resp.ok) {
-    el.textContent = '失败：' + (data.detail || ('HTTP ' + resp.status));
-    el.className = 'err'; box.innerHTML = ''; return;
-  }
-  el.textContent = '导入成功：' + data.imported + ' 条';
-  el.className = 'ok-text';
-  var problems = data.problems || [];
-  box.innerHTML = problems.length
-    ? '<p class="err">校验报告：' + problems.length + ' 条问题</p><table><tr><th>#</th><th>问题</th></tr>' +
-      problems.map(function (p, i) { return '<tr><td>' + (i+1) + '</td><td>' + p + '</td></tr>'; }).join('') + '</table>'
-    : '<p class="ok-text">校验报告：无问题 ✓</p>';
+  if (!f) { el.textContent = '请选择 CSV 或 Excel 文件'; el.className = 'err'; return; }
+  el.className = 'muted';
+  try {
+    await btnFlow(btn, async function () {
+    var buf = await f.arrayBuffer();
+    var b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+    var r = await fetch('/api/events/{{ comp.id }}/imports/file', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({kind: kind, data_b64: b64, filename: f.name})});
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    el.textContent = '导入成功：' + data.imported + ' 条';
+    el.className = 'ok-text';
+    var problems = data.problems || [];
+    box.innerHTML = problems.length
+      ? '<p class="err">校验报告：' + problems.length + ' 条</p><table><tr><th>#</th><th>问题</th></tr>' +
+        problems.map(function (p, i) { return '<tr><td>' + (i+1) + '</td><td>' + p + '</td></tr>'; }).join('') + '</table>'
+      : '<p class="ok-text">校验报告：无问题 ✓</p>';
+    if (data.auto_schedule) toast(data.auto_schedule.note, 'ok', 4200);
+    return data;
+    });
+  } catch (e) { /* btnFlow 已 toast 错误 */ }
 }
+document.getElementById('go-competitors').addEventListener('click', function () { doImport('competitors'); });
+document.getElementById('go-judges').addEventListener('click', function () { doImport('judges'); });
+document.getElementById('gen-auto').addEventListener('click', async function () {
+  var btn = this;
+  if (!confirm('按当前报项生成默认赛程？已有待赛场次将被重建（已开场/已发布场次不受影响时才允许）。')) return;
+  try {
+    var r = await btnFlow(btn, function () {
+      return api('POST', '/api/events/{{ comp.id }}/schedule/auto', {replace: true});
+    }, function (res) { return '已生成 ' + res.created + ' 场默认赛程'; });
+    setTimeout(function () { location.href = '/events/{{ comp.id }}/schedule'; }, 800);
+  } catch (e) {}
+});
 {% endblock %}

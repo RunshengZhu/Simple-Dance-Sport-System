@@ -140,6 +140,9 @@ def init_db():
     user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "pw_plain" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN pw_plain TEXT DEFAULT ''")   # R76c：口令留档（设置/重置时同步记录，供口令表导出；与直达链接同库同等保护）
+    judge_cols = {r[1] for r in conn.execute("PRAGMA table_info(judges)")}
+    if "unit" not in judge_cols:
+        conn.execute("ALTER TABLE judges ADD COLUMN unit TEXT DEFAULT ''")   # R81：裁判单位（可选项；报项导入极简格式）
     # R71 组合语义：搭档姓名（展示列）。背番号仍一人一号（双人项目以男选手号为准，
     # 女伴名挂搭档列；单人项目留空）——计分/检录/晋级/唯一键全部不动。
     comp_cols = {r[1] for r in conn.execute("PRAGMA table_info(competitors)")}

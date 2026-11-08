@@ -8,6 +8,11 @@
 {{ bar(comp, 'schedule') }}
 <h1>赛程编排 <span class="muted">{{ tree | length }} 个项目</span></h1>
 
+<p style="margin:0 0 14px">
+  <button class="btn secondary" id="gen-schedule-btn">按报项生成默认赛程</button>
+  <span class="muted">报项有增删后可重建默认编排（≤8 人单场决赛；＞8 人预赛取前 8 + 决赛）；舞种默认华尔兹，生成后可逐场调整</span>
+</p>
+
 <div class="card">
   <h2>数据与材料</h2>
   <div class="mat-list">
@@ -221,6 +226,17 @@ async function delEvent(code) {
     softReload();
   } catch (e) { toast(e.message, 'err'); }
 }
+
+/* ---- R81 按报项生成默认赛程 ---- */
+document.getElementById('gen-schedule-btn').addEventListener('click', async function () {
+  if (!confirm('按当前报项重建默认赛程？\n（已有待赛场次将被重建；已开场/已发布的场次不受影响时才允许）')) return;
+  try {
+    await btnFlow(this, function () {
+      return api('POST', '/api/events/' + window.CID + '/schedule/auto', {replace: true});
+    }, function (r) { return '已生成 ' + r.created + ' 场默认赛程'; });
+    setTimeout(softReload, 600);
+  } catch (e) { /* btnFlow 已 toast */ }
+});
 
 /* ---- 状态筛选（F5） ---- */
 document.querySelectorAll('.sf-btn').forEach(function (btn) {
