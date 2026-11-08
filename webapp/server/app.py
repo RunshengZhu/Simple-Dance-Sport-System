@@ -652,15 +652,16 @@ async def direct_login(competition_id: int, role: str, username: str, token: str
         conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, 'admin', ?, ?)",
                      (token_new, u["id"], competition_id))
         conn.commit()
-        target = "/events/" + str(competition_id) + ("/setup" if not comp["setup_done"] else "/overview")
+        target = "/events/" + str(competition_id) + "/overview"   # R81b：直达统一落总览（未完成向导由总览提示卡引导）
         resp = RedirectResponse(target, status_code=302)
     elif role in ("host", "marshal"):
         u = db.rowdict(conn.execute(
             "SELECT id FROM users WHERE username=? AND role=? AND active=1", (username, role)).fetchone())
         if not u:
             raise HTTPException(status_code=403, detail="账号不存在或已停用")
-        conn.execute("INSERT INTO sessions(token, role, user_id) VALUES(?, ?, ?)",
-                     (token_new, role, u["id"]))
+        # R81b：直达链接按所点赛事绑定会话（comp_id）——否则 staff 页回落「最新激活赛」会串赛
+        conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, ?, ?, ?)",
+                     (token_new, role, u["id"], competition_id))
         conn.commit()
         resp = RedirectResponse("/staff", status_code=302)
     elif role == "compadmin":   # 赛事管理员账号（users.role=compadmin，会话角色记 admin）
