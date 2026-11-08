@@ -67,6 +67,8 @@
   <p>
     <button class="btn" onclick="doPub(this, {{ p.ev.id }}, {{ 0 if p.ev.published else 1 }})">{{ "撤回发布" if p.ev.published else "发布（进大屏）" }}</button>
     <button class="btn secondary" onclick="doCalc(this, {{ p.ev.id }})">手动重算</button>
+    <a class="btn secondary" href="/api/competition-events/{{ p.ev.id }}/export/results" title="桌面端同格式：排名/选手编号/姓名/总分/平均分">结果表</a>
+    <a class="btn secondary" href="/api/competition-events/{{ p.ev.id }}/export/details" title="桌面端同格式：选手×裁判×舞种原始打分">明细表</a>
     <button class="btn secondary" onclick="toggleDetail(this, {{ p.ev.id }})">原始打分</button>
     <button class="btn secondary" onclick="toggleSkating(this, {{ p.ev.id }})">滑冰判定表</button>
   </p>

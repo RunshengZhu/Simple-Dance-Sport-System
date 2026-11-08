@@ -2651,11 +2651,70 @@ async def api_detail_exports(competition_id: int, request: Request = None, forma
     raise HTTPException(status_code=400, detail="未知格式")
 
 
+def _compadmin_event_guard(request, ev):
+    """R83：赛事管理员只能访问自己赛事的场次数据（ceid 路径中间件无法识别赛事归属，显式钳制）。"""
+    ca = _compadmin(request)
+    if ca and ev["competition_id"] != ca["comp_id"]:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+
+
+@app.get("/api/competition-events/{ceid}/export/results")
+async def api_event_results_export(ceid: int, request: Request = None):
+    """R83 结果表导出（与桌面端同格式）：排名,选手编号,选手姓名,总分,平均分。
+    总分=顺位法名次总分；平均分=Mark制/评分制得分（顺位法为空）。"""
+    require_admin(request)
+    ev = _event_or_404(ceid)
+    _compadmin_event_guard(request, ev)
+    res = load_results(ceid)
+    if not res:
+        raise HTTPException(status_code=400, detail="该场次尚未计算")
+    names = _display_names(db.get_db(), ev["competition_id"], ev["project_code"])
+    overall = sorted(res.get("overall_results", []), key=lambda x: (x.get("rank") or 9999, str(x.get("competitor_number"))))
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["排名", "选手编号", "选手姓名", "总分", "平均分"])
+    for r in overall:
+        num = str(r.get("competitor_number", ""))
+        w.writerow([r.get("rank", ""), num, names.get(num, ""),
+                    r.get("total_score", ""), r.get("score", "")])
+    return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": 'attachment; filename="results-{0}.csv"'.format(ev["code"])})
+
+
+@app.get("/api/competition-events/{ceid}/export/details")
+async def api_event_details_export(ceid: int, request: Request = None):
+    """R83 明细表导出（与桌面端同格式）：选手编号,选手姓名,舞种,裁判ID,裁判姓名,分数/名次。
+    每行 = 选手 × 裁判 × 舞种的原始打分（顺位法为名次，Mark制为标记，评分制为分值）。"""
+    require_admin(request)
+    ev = _event_or_404(ceid)
+    _compadmin_event_guard(request, ev)
+    conn = db.get_db()
+    rows = db.rows(conn.execute(
+        "SELECT judge_code, competitor_number, dance_name, mark, placement FROM score_records "
+        "WHERE event_id=? ORDER BY dance_name, CAST(competitor_number AS INTEGER), competitor_number, judge_code",
+        (ceid,)))
+    names = _display_names(conn, ev["competition_id"], ev["project_code"])
+    judge_name = {j["code"]: (j["name"] or j["code"]) for j in db.rows(conn.execute(
+        "SELECT code, name FROM judges WHERE competition_id=?", (ev["competition_id"],)))}
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["选手编号", "选手姓名", "舞种", "裁判ID", "裁判姓名", "分数/名次"])
+    for r in rows:
+        num = str(r["competitor_number"])
+        value = r["placement"] if r["placement"] is not None else r["mark"]
+        w.writerow([num, names.get(num, ""), r["dance_name"], r["judge_code"],
+                    judge_name.get(r["judge_code"], r["judge_code"]),
+                    "" if value is None else value])
+    return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": 'attachment; filename="details-{0}.csv"'.format(ev["code"])})
+
+
 @app.get("/api/competition-events/{ceid}/detail-scores")
 async def api_detail_scores(ceid: int, request: Request = None):
     """FR-E4 评分明细：仅管理端。返回每裁判×每选手原始打分。"""
     require_admin(request)
     ev = _event_or_404(ceid)
+    _compadmin_event_guard(request, ev)
     rows = db.rows(db.get_db().execute(
         "SELECT judge_code, competitor_number, dance_name, mark, placement FROM score_records WHERE event_id=? ORDER BY dance_name, competitor_number, judge_code",
         (ceid,)))
