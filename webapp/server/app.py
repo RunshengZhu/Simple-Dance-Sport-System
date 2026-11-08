@@ -1902,6 +1902,34 @@ async def api_calculate(ceid: int, request: Request = None):
 _auto_calc_notes = {}   # R85：自动计算失败的可见化（ceid -> 原因），progress API 暴露给控制台
 
 
+@app.post("/api/events/{competition_id}/reset-scoring")
+async def api_reset_scoring(competition_id: int, request: Request = None):
+    """R86 恢复初始状态（赛事管理员能力）：清除本赛事全部评分/成绩/晋级回填/检录，
+    所有场次回到待赛；保留报名名单、赛程定义（名称/舞种/制式/晋级名额/团体计分）、出场顺序、
+    裁判与工作人员、直达链接与口令。用于测试后清理或比赛重赛。破坏性操作——记审计。"""
+    s = require_admin(request)
+    _comp_or_404(competition_id)
+    conn = db.get_db()
+    evs = db.rows(conn.execute("SELECT id, round FROM events WHERE competition_id=?", (competition_id,)))
+    ids = [e["id"] for e in evs]
+    multi_round_ids = [e["id"] for e in evs if e["round"] >= 2]
+    for eid in ids:
+        conn.execute("DELETE FROM score_records WHERE event_id=?", (eid,))
+        conn.execute("DELETE FROM results WHERE event_id=?", (eid,))
+        conn.execute("UPDATE event_competitors SET checked_in=0, checked_by=NULL, checked_at=NULL WHERE event_id=?", (eid,))
+    for eid in multi_round_ids:   # 第 2 轮及以后的名单来自晋级回填——初始态应为空
+        conn.execute("DELETE FROM event_competitors WHERE event_id=?", (eid,))
+    conn.execute("UPDATE events SET status='pending', published=0, announced=0 WHERE competition_id=?",
+                 (competition_id,))
+    for eid in ids:
+        _auto_calc_notes.pop(eid, None)
+    conn.commit()
+    _audit(_actor_name(s), "reset_scoring", "comp:{0}".format(competition_id),
+           "恢复初始状态：清除 {0} 场的评分/成绩/晋级回填/检录".format(len(ids)), _client_ip(request))
+    sse.bus.publish(competition_id, "schedule_changed", {"reset": True})
+    return {"ok": True, "events_reset": len(ids)}
+
+
 def _auto_calculate_if_ready(ev, comp):
     if ev["status"] != "scoring":
         return False

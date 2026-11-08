@@ -53,6 +53,9 @@
       <span id="backup-msg" class="muted"></span>
     </div>
     {% endif %}
+    <div class="mat-item"><span class="mat-label">恢复初始状态</span>
+      <button class="btn small danger" id="reset-btn">清除全部评分与成绩</button>
+    </div>
     <div class="mat-item"><span class="mat-label">团体总分榜</span>
       <a class="btn small secondary" href="/events/{{ comp.id }}/team-standings">查看</a>
     </div>
@@ -165,5 +168,15 @@ document.getElementById('backup-btn')?.addEventListener('click', async function 
     var r = await api('POST', '/api/backup', {});
     document.getElementById('backup-msg').textContent = '已备份：' + r.path;
   } catch (e) { document.getElementById('backup-msg').textContent = e.message; }
+});
+/* R86 恢复初始状态：清除全部评分/成绩/晋级回填/检录，场次回待赛（保留名单/赛程/出场序） */
+document.getElementById('reset-btn')?.addEventListener('click', async function () {
+  var btn = this;
+  if (!confirm('确认清除本赛事全部评分、成绩、晋级回填与检录记录？\n所有场次将回到「待开始」，名单/赛程/出场顺序保留。\n此操作不可撤销，建议先点「立即备份」。')) return;
+  if (!confirm('再次确认：这是破坏性操作，点击「确定」立即执行。')) return;
+  await btnFlow(btn, function () {
+    return api('POST', '/api/events/' + window.CID + '/reset-scoring', {});
+  }, function (r) { return '已恢复初始状态（' + r.events_reset + ' 场回到待开始）'; });
+  setTimeout(softReload, 800);
 });
 {% endblock %}
