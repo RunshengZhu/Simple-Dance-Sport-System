@@ -1394,10 +1394,11 @@ async def api_import_file(competition_id: int, request: Request = None):
 
 _CSV_TEMPLATES = {
     # R81 唯一格式：报名总表（表头驱动解析；项目名称列用于自动赛程的场次名与导出）
-    "competitors": [["项目编号", "项目名称", "背番号", "选手姓名", "选手单位", "搭档姓名", "搭档单位"],
-                    ["P01", "新人组平四单项", "101", "张三", "北京舞蹈学院", "李四", "北京舞蹈学院"],
-                    ["P01", "新人组平四单项", "102", "王五", "上海体育大学", "", ""],
-                    ["P02", "新人组华尔兹单项", "103", "赵六", "北京舞蹈学院", "钱七", "中央民族大学"]],
+    "competitors": [["项目编号", "项目名称", "背番号", "选手姓名", "选手单位", "搭档姓名", "搭档单位",
+                     "选手身份", "搭档身份"],
+                    ["P01", "新人组平四单项", "101", "张三", "北京舞蹈学院", "李四", "北京舞蹈学院", "新生", "新生"],
+                    ["P01", "新人组平四单项", "102", "王五", "上海体育大学", "", "", "新生"],
+                    ["P02", "老带新组伦巴单项", "103", "赵六", "北京舞蹈学院", "钱七", "中央民族大学", "老带新", "新生"]],
     "judges": [["姓名", "单位"],
                ["王裁判", "北京舞蹈学院"],
                ["李裁判", ""]],
@@ -3103,20 +3104,22 @@ def _project_display_names(conn, competition_id):
 
 @app.get("/api/events/{competition_id}/exports/competitors")
 async def api_competitors_export(competition_id: int, request: Request = None, format: str = "csv"):
-    """R81 报名总表导出（唯一格式，可回导）：CSV 7 列 / Excel 双工作表（报名总表 + 跨单位搭档）。
+    """R87 报名总表导出（唯一格式，可回导）：CSV/Excel 9 列（含扩展字段 选手身份/搭档身份，如 新生/老带新）/ Excel 双工作表（报名总表 + 跨单位搭档）。
     导出 → 修改 → 再导入 即覆盖更新（表头驱动解析，旧 6 列 CSV 亦兼容）。"""
     require_admin(request)
     comp = _comp_or_404(competition_id)
     conn = db.get_db()
     rows = db.rows(conn.execute(
-        "SELECT number, project_code, name, partner, partner_unit, unit FROM competitors WHERE competition_id=? "
-        "ORDER BY project_code, CAST(number AS INTEGER), number", (competition_id,)))
+        "SELECT number, project_code, name, partner, partner_unit, unit, role, partner_role FROM competitors "
+        "WHERE competition_id=? ORDER BY project_code, CAST(number AS INTEGER), number", (competition_id,)))
     names = _project_display_names(conn, competition_id)
-    header = ["项目编号", "项目名称", "背番号", "选手姓名", "选手单位", "搭档姓名", "搭档单位"]
+    header = ["项目编号", "项目名称", "背番号", "选手姓名", "选手单位", "搭档姓名", "搭档单位",
+              "选手身份", "搭档身份"]
 
     def row_cells(r):
         return [r["project_code"], names.get(r["project_code"], r["project_code"]), r["number"],
-                r["name"] or "", r["unit"] or "", r["partner"] or "", r["partner_unit"] or ""]
+                r["name"] or "", r["unit"] or "", r["partner"] or "", r["partner_unit"] or "",
+                r["role"] or "", r["partner_role"] or ""]
 
     if format == "xlsx":
         try:
