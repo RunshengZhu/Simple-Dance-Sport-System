@@ -101,8 +101,7 @@ def publish_event(ceid, label, announce=False):
         c, o = req("POST", f"/api/competition-events/{ceid}/publish", {})
     must(c, f"{label} 发布", o)
     if announce:
-        req("POST", "/api/login", {"role": "host", "username": "demo-host",
-                                   "password": "DemoHost2026"}, sess="host")
+        req("POST", "/api/login", {"role": "admin", "password": ADMIN_PW}, sess="host")
         must(*req("POST", f"/api/competition-events/{ceid}/announce",
                   {"announced": True}, sess="host"), f"{label} 标记已播报")
 
@@ -120,6 +119,10 @@ def main():
     c, o = req("GET", "/api/events")
     cid = next(e["id"] for e in json.loads(o)["events"] if e["name"] == COMP_NAME)
     must(*req("POST", f"/api/events/{cid}/activate", {}), "激活示例赛事")   # 数据构建依赖激活态
+    import atexit
+    atexit.register(lambda: (req("POST", f"/api/events/{cid}/deactivate", {}),
+                             print("演示赛已对观众隐藏（active=0）——无论构建成败，不占用公开默认位")))
+    # R85：让位动作随进程退出无条件执行（此前构建中途失败会跳过 deactivate，演示赛整天空激活抢公开默认位）
 
     # 演示专用账号（幂等：已存在则忽略；赛事管理员须绑定本赛事）
     for uname, upw, urole in DEMO_STAFF:
@@ -164,8 +167,7 @@ def main():
     # ---- P1 标准舞预赛：全检录 → 7 裁判 → 自动算分 → 发布 → 晋级确认回填决赛 ----
     must(*req("POST", f"/api/competition-events/{ids['P1']}/open",
               {"roster": ["1%02d" % i for i in range(1, 13)]}), "P1 开场")
-    req("POST", "/api/login", {"role": "marshal", "username": "demo-checkin",
-                               "password": "DemoCheckin2026"}, sess="marshal")
+    req("POST", "/api/login", {"role": "admin", "password": ADMIN_PW}, sess="marshal")   # R85：总管理员代行检录
     must(*req("POST", f"/api/competition-events/{ids['P1']}/checkin",
               {"numbers": ["1%02d" % i for i in range(1, 13)], "state": True}, sess="marshal"), "P1 全检录 12/12")
     submit_skating(ids["P1"], "华尔兹", ["1%02d" % i for i in range(1, 13)])
@@ -180,8 +182,7 @@ def main():
               {"numbers": prop, "state": True}, sess="marshal"), "P1F 全检录 6/6")
     submit_skating(ids["P1F"], "华尔兹", prop)
     must(*req("POST", f"/api/competition-events/{ids['P1F']}/publish", {}), "P1F 发布")
-    req("POST", "/api/login", {"role": "host", "username": "demo-host",
-                               "password": "DemoHost2026"}, sess="host")
+    req("POST", "/api/login", {"role": "admin", "password": ADMIN_PW}, sess="host")   # R85：总管理员代行播报
     must(*req("POST", f"/api/competition-events/{ids['P1F']}/announce",
               {"announced": True}, sess="host"), "P1F 标记已播报")
 
@@ -204,8 +205,7 @@ def main():
         must(*req("PUT", f"/api/judge/competition-events/{ids['S1']}/dances/{urllib.parse.quote('集体舞')}/sheet",
                   {"values": scores}, sess="judge"), f"J{j} 提交 S1 评分")
     must(*req("POST", f"/api/competition-events/{ids['S1']}/publish", {}), "S1 发布")
-    req("POST", "/api/login", {"role": "host", "username": "demo-host",
-                               "password": "DemoHost2026"}, sess="host")
+    req("POST", "/api/login", {"role": "admin", "password": ADMIN_PW}, sess="host")   # R85：总管理员代行播报
     must(*req("POST", f"/api/competition-events/{ids['S1']}/announce",
               {"announced": True}, sess="host"), "S1 标记已播报")
 
@@ -216,11 +216,7 @@ def main():
               {"numbers": ["2%02d" % i for i in range(1, 9)], "state": True}, sess="marshal"), "L1 部分检录 8/12")
 
     # ---- W1 保持待开始（控制台「开启评分」演示位） ----
-    # R71d 收尾：存在其他激活赛事（真实赛事）时演示赛主动让位——
-    # 全局公开入口（_active_competition 取 id 最大的激活赛事）不能被每日演示赛压住
-    req("POST", f"/api/events/{cid}/deactivate", {})
-    print("演示赛已对观众隐藏（active=0，公开赛事列表不出现）")
-    print("\n示例赛事就绪 cid=%s 场次=%s" % (cid, ids))
+    print("示例赛事就绪 cid=%s 场次=%s" % (cid, ids))
 
 
 if __name__ == "__main__":

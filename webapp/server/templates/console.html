@@ -165,7 +165,8 @@ async function refreshProgress() {
     });
     t.innerHTML += tr + '</tr>';
   });
-  document.getElementById('complete-tag').textContent = p.complete ? '已收齐（自动计算）' : '未收齐';
+  document.getElementById('complete-tag').textContent = p.complete ? '已收齐（自动计算）'
+    : (p.calc_note ? '未收齐 · 自动计算失败：' + p.calc_note : '未收齐');
 }
 refreshProgress();
 connectSSE('/api/events/' + CID + '/stream', {

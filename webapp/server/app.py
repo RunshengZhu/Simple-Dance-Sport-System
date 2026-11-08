@@ -105,7 +105,26 @@ _COMPCID_DENY_PREFIXES = ("/api/users", "/api/import/json", "/api/import/db",
 @app.middleware("http")
 async def compadmin_scope(request: Request, call_next):
     """R54 赛事管理员作用域中间件：全局能力拒绝；带 competition_id 的路径仅放行自己的赛事；
-    /events 列表页与 /users、/files 页重定向到自己的赛程编排页。"""
+    /events 列表页与 /users、/files 页重定向到自己的赛程编排页。
+    R85：/api/competition-events/{ceid} 路径不含赛事 ID（中间件正则覆盖不到）——在此统一解析
+    场次归属并对所有登录会话钳制（compadmin 按绑定赛事、host/marshal/judge 按会话绑定赛事或当前激活赛）。"""
+    p_ce = request.url.path
+    m_ce = re.match(r"^/api/(?:judge/)?competition-events/(\d+)", p_ce)
+    if m_ce:
+        s = _session(request)
+        if s:
+            row = db.get_db().execute("SELECT competition_id FROM events WHERE id=?",
+                                      (int(m_ce.group(1)),)).fetchone()
+            if row:
+                ev_cid = row[0]
+                ca_ce = _compadmin(request)
+                if ca_ce:
+                    if ca_ce["comp_id"] != ev_cid:
+                        return JSONResponse({"detail": "赛事管理员仅可操作自己的赛事"}, status_code=403)
+                elif s["role"] in ("host", "marshal", "judge"):
+                    eff = s.get("comp_id") or (_active_competition() or {}).get("id")
+                    if eff != ev_cid:
+                        return JSONResponse({"detail": "该场次不属于您所登录的赛事"}, status_code=403)
     ca = _compadmin(request)
     if not ca:
         return await call_next(request)
@@ -268,6 +287,8 @@ def require_staff(request: Request, competition_id: int = None):
         ca = _compadmin(request)
         if ca and (competition_id is None or ca["comp_id"] == competition_id):
             return s
+        if not ca:
+            return s   # R85：总管理员可代行检录/播报（一人多角的最小实现；compadmin 仍限本赛）
     if not s or s["role"] not in ("host", "marshal"):
         raise HTTPException(status_code=401, detail="需要主持人或检录员登录")
     return s
@@ -1697,6 +1718,8 @@ async def api_open(ceid: int, request: Request = None):
 async def api_close(ceid: int, request: Request = None):
     require_admin(request)
     ev, comp = _require_active_event(ceid)
+    if ev["status"] != "scoring":   # R85 状态机守卫：关闭评分仅限评分中（防误触把已发布/已计算场次打回待赛）
+        raise HTTPException(status_code=400, detail="仅评分中的场次可关闭（已发布场次请先撤回）")
     db.get_db().execute("UPDATE events SET status='pending' WHERE id=?", (ceid,))
     db.get_db().commit()
     sse.bus.publish(comp["id"], "competition_event_closed", {"event_id": ceid})
@@ -1722,7 +1745,8 @@ async def api_progress(ceid: int, request: Request = None):
         matrix[j] = per_dance
     complete = is_complete(ev, roster_list, dances, jcodes)
     return {"roster": roster_list, "dances": dances, "judges": jcodes, "matrix": matrix,
-            "complete": complete, "status": ev["status"]}
+            "complete": complete, "status": ev["status"],
+            "calc_note": ("" if complete else _auto_calc_notes.get(ceid, ""))}
 
 
 # ----------------------------------------------- schedule editing (FR-C1/J2)
@@ -1875,6 +1899,9 @@ async def api_calculate(ceid: int, request: Request = None):
     return {"ok": True, "results": data}
 
 
+_auto_calc_notes = {}   # R85：自动计算失败的可见化（ceid -> 原因），progress API 暴露给控制台
+
+
 def _auto_calculate_if_ready(ev, comp):
     if ev["status"] != "scoring":
         return False
@@ -1882,8 +1909,10 @@ def _auto_calculate_if_ready(ev, comp):
         return False
     try:
         calculate_event(ev)
-    except ValueError:
+    except ValueError as e:
+        _auto_calc_notes[ev["id"]] = str(e)   # R85：不再静默——「已收齐但不计算」必须让管理员看见
         return False
+    _auto_calc_notes.pop(ev["id"], None)
     sse.bus.publish(comp["id"], "calculation_done", {"event_id": ev["id"], "auto": True})
     return True
 
@@ -1919,6 +1948,8 @@ async def api_publish(ceid: int, request: Request = None):
 async def api_unpublish(ceid: int, request: Request = None):
     require_admin(request)
     ev, comp = _require_active_event(ceid)
+    if ev["status"] != "published":   # R85 状态机守卫：撤回仅限已发布（防 scoring 态伪造成绩）
+        raise HTTPException(status_code=400, detail="仅已发布的场次可撤回")
     db.get_db().execute("UPDATE events SET published=0, status='calculated' WHERE id=?", (ceid,))
     db.get_db().commit()
     sse.bus.publish(comp["id"], "results_unpublished", {"event_id": ceid})
@@ -2961,8 +2992,9 @@ async def direct_links_page(competition_id: int, request: Request = None):
     links = []
     for u in db.rows(conn.execute(
             "SELECT username, display_name, role FROM users WHERE active=1 AND "
-            "((role='compadmin' AND comp_id=?) OR role IN ('marshal','host')) ORDER BY role, username",
-            (competition_id,))):
+            "((role='compadmin' AND comp_id=?) OR (role IN ('marshal','host') AND (comp_id IS NULL OR comp_id=?))) "
+            "ORDER BY role, username",
+            (competition_id, competition_id))):
         links.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
                       "url": _abs_url(request, _direct_link(conn, competition_id, u["role"], u["username"]))})
     for j in db.rows(conn.execute(
@@ -2982,8 +3014,9 @@ async def api_direct_links(competition_id: int, request: Request = None):
     out = []
     for u in db.rows(conn.execute(
             "SELECT username, display_name, role FROM users WHERE active=1 AND "
-            "((role='compadmin' AND comp_id=?) OR role IN ('marshal','host')) ORDER BY role, username",
-            (competition_id,))):
+            "((role='compadmin' AND comp_id=?) OR (role IN ('marshal','host') AND (comp_id IS NULL OR comp_id=?))) "
+            "ORDER BY role, username",
+            (competition_id, competition_id))):
         url_role = "admin" if u["role"] == "compadmin" else u["role"]
         out.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
                     "url": _abs_url(request, _direct_link(conn, competition_id, url_role, u["username"]))})
