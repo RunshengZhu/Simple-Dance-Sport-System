@@ -3247,7 +3247,7 @@ async def api_stream(competition_id: int, request: Request = None):
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
         finally:
-            sse.unsubscribe(competition_id, q)
+            sse.bus.unsubscribe(competition_id, q)   # R84：修复——此前调模块属性不存在，断开时订阅队列永不清理（每次页面软刷新泄漏一个）
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
