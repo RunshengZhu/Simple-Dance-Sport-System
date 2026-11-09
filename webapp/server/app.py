@@ -1442,8 +1442,13 @@ def _import_rows_impl(conn, competition_id, kind, header, data_rows):
         i_prole = _col(h, "搭档身份", "partner_role")
         if i_num is None:
             raise HTTPException(status_code=400, detail="缺少列：背番号")
-        no_partner = {}   # R71c：未填搭档的行——双人项目漏填预警（单人项目可忽略）；
-        for r in data_rows:   # 补全后同背番号重导即覆盖恢复（REPLACE 幂等）
+
+        # R88 第一遍：解析上传文件为快照字典（同键后行覆盖前行）。报项总表是唯一事实——
+        # 导入为全量快照对齐：上传后，库中不在快照内的旧报项（如改号前的旧背号）将被移除。
+        snap = {}          # (proj, num) -> 行数据
+        person_seen = {}   # (proj, 姓名, 搭档) -> num（同人改号检测）
+        no_partner = {}
+        for r in data_rows:
             num = r[i_num].strip()
             if not num:
                 continue
@@ -1453,18 +1458,64 @@ def _import_rows_impl(conn, competition_id, kind, header, data_rows):
             pu = r[i_punit].strip() if i_punit is not None and i_punit < len(r) else ""
             rl = r[i_role].strip() if i_role is not None and i_role < len(r) else ""
             prl = r[i_prole].strip() if i_prole is not None and i_prole < len(r) else ""
-            conn.execute(
-                "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, partner_unit, unit, role, partner_role) VALUES(?,?,?,?,?,?,?,?,?)",
-                (competition_id, num, proj, nm, pt, pu,
-                 r[i_unit].strip() if i_unit is not None and i_unit < len(r) else "", rl, prl))
-            pn = r[i_pname].strip() if i_pname is not None and i_pname < len(r) else ""
-            if pn and proj:   # R81：报项唯一格式携带项目名称——自动赛程/导出用它生成场次名
-                conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
-                             "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
-                             (competition_id, proj, pn))
+            unit = r[i_unit].strip() if i_unit is not None and i_unit < len(r) else ""
+            key = (proj, num)
+            if key in snap:
+                problems.append("文件内重复行：{0} 背号 {1} 出现多次，已保留最后一次".format(proj, num))
+            snap[key] = {"proj": proj, "num": num, "nm": nm, "pt": pt, "pu": pu,
+                         "unit": unit, "rl": rl, "prl": prl}
+            if nm:
+                pk = (proj, nm, pt)
+                if pk in person_seen and person_seen[pk] != num:
+                    problems.append("疑似同人改号：{0} {1}（{2}）同时出现背号 {3} 与 {4}，已保留 {4}".format(
+                        proj, nm, pt or "无搭档", person_seen[pk], num))
+                    old_key = (proj, person_seen[pk])
+                    if old_key in snap and old_key != key:
+                        del snap[old_key]   # 同人改号：文件内旧行移除，保留新背号
+                person_seen[pk] = num
             if not pt:
                 no_partner[num] = nm
-            count += 1
+
+        # R88 第二遍：写入快照 + 项目名称 upsert + 移除库中不在快照内的旧报项（充分去重）
+        for key, v in snap.items():
+            conn.execute(
+                "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, partner_unit, unit, role, partner_role) VALUES(?,?,?,?,?,?,?,?,?)",
+                (competition_id, v["num"], v["proj"], v["nm"], v["pt"], v["pu"], v["unit"], v["rl"], v["prl"]))
+            if v["proj"]:   # R81：报项唯一格式携带项目名称——自动赛程/导出用它生成场次名
+                pn = ""
+                if i_pname is not None:
+                    for r in data_rows:
+                        if (r[i_num].strip() == v["num"]
+                                and (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else "") == v["proj"]):
+                            pn = r[i_pname].strip() if i_pname is not None and i_pname < len(r) else ""
+                            break
+                if pn:
+                    conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
+                                 "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
+                                 (competition_id, v["proj"], pn))
+        existing = db.rows(conn.execute(
+            "SELECT number, project_code FROM competitors WHERE competition_id=?", (competition_id,)))
+        removed = []
+        for r in existing:
+            if (r["project_code"], r["number"]) not in snap:
+                conn.execute("DELETE FROM competitors WHERE competition_id=? AND project_code=? AND number=?",
+                             (competition_id, r["project_code"], r["number"]))
+                removed.append("{0}/{1}".format(r["project_code"], r["number"]))
+        if removed:
+            preview = "、".join(removed[:8])
+            more = " 等 {0} 项".format(len(removed)) if len(removed) > 8 else ""
+            problems.append("已按上传总表全量对齐：移除不在表中的旧报项 {0} 条（{1}{2}）——含改号前的旧背号".format(
+                len(removed), preview, more))
+            ev_ids = [r["id"] for r in db.rows(conn.execute(
+                "SELECT id FROM events WHERE competition_id=? AND status='pending'", (competition_id,)))]
+            for eid in ev_ids:
+                for t in removed:
+                    gn = t.split("/")[1]
+                    conn.execute("DELETE FROM event_competitors WHERE event_id=? AND competitor_number=?",
+                                 (eid, gn))
+            if ev_ids:
+                problems.append("待赛场次上场名单中的幽灵背号已同步移除")
+        count = len(snap)
         if no_partner:
             preview = "、".join("{0} {1}".format(n, m) for n, m in list(no_partner.items())[:8])
             more = " 等 {0} 行".format(len(no_partner)) if len(no_partner) > 8 else ""
