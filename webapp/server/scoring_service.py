@@ -59,8 +59,11 @@ def calculate_event(event):
         return data
     records = load_score_records(event["id"])
     alg = ScoringAlgorithm()
+    # R96：传入已检录名单（桌面版语义）——Mark制下未被任何裁判勾选的到场者以 0 票进结果
+    # （rank 末位），名额富余时可正常晋级；否则 0 票者被静默丢弃，到场不足「全部晋级」不成立。
     ok, results, errors, details, overall_details = alg.calculate_results(
         records, scoring_type_of(event),
+        all_competitors=checked_roster(event["id"]),
         advancement_count=event["advancement_count"] or None,
         advancement_rule=event["advancement_rule"],
     )
