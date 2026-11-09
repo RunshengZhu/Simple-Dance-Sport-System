@@ -79,7 +79,7 @@
 
 </div>
 </div>
-<div id="tab-sched">
+<div id="tab-sched" style="display:none">
 {% if tree %}
 <div class="card" id="run-order-card">
   <h2>比赛顺序（防连场）</h2>
@@ -299,6 +299,7 @@ function setTab(which) {
   if (which === 'proj') renderOvTable();
 }
 document.getElementById('gt-proj').onclick = function () { setTab('proj'); };
+setTab('proj');
 document.getElementById('gt-sched').onclick = function () { setTab('sched'); };
 function genCfg() {
   return {cap: parseInt(document.getElementById('gcap').value, 10) || 12,

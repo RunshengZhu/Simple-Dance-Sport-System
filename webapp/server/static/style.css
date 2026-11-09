@@ -818,3 +818,5 @@ body.judge-sheet main, body.screen main { max-width: none; }
 
 /* ---- R90 管理页双 Tab ---- */
 .gen-tabs { display: flex; gap: 8px; margin: 4px 0 12px; }
+.gen-tabs .btn.small { padding: 8px 22px; font-size: 1rem; border-radius: 8px 8px 0 0; border-bottom: none; }
+.gen-tabs .btn.small:not(.active) { background: var(--card); color: var(--muted); border-color: var(--line); }
