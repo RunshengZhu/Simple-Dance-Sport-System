@@ -1666,7 +1666,8 @@ def _auto_schedule(conn, competition_id, replace=False):
                 "VALUES(?,?,?,?,?,?,?, 'standard')",
                 (competition_id, "{0}-{1}".format(code, suffix),
                  "{0} {1}".format(pname, rnd_name), code, int(suffix[1]), styp, adv))
-            conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,0)", (cur.lastrowid, "华尔兹"))
+            for k, dname in enumerate(_infer_dances(pname)):
+                conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (cur.lastrowid, dname, k))
             if roster:   # 预赛/单场决赛带全名单；多轮制的决赛轮留空（晋级确认后自动回填）
                 for n in roster:
                     if n in known:
@@ -2093,7 +2094,8 @@ def _generate_project_schedule(conn, competition_id, project_code, cfg):
                     "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode) "
                     "VALUES(?,?,?,?,?,?,?,?)",
                     (competition_id, code, name, cd["code"], ri + 1, styp, adv, team_mode))
-                conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,0)", (cur.lastrowid, "华尔兹"))
+                for k, dname in enumerate(_infer_dances(cd["name"])):
+                    conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (cur.lastrowid, dname, k))
                 g_nums = [num for num, _ in g]
                 for num in g_nums:
                     conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
@@ -3468,6 +3470,27 @@ def _clean_round_words(name):
     轮次属于场次维度（events），项目名应纯净——清洗后的名称用于入库/展示/自动赛程拼接。"""
     cleaned = re.sub(r"(初赛|预赛|复赛|半决赛|决赛|第\s*\d+\s*轮)", "", name or "").strip()
     return re.sub(r"\s{2,}", " ", cleaned)
+
+
+# R94 舞种识别（复刻桌面版口径，与桌面 test_data/test_schedule.csv 一致）：
+# A 三项 = 平四+慢三+交谊舞伦巴；B 两项 = 平四+交谊舞伦巴；单项取名称中的舞种词；
+# 无命中兜底华尔兹（管理员可在场次编辑/赛程导入调整）。关键词长词优先，
+# 避免「交谊舞伦巴」被截成「伦巴」、「维也纳华尔兹」被截成「华尔兹」。
+_COMBO_DANCES = {"A三项": ["平四", "慢三", "交谊舞伦巴"], "B两项": ["平四", "交谊舞伦巴"]}
+_DANCE_KEYWORDS = ["维也纳华尔兹", "交谊舞伦巴", "华尔兹", "探戈", "狐步", "快步",
+                   "恰恰", "伦巴", "牛仔", "桑巴", "斗牛",
+                   "平四", "慢三", "慢四", "吉特巴"]
+
+
+def _infer_dances(project_name):
+    name = str(project_name or "").replace(" ", "").replace("　", "")
+    for key, dances in _COMBO_DANCES.items():
+        if key in name:
+            return list(dances)
+    for kw in sorted(_DANCE_KEYWORDS, key=len, reverse=True):
+        if kw in name:
+            return [kw]
+    return ["华尔兹"]
 
 
 def _project_display_names(conn, competition_id):
