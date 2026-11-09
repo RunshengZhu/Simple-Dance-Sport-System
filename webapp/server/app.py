@@ -2765,6 +2765,7 @@ async def api_confirm(project_code: str, round_no: int, request: Request = None)
     advancing = body.get("advancing") or []
     if not advancing:
         raise HTTPException(status_code=400, detail="晋级名单为空")
+    conn = db.get_db()
     # R91 容量校验：确认数不得超过下一轮总容量（场数 × 每场上限）
     next_round = db.rows(conn.execute(
         "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
