@@ -1479,59 +1479,20 @@ def _import_rows_impl(conn, competition_id, kind, header, data_rows):
                 no_partner[num] = nm
 
         # R88 第二遍：写入快照 + 项目名称 upsert + 移除库中不在快照内的旧报项（充分去重）
-        # R89 拆分自适应：上传行使用「拆分父编号」时，按分组配置自动归属
-        # （unit_spread：该选手单位最少的未满组；random：人数最少的未满组；全满时进入人数最少组并提示）
-        def _route_split(proj, num, unit):
-            rows_cfg = db.rows(conn.execute(
-                "SELECT child_code, cap, label, strategy FROM project_splits WHERE competition_id=? AND parent_code=?",
-                (competition_id, proj)))
-            if not rows_cfg:
-                return proj, False
-            counts, unit_counts = {}, {}
-            for r in rows_cfg:
-                counts[r["child_code"]] = conn.execute(
-                    "SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
-                    (competition_id, r["child_code"])).fetchone()["c"]
-                if unit:
-                    unit_counts[r["child_code"]] = conn.execute(
-                        "SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=? AND unit=?",
-                        (competition_id, r["child_code"], unit)).fetchone()["c"]
-            chosen = None
-            if rows_cfg[0]["strategy"] == "unit_spread" and unit:
-                for r in sorted(rows_cfg, key=lambda r: (unit_counts.get(r["child_code"], 0), counts[r["child_code"]])):
-                    if r["cap"] and counts[r["child_code"]] >= r["cap"]:
-                        continue
-                    chosen = r["child_code"]
-                    break
-            if chosen is None:
-                for r in sorted(rows_cfg, key=lambda r: (counts[r["child_code"]], r["label"])):
-                    if r["cap"] and counts[r["child_code"]] >= r["cap"]:
-                        continue
-                    chosen = r["child_code"]
-                    break
-                if chosen is None:
-                    chosen = sorted(rows_cfg, key=lambda r: (counts[r["child_code"]], r["label"]))[0]["child_code"]
-                    problems.append("分组 {0} 已全部达到每组上限，{1}（{2}）溢出计入 {3}".format(
-                        proj, num, unit or "无单位", chosen))
-            return chosen, True
-        final_keys = set()
         for key, v in snap.items():
-            proj_w, routed = _route_split(v["proj"], v["num"], v["unit"] or "")
             conn.execute(
                 "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, partner_unit, unit, role, partner_role) VALUES(?,?,?,?,?,?,?,?,?)",
-                (competition_id, v["num"], proj_w, v["nm"], v["pt"], v["pu"], v["unit"], v["rl"], v["prl"]))
-            final_keys.add((proj_w, v["num"]))
-            if not routed and v.get("pn"):
-                pn_c = _clean_round_words(v["pn"])
-                if pn_c:
-                    conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
-                                 "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
-                                 (competition_id, v["proj"], pn_c))
+                (competition_id, v["num"], v["proj"], v["nm"], v["pt"], v["pu"], v["unit"], v["rl"], v["prl"]))
+            pn_c = _clean_round_words(v.get("pn") or "")
+            if pn_c and v["proj"]:
+                conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
+                             "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
+                             (competition_id, v["proj"], pn_c))
         existing = db.rows(conn.execute(
             "SELECT number, project_code FROM competitors WHERE competition_id=?", (competition_id,)))
         removed = []
         for r in existing:
-            if (r["project_code"], r["number"]) not in final_keys:
+            if (r["project_code"], r["number"]) not in snap:
                 conn.execute("DELETE FROM competitors WHERE competition_id=? AND project_code=? AND number=?",
                              (competition_id, r["project_code"], r["number"]))
                 removed.append("{0}/{1}".format(r["project_code"], r["number"]))
@@ -2020,10 +1981,43 @@ def _team_mode_for(conn, competition_id, project_code, display_name):
     return "standard"
 
 
-def _generate_project_schedule(conn, competition_id, project_code, cap, advances, strategy, seed):
-    """为单个项目按配置生成全部场次（多轮 × 每轮同轮分组 × 并组）。
-    cap=每场人数上限；advances=每轮（每场）晋级人数列表（最后一项之后的轮次为决赛）。
-    返回 (created, structure)。仅 pending 场次可重建（有非 pending 直接 409）。"""
+def _derive_rounds(entries_n, cap, final_size, mode, rounds_spec):
+    """收敛式轮次推导（R91）：从报项数逐轮收敛到决赛人数 F。
+    自动：每场约取一半 ceil(e/场数/2)，直到 e ≤ F（该轮为决赛前最后一轮选拔，合计恰好 F）→ 决赛。
+    手动：rounds_spec 为每场晋级数序列；校验 严格递减且末轮合计 == F，否则 400 带建议值。
+    返回 [{heats, per_heat, entries}]（最后一项为决赛，entries ≤ cap）。"""
+    rounds, e = [], entries_n
+    if mode == "manual" and rounds_spec:
+        for a in rounds_spec:
+            h = max(1, -(-e // cap))
+            e_next = h * a
+            if e_next >= e:
+                raise HTTPException(status_code=400,
+                                    detail="晋级设置无法有效淘汰（{0} 人取 {1}），请调小晋级数或增加轮次".format(e, a))
+            rounds.append({"heats": h, "per_heat": a, "entries": e})
+            e = e_next
+        if e != final_size:
+            raise HTTPException(status_code=400,
+                                detail="末轮剩余 {0} 对 ≠ 决赛人数 {1}，请调整晋级序列（自动模式下系统会自动收敛）".format(e, final_size))
+        rounds.append({"heats": max(1, -(-final_size // cap)), "per_heat": 0, "entries": final_size})
+        return rounds
+    while e > final_size:
+        h = max(1, -(-e // cap))
+        per = max(1, -(-e // h // 2))          # 每场约取一半
+        if h * per < final_size:
+            per = max(1, -(-final_size // h))  # 保证合计 ≥ 决赛人数
+        rounds.append({"heats": h, "per_heat": per, "entries": e})
+        e = h * per
+    rounds.append({"heats": max(1, -(-e // cap)), "per_heat": 0, "entries": e})
+    return rounds
+
+
+def _generate_project_schedule(conn, competition_id, project_code, cfg):
+    """R91 生成单个项目的完整结构：项目人数上限拆项 → 逐轮收敛（每场 ≤ 每场上限）→ 决赛（恰好决赛人数）。
+    cfg: {max_entries, cap, final_size, mode(auto|manual), rounds(list), strategy}。
+    返回 (created, structure)。仅待赛场次可重建。"""
+    cap = cfg["cap"]
+    f_size = max(1, int(cfg["final_size"]))
     evs = db.rows(conn.execute(
         "SELECT id, status FROM events WHERE competition_id=? AND project_code=?",
         (competition_id, project_code)))
@@ -2037,82 +2031,129 @@ def _generate_project_schedule(conn, competition_id, project_code, cap, advances
         conn.execute("DELETE FROM event_competitors WHERE event_id=?", (e["id"],))
         conn.execute("DELETE FROM event_dances WHERE event_id=?", (e["id"],))
     conn.execute("DELETE FROM events WHERE competition_id=? AND project_code=?", (competition_id, project_code))
-    entries = sorted({r["number"] for r in db.rows(conn.execute(
-        "SELECT number FROM competitors WHERE competition_id=? AND project_code=?",
-        (competition_id, project_code)))}, key=lambda x: (len(x), x))
+    members = [(r["number"], (r["unit"] or "").strip()) for r in db.rows(conn.execute(
+        "SELECT number, unit FROM competitors WHERE competition_id=? AND project_code=? ORDER BY number",
+        (competition_id, project_code)))]
     structure, created = [], 0
-    entries_r = list(entries)
-    total_rounds = len(advances) + 1
-    round_names = _round_names(total_rounds)
-    for ri in range(total_rounds):
-        is_final = ri == total_rounds - 1
-        styp = "顺位法" if is_final else "Mark制"
-        adv = 0 if is_final else advances[ri]
-        n_heats = max(1, -(-len(entries_r) // cap))
-        labels = _heat_labels(n_heats) if n_heats > 1 else [""]
-        groups = _assign_groups([(x, "") for x in entries_r], n_heats, strategy,
-                                "{0}-{1}".format(project_code, ri))
-        word = round_names[ri]
-        suffix = "R{0}".format(ri + 1)
-        for hi, label in enumerate(labels):
-            g = groups[hi]
-            code = "{0}-{1}{2}".format(project_code, suffix, label)
-            name = "{0} {1}{2}".format(display, word, " {0}组".format(label) if label else "")
-            cur = conn.execute(
-                "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode) "
-                "VALUES(?,?,?,?,?,?,?,?)",
-                (competition_id, code, name, project_code, ri + 1, styp, adv, team_mode))
-            conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,0)", (cur.lastrowid, "华尔兹"))
-            g_nums = [num for num, _ in g]
-            for num in g_nums:
-                conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
-                             (cur.lastrowid, num))
-            created += 1
-            structure.append({"round": ri + 1, "code": code, "name": name, "size": len(g_nums),
-                              "advance": 0 if is_final else adv})
-        # 并组：下一轮入场 = 每场各取前 adv（heats × adv）
-        if not is_final:
-            entries_r = []
-            for g in groups:
-                entries_r.extend([num for num, _ in g[:adv] if num])
-            entries_r = sorted(set(entries_r), key=lambda x: (len(x), x))
+
+    # ---- 第 1 步：项目人数上限拆项（同单位排开/随机，组标 A/B/C…，名称体现）----
+    if len(members) > cfg["max_entries"]:
+        n_groups = -(-len(members) // cfg["max_entries"])
+        labels = _heat_labels(n_groups)
+        groups = _assign_groups(members, n_groups, cfg["strategy"], project_code)
+        child_defs = []
+        for gi, label in enumerate(labels):
+            child_code = project_code + label
+            while conn.execute("SELECT 1 FROM projects WHERE competition_id=? AND code=?",
+                               (competition_id, child_code)).fetchone():
+                label = label + "X"
+                child_code = project_code + label
+            child_name = "{0} {1}组".format(display, label)
+            conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
+                         "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
+                         (competition_id, child_code, child_name))
+            child_defs.append({"code": child_code, "name": child_name,
+                               "members": [num for num, _ in groups[gi]]})
+        # 拆项后选手归属子项目（competitors.project_code 改写为子编号）
+        assigned = {}
+        for cd in child_defs:
+            for num in cd["members"]:
+                assigned[num] = cd["code"]
+        for num, cc in assigned.items():
+            conn.execute("UPDATE competitors SET project_code=? WHERE competition_id=? AND number=?",
+                         (cc, competition_id, num))
+    else:
+        child_defs = [{"code": project_code, "name": display, "members": members}]
+
+    # ---- 第 2 步：逐轮收敛生成场次 ----
+    for cd in child_defs:
+        e_list = cd["members"]
+        rounds = _derive_rounds(len(e_list), cap, f_size, cfg.get("mode") or "auto", cfg.get("rounds") or [])
+        r_names = _round_names(len(rounds))
+        prev_left = e_list
+        for ri, rd in enumerate(rounds):
+            is_final = ri == len(rounds) - 1
+            styp = "顺位法" if is_final else "Mark制"
+            adv = 0 if is_final else rd["per_heat"]
+            n_heats = rd["heats"]
+            labels = _heat_labels(n_heats) if n_heats > 1 else [""]
+            # 本轮上场：首轮 = 组内全名单；后续轮 = 晋级确认回填（生成时名单留空）
+            entr_r = prev_left if ri == 0 else []
+            groups_r = _assign_groups([(x, "") for x in entr_r], n_heats, cfg["strategy"],
+                                      "{0}-{1}".format(project_code, ri))
+            word = r_names[ri]
+            suffix = "R{0}".format(ri + 1)
+            for hi, label in enumerate(labels):
+                g = groups_r[hi]
+                code = "{0}-{1}{2}".format(cd["code"], suffix, label)
+                name = "{0} {1}{2}".format(cd["name"], word, " {0}组".format(label) if label else "")
+                cur = conn.execute(
+                    "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    (competition_id, code, name, cd["code"], ri + 1, styp, adv, team_mode))
+                conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,0)", (cur.lastrowid, "华尔兹"))
+                g_nums = [num for num, _ in g]
+                for num in g_nums:
+                    conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
+                                 (cur.lastrowid, num))
+                created += 1
+                structure.append({"round": ri + 1, "code": code, "name": name, "size": len(g_nums),
+                                  "advance": 0 if is_final else adv})
+            # 下一轮入场 = 各场各取前 adv 合计
+            if not is_final:
+                prev_left = []
+                for g in groups_r:
+                    prev_left.extend([num for num, _ in g[:adv] if num])
+                prev_left = sorted(set(prev_left), key=lambda x: (len(x), x))
     return created, structure
 
 
 @app.post("/api/events/{competition_id}/gen-preview")
 async def api_gen_preview(competition_id: int, request: Request = None):
-    """R90 生成预览（项目管理 Tab）：统一或单项目配置 → 各项目轮次结构摘要（不写库）。"""
+    """R91 生成预览（项目管理 Tab）：统一或单项目配置 → 各项目拆项/轮次/场次结构摘要（不写库）。"""
     require_admin(request)
     try:
         body = await request.json()
     except Exception:
         body = {}
     _comp_or_404(competition_id)
-    cap = max(2, int(body.get("cap") or 12))
-    advances = [int(x) for x in re.split(r"[,，]", str(body.get("advances") or "")) if x.strip().isdigit()]
-    strategy = body.get("strategy") or "unit_spread"
+    cfg = _gen_cfg_from_body(body)
     conn = db.get_db()
-    overrides = {r["project_code"]: (r["cap"], r["advances"], r["strategy"]) for r in db.rows(conn.execute(
-        "SELECT project_code, cap, advances, strategy FROM schedule_gen_config WHERE competition_id=? AND project_code!=''",
+    overrides = {r["project_code"]: dict(r) for r in db.rows(conn.execute(
+        "SELECT * FROM schedule_gen_config WHERE competition_id=? AND project_code!=''",
         (competition_id,)))}
     out = []
     projs = db.rows(conn.execute(
         "SELECT project_code, COUNT(*) c FROM competitors WHERE competition_id=? GROUP BY project_code ORDER BY project_code",
         (competition_id,)))
+    disp = _project_display_names(conn, competition_id)
     for p in projs:
         code = p["project_code"]
-        c_cap, c_adv, c_str = overrides.get(code, (cap, ",".join(str(a) for a in advances) or "", strategy))
-        adv_list = [int(x) for x in re.split(r"[,，]", str(c_adv)) if x.strip().isdigit()]
-        n = p["c"]
-        total_rounds = len(adv_list) + 1
-        rn = _round_names(total_rounds)
-        heats = [max(1, -(-n // c_cap))]
-        for a in adv_list:
-            heats.append(max(1, -(-((heats[-1] or 0) * a) // c_cap)))
-        out.append({"project": code, "name": (_project_display_names(conn, competition_id).get(code) or code),
-                    "cap": c_cap, "advances": c_adv, "strategy": c_str, "rounds": rn,
-                    "heats": heats[:total_rounds], "entries": n})
+        ov = overrides.get(code) or {}
+        c = dict(cfg, **{k: ov[k] for k in ("max_entries", "cap", "final_size", "mode", "rounds_spec", "strategy") if ov.get(k)})
+        rounds = _derive_rounds(p["c"], c["cap"], c["final_size"], c["mode"], _parse_rounds_spec(c["rounds_spec"]))
+        rounds_txt = " → ".join("{0} 场×{1}取{2}".format(r["heats"], r["entries"], r["per_heat"] or "决赛") for r in rounds)
+        out.append({"project": code, "name": disp.get(code, code), "entries": p["c"],
+                    "max_entries": c["max_entries"], "cap": c["cap"], "final_size": c["final_size"],
+                    "mode": c["mode"], "rounds_spec": c["rounds_spec"], "strategy": c["strategy"],
+                    "n_groups": rounds[0]["heats"] if rounds else 0,
+                    "round_names": _round_names(len(rounds)),
+                    "structure": [{"round": r["entries"], "heats": r["heats"], "per_heat": r["per_heat"]} for r in rounds],
+                    "events": sum(1 for _ in rounds)})
     return {"projects": out}
+
+
+def _gen_cfg_from_body(body):
+    return {"max_entries": max(2, int(body.get("max_entries") or 24)),
+            "cap": max(2, int(body.get("cap") or 12)),
+            "final_size": max(1, int(body.get("final_size") or 8)),
+            "mode": "manual" if body.get("mode") == "manual" else "auto",
+            "rounds_spec": str(body.get("rounds_spec") or "").strip(),
+            "strategy": body.get("strategy") or "unit_spread"}
+
+
+def _parse_rounds_spec(spec):
+    return [int(x) for x in re.split(r"[,，]", str(spec or "")) if x.strip().isdigit()]
 
 
 @app.post("/api/events/{competition_id}/generate-schedule")
@@ -2126,9 +2167,7 @@ async def api_generate_schedule(competition_id: int, request: Request = None):
         body = await request.json()
     except Exception:
         body = {}
-    cap = max(2, int(body.get("cap") or 12))
-    advances = [int(x) for x in re.split(r"[,，]", str(body.get("advances") or "")) if x.strip().isdigit()]
-    strategy = body.get("strategy") or "unit_spread"
+    cfg = _gen_cfg_from_body(body)
     only = body.get("project_code") or None
     conn = db.get_db()
     # 全量模式：先整体检查所有项目全部 pending
@@ -2145,21 +2184,22 @@ async def api_generate_schedule(competition_id: int, request: Request = None):
     if blocked:
         raise HTTPException(status_code=409, detail="存在非待赛场次（{0}…）——请先撤回/退回/清理后再生成".format(
             "、".join(e["code"] for e in blocked[:5])))
-    overrides = {r["project_code"]: (r["cap"], r["advances"], r["strategy"]) for r in db.rows(conn.execute(
-        "SELECT project_code, cap, advances, strategy FROM schedule_gen_config WHERE competition_id=? AND project_code!=''",
+    overrides = {r["project_code"]: dict(r) for r in db.rows(conn.execute(
+        "SELECT * FROM schedule_gen_config WHERE competition_id=? AND project_code!=''",
         (competition_id,)))}
     conn.execute("DELETE FROM schedule_gen_config WHERE competition_id=?", (competition_id,))
     created_total = 0
     for code in sorted(targets):
-        c_cap, c_adv, c_str = overrides.get(code, (cap, ",".join(str(a) for a in advances) or "", strategy))
-        adv_list = [int(x) for x in re.split(r"[,，]", str(c_adv)) if x.strip().isdigit()]
-        created, structure = _generate_project_schedule(conn, competition_id, code, c_cap, adv_list, c_str, code)
+        ov = overrides.get(code) or {}
+        c = dict(cfg, **{k: ov[k] for k in ("max_entries", "cap", "final_size", "mode", "rounds_spec", "strategy") if ov.get(k)})
+        created, structure = _generate_project_schedule(conn, competition_id, code, c)
         created_total += created
-        conn.execute("INSERT INTO schedule_gen_config(competition_id, project_code, cap, advances, strategy, updated_at) "
-                     "VALUES(?,?,?,?,?,datetime('now','localtime')) "
-                     "ON CONFLICT(competition_id, project_code) DO UPDATE SET cap=excluded.cap, advances=excluded.advances, "
-                     "strategy=excluded.strategy, updated_at=excluded.updated_at",
-                     (competition_id, code, c_cap, c_adv, c_str))
+        conn.execute("INSERT INTO schedule_gen_config(competition_id, project_code, max_entries, cap, final_size, mode, rounds_spec, strategy, updated_at) "
+                     "VALUES(?,?,?,?,?,?,?,?,datetime('now','localtime')) "
+                     "ON CONFLICT(competition_id, project_code) DO UPDATE SET max_entries=excluded.max_entries, cap=excluded.cap, "
+                     "final_size=excluded.final_size, mode=excluded.mode, rounds_spec=excluded.rounds_spec, strategy=excluded.strategy, "
+                     "updated_at=excluded.updated_at",
+                     (competition_id, code, c["max_entries"], c["cap"], c["final_size"], c["mode"], c["rounds_spec"], c["strategy"]))
     conn.commit()
     _audit(_actor_name(s), "generate_schedule", "comp:{0}".format(competition_id),
            "按配置生成赛程：{0} 个项目 / {1} 场（每组上限 {2}，轮次晋级 {3}）".format(
@@ -2182,18 +2222,6 @@ async def api_gen_config(competition_id: int, request: Request = None):
 
 
 # ---------------- R89 项目拆分/分组（赛事管理员对具体项目的可操作项） ----------------
-def _split_labels(style, n):
-    if style == "数字":
-        return [str(i + 1) for i in range(n)]
-    out = []
-    for i in range(n):
-        if i < 26:
-            out.append(chr(ord("A") + i))
-        else:   # 超过 26 组：A2/B2 双字符
-            out.append(chr(ord("A") + i % 26) + str(i // 26 + 1))
-    return out
-
-
 def _assign_groups(members, n_groups, strategy, seed):
     """成员 [(背番号, 单位)] → n_groups 分组。
     random：洗牌后轮转发牌；unit_spread：同单位尽量排开（单位频次降序逐个放入该单位最少的组）。"""
@@ -2219,120 +2247,6 @@ def _assign_groups(members, n_groups, strategy, seed):
         for i, m in enumerate(members):
             groups[i % n_groups].append(m)
     return groups
-
-
-@app.post("/api/projects/{project_code}/split-preview")
-async def api_split_preview(project_code: str, request: Request = None):
-    """R89 拆分预览：按参数计算分组结果（组数/每组人数/单位分布），不写库。"""
-    require_admin(request)
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    comp = _current_competition(request)
-    cid_target = int(body.get("competition_id")) if body.get("competition_id") else (comp["id"] if comp else None)
-    if not cid_target:
-        raise HTTPException(status_code=400, detail="无激活赛事")
-    cap = max(1, int(body.get("max_per_group") or 12))
-    strategy = body.get("strategy") or "random"
-    n = db.get_db().execute("SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
-                            (cid_target, project_code)).fetchone()["c"]
-    if n == 0:
-        raise HTTPException(status_code=400, detail="该项目没有报项选手")
-    n_groups = max(2, -(-n // cap))
-    conn = db.get_db()
-    members = [(r["number"], (r["unit"] or "").strip()) for r in db.rows(conn.execute(
-        "SELECT number, unit FROM competitors WHERE competition_id=? AND project_code=? ORDER BY number",
-        (cid_target, project_code)))]
-    groups = _assign_groups(members, n_groups, strategy, project_code)
-    import collections as _col
-    return {"n": n, "n_groups": n_groups, "groups": [
-        {"index": i, "size": len(g),
-         "units": dict(_col.Counter(u for _, u in g if u))} for i, g in enumerate(groups)]}
-
-
-@app.post("/api/projects/{project_code}/split")
-async def api_project_split(project_code: str, request: Request = None):
-    """R89 项目拆分/分组：把人数过多的项目按可调的每组上限拆成多个子项目（名称体现分组），
-    分别计算名次；支持 随机 / 同单位排开 两种分配策略；可设置每轮晋级人数自动产生场次与分组。
-    拆分后原编号成为路由别名——新导入的选手自动归属到对应分组。仅待赛状态可拆。"""
-    s = require_admin(request)
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    comp = _current_competition(request)
-    competition_id = int(body.get("competition_id")) if body.get("competition_id") else (comp["id"] if comp else None)
-    if not competition_id:
-        raise HTTPException(status_code=400, detail="无激活赛事")
-    conn = db.get_db()
-    evs = db.rows(conn.execute(
-        "SELECT id, status FROM events WHERE competition_id=? AND project_code=?",
-        (competition_id, project_code)))
-    if any(e["status"] != "pending" for e in evs):
-        raise HTTPException(status_code=409, detail="存在已开场/已计算/已发布场次，不能拆分（先退回并清理）")
-    cap = max(2, int(body.get("max_per_group") or 12))
-    strategy = "unit_spread" if body.get("strategy") == "unit_spread" else "random"
-    label_style = body.get("label_style") or "字母"
-    rounds_spec = str(body.get("rounds") or "").strip()
-    adv_counts = [int(x) for x in re.split(r"[,，]", rounds_spec) if x.strip().isdigit()] if rounds_spec else []
-    n = conn.execute("SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
-                     (competition_id, project_code)).fetchone()["c"]
-    if n == 0:
-        raise HTTPException(status_code=400, detail="该项目没有报项选手")
-    n_groups = max(2, -(-n // cap))
-    labels = _split_labels(label_style, n_groups)
-    members = [(r["number"], (r["unit"] or "").strip()) for r in db.rows(conn.execute(
-        "SELECT number, unit FROM competitors WHERE competition_id=? AND project_code=? ORDER BY number",
-        (competition_id, project_code)))]
-    groups = _assign_groups(members, n_groups, strategy, project_code)
-    display = _project_display_names(conn, competition_id).get(project_code, project_code)
-    for e in evs:   # 清掉原项目场次（结构由子项目重建）
-        conn.execute("DELETE FROM event_competitors WHERE event_id=?", (e["id"],))
-        conn.execute("DELETE FROM event_dances WHERE event_id=?", (e["id"],))
-    conn.execute("DELETE FROM events WHERE competition_id=? AND project_code=?", (competition_id, project_code))
-    conn.execute("DELETE FROM project_splits WHERE competition_id=? AND parent_code=?",
-                 (competition_id, project_code))
-    created_events, children = 0, []
-    for gi, label in enumerate(labels):
-        members_g = groups[gi]
-        child_code = project_code + label
-        while conn.execute("SELECT 1 FROM projects WHERE competition_id=? AND code=?",
-                           (competition_id, child_code)).fetchone():   # 子编号冲突自增
-            label = label + "X"
-            child_code = project_code + label
-        child_name = "{0} {1}组".format(_clean_round_words(display), label)
-        conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
-                     "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
-                     (competition_id, child_code, child_name))
-        conn.execute("INSERT INTO project_splits(competition_id, parent_code, child_code, label, cap, strategy, rounds) "
-                     "VALUES(?,?,?,?,?,?,?)",
-                     (competition_id, project_code, child_code, label, cap, strategy, rounds_spec))
-        children.append(child_code)
-        nums_g = [num for num, _ in members_g]
-        plan = ([("R{0}".format(i + 1), "第{0}轮".format(i + 1), "Mark制", adv, []) for i, adv in enumerate(adv_counts)]
-                + [("R{0}".format(len(adv_counts) + 1), "决赛", "顺位法", 0, nums_g)])
-        for suffix, rnd_name, styp, adv, roster_g in plan:
-            cur = conn.execute(
-                "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode) "
-                "VALUES(?,?,?,?,?,?,?, 'standard')",
-                (competition_id, "{0}-{1}".format(child_code, suffix),
-                 "{0} {1}".format(child_name, rnd_name), child_code, int(suffix[1:]), styp, adv))
-            conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,0)", (cur.lastrowid, "华尔兹"))
-            if rnd_name == "第1轮" or not adv_counts:   # 首轮带全名单；后续轮由晋级确认回填
-                for num in nums_g:
-                    conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
-                                 (cur.lastrowid, num))
-            created_events += 1
-        for num, _ in members_g:   # 拆分后选手归属子项目
-            conn.execute("UPDATE competitors SET project_code=? WHERE competition_id=? AND project_code=? AND number=?",
-                         (child_code, competition_id, project_code, num))
-    conn.commit()
-    _audit(_actor_name(s), "project_split", "comp:{0}".format(competition_id),
-           "拆分项目 {0}（{1} 人 → {2} 组，策略 {3}，轮次晋级 {4}）".format(
-               project_code, n, n_groups, strategy, rounds_spec or "单场决赛"), _client_ip(request))
-    sse.bus.publish(competition_id, "schedule_changed", {"split": project_code})
-    return {"ok": True, "groups": n_groups, "events": created_events, "children": children}
 
 
 @app.get("/api/events/{competition_id}/split-routing")
@@ -2846,6 +2760,21 @@ async def api_confirm(project_code: str, round_no: int, request: Request = None)
     advancing = body.get("advancing") or []
     if not advancing:
         raise HTTPException(status_code=400, detail="晋级名单为空")
+    # R91 容量校验：确认数不得超过下一轮总容量（场数 × 每场上限）
+    next_round = db.rows(conn.execute(
+        "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
+        (comp["id"], project_code, round_no + 1)))
+    sgc = db.rowdict(conn.execute(
+        "SELECT cap FROM schedule_gen_config WHERE competition_id=? AND project_code=?",
+        (comp["id"], project_code)).fetchone()) or db.rowdict(conn.execute(
+        "SELECT cap FROM schedule_gen_config WHERE competition_id=? AND project_code=''",
+        (comp["id"],)).fetchone())
+    cap_n = sgc["cap"] if sgc else 12
+    capacity = len(next_round) * cap_n
+    if len(advancing) > capacity:
+        raise HTTPException(status_code=400,
+                            detail="确认人数 {0} 超过下一轮容量 {1}（{2} 场 × 每场 {3}）".format(
+                                len(advancing), capacity, len(next_round), cap_n))
     filled = confirm_advancement(comp["id"], project_code, round_no, advancing)
     sse.bus.publish(comp["id"], "schedule_changed", {"filled": filled})
     return {"ok": True, "filled": filled}

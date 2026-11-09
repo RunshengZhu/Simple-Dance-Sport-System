@@ -276,13 +276,34 @@ CREATE TABLE IF NOT EXISTS project_splits (
 CREATE TABLE IF NOT EXISTS schedule_gen_config (
     competition_id INTEGER NOT NULL,
     project_code TEXT NOT NULL DEFAULT '',
+    max_entries INTEGER NOT NULL DEFAULT 24,
     cap INTEGER NOT NULL DEFAULT 12,
-    advances TEXT NOT NULL DEFAULT '',
+    final_size INTEGER NOT NULL DEFAULT 8,
+    mode TEXT NOT NULL DEFAULT 'auto',
+    rounds_spec TEXT NOT NULL DEFAULT '',
     strategy TEXT NOT NULL DEFAULT 'unit_spread',
     updated_at TEXT,
     PRIMARY KEY (competition_id, project_code)
 );
-""")   # R90：赛程生成配置（project_code 空串=全赛事统一默认；单项目覆盖写自己的行）
+""")   # R91：赛程生成配置 v4（项目上限/每场上限/决赛人数/晋级模式/分配策略）
+    else:
+        sgc_cols = {r[1] for r in conn.execute("PRAGMA table_info(schedule_gen_config)")}
+        if "final_size" not in sgc_cols:   # 旧 v3 表结构升级（配置数据可丢弃）
+            conn.execute("DROP TABLE schedule_gen_config")
+            conn.executescript("""
+CREATE TABLE IF NOT EXISTS schedule_gen_config (
+    competition_id INTEGER NOT NULL,
+    project_code TEXT NOT NULL DEFAULT '',
+    max_entries INTEGER NOT NULL DEFAULT 24,
+    cap INTEGER NOT NULL DEFAULT 12,
+    final_size INTEGER NOT NULL DEFAULT 8,
+    mode TEXT NOT NULL DEFAULT 'auto',
+    rounds_spec TEXT NOT NULL DEFAULT '',
+    strategy TEXT NOT NULL DEFAULT 'unit_spread',
+    updated_at TEXT,
+    PRIMARY KEY (competition_id, project_code)
+);
+""")
 
     if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
         conn.executescript("""

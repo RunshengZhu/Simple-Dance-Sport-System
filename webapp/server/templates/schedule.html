@@ -20,11 +20,14 @@
 <div id="tab-proj">
 <div class="card">
   <h2>统一生成配置（应用到全部项目）</h2>
-  <p class="muted">按「每场人数上限」自动拆分同轮分组并组（如预赛 24 人 → 2 组各 12，每组分别晋级，
-    晋级后下一轮并组），每轮晋级人数决定轮次数（如 8,4 → 预赛→复赛→决赛）。新生成保留名单/赛程定义，出场结构重算。</p>
+  <p class="muted">参数含义：项目人数上限（超限拆成多个项目，名称带 A/B 组标，各自独立名次）；每场人数上限
+    （同轮超限拆多场，下一轮并组）；决赛人数（几顺位，决赛恰好一场）；每轮晋级人数（每场各取前 N，自动模式系统按约减半推导轮次）。</p>
   <div class="row">
+    <label>项目人数上限 <input id="gmax" type="number" min="2" value="24" style="max-width:90px"></label>
     <label>每场人数上限 <input id="gcap" type="number" min="2" value="12" style="max-width:90px"></label>
-    <label>每轮晋级人数 <input id="gadv" placeholder="如 8,4；留空=单场决赛" style="max-width:150px"></label>
+    <label>决赛人数 <input id="gfin" type="number" min="1" value="8" style="max-width:80px"></label>
+    <label>每轮晋级 <select id="gmode" style="max-width:100px"><option value="auto">自动（约减半）</option><option value="manual">手动序列</option></select>
+      <input id="gadv" placeholder="如 8,4" style="max-width:110px;display:none"></label>
     <label>分配 <select id="gstrategy" style="max-width:130px"><option value="unit_spread">同单位尽量排开</option><option value="random">随机</option></select></label>
   </div>
   <p>
@@ -307,11 +310,12 @@ document.getElementById('gen-preview-btn').onclick = function () {
   api('POST', '/api/events/' + window.CID + '/gen-preview', body).then(function (d) {
     var rows = d.projects.map(function (p) {
       return '<tr><td>' + p.project + '</td><td>' + p.name + '</td><td class="num">' + p.entries + '</td>' +
-        '<td class="num">' + p.cap + '</td><td class="hm">' + (p.advances || '单场决赛') + '</td><td>' + p.rounds.join(' → ') + '</td>' +
-        '<td class="hm">' + p.heats.join('/') + '</td></tr>';
+        '<td class="num">' + p.max_entries + '</td><td class="num">' + p.cap + '</td><td class="num">' + p.final_size + '</td>' +
+        '<td class="hm">' + (p.mode === 'manual' ? '手动 ' + p.rounds_spec : '自动') + '</td>' +
+        '<td>' + p.round_names.join('→') + '</td><td class="hm">' + p.heats.join('/') + '</td></tr>';
     }).join('');
     document.getElementById('gen-preview').innerHTML =
-      '<div class="tbl-scroll"><table><tr><th>项目</th><th>名称</th><th>人数</th><th>每组上限</th><th>每轮晋级</th><th>轮次</th><th>每轮场数</th></tr>' +
+      '<div class="tbl-scroll"><table><tr><th>项目</th><th>名称</th><th>人数</th><th>项目上限</th><th>每场上限</th><th>决赛人数</th><th>晋级模式</th><th>轮次</th><th>每轮场数</th></tr>' +
       rows + '</table></div>';
     document.getElementById('gen-msg').textContent = '预览仅展示结构；点「应用」才会生成。';
   }).catch(function (e) { document.getElementById('gen-msg').textContent = e.message; });
