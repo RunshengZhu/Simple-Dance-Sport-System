@@ -2055,20 +2055,22 @@ def _generate_project_schedule(conn, competition_id, project_code, cfg):
             child_defs.append({"code": child_code, "name": child_name,
                                "members": [num for num, _ in groups[gi]]})
         # 拆项后选手归属子项目（competitors.project_code 改写为子编号）
+        # R91 修复：WHERE 必须带原项目编号——同背号常跨项目报项，缺条件会错误改写其他项目的行
         assigned = {}
         for cd in child_defs:
             for num in cd["members"]:
                 assigned[num] = cd["code"]
         for num, cc in assigned.items():
-            conn.execute("UPDATE competitors SET project_code=? WHERE competition_id=? AND number=?",
-                         (cc, competition_id, num))
+            conn.execute("UPDATE competitors SET project_code=? WHERE competition_id=? AND number=? AND project_code=?",
+                         (cc, competition_id, num, project_code))
     else:
-        child_defs = [{"code": project_code, "name": display, "members": members}]
+        child_defs = [{"code": project_code, "name": display,
+                       "members": [num for num, _ in members]}]
 
     # ---- 第 2 步：逐轮收敛生成场次 ----
     for cd in child_defs:
         e_list = cd["members"]
-        rounds = _derive_rounds(len(e_list), cap, f_size, cfg.get("mode") or "auto", cfg.get("rounds") or [])
+        rounds = _derive_rounds(len(e_list), cfg["cap"], f_size, cfg.get("mode") or "auto", cfg.get("rounds") or [])
         r_names = _round_names(len(rounds))
         prev_left = e_list
         for ri, rd in enumerate(rounds):
@@ -2202,8 +2204,9 @@ async def api_generate_schedule(competition_id: int, request: Request = None):
                      (competition_id, code, c["max_entries"], c["cap"], c["final_size"], c["mode"], c["rounds_spec"], c["strategy"]))
     conn.commit()
     _audit(_actor_name(s), "generate_schedule", "comp:{0}".format(competition_id),
-           "按配置生成赛程：{0} 个项目 / {1} 场（每组上限 {2}，轮次晋级 {3}）".format(
-               len(targets), created_total, cap, advances or "单场"), _client_ip(request))
+           "按配置生成赛程：{0} 个项目 / {1} 场（项目上限 {2}，每场上限 {3}，决赛 {4}，晋级 {5}）".format(
+               len(targets), created_total, cfg["max_entries"], cfg["cap"], cfg["final_size"],
+               cfg["rounds_spec"] or "自动"), _client_ip(request))
     sse.bus.publish(competition_id, "schedule_changed", {"generated": created_total})
     return {"ok": True, "projects": len(targets), "events": created_total}
 
