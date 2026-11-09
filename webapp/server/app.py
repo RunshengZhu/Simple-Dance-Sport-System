@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import mimetypes
 import os
+import random
 import re
 import secrets
 import shutil
@@ -1462,7 +1463,8 @@ def _import_rows_impl(conn, competition_id, kind, header, data_rows):
             key = (proj, num)
             if key in snap:
                 problems.append("文件内重复行：{0} 背号 {1} 出现多次，已保留最后一次".format(proj, num))
-            snap[key] = {"proj": proj, "num": num, "nm": nm, "pt": pt, "pu": pu,
+            pn = r[i_pname].strip() if i_pname is not None and i_pname < len(r) else ""
+            snap[key] = {"proj": proj, "num": num, "nm": nm, "pt": pt, "pu": pu, "pn": pn,
                          "unit": unit, "rl": rl, "prl": prl}
             if nm:
                 pk = (proj, nm, pt)
@@ -1477,19 +1479,50 @@ def _import_rows_impl(conn, competition_id, kind, header, data_rows):
                 no_partner[num] = nm
 
         # R88 第二遍：写入快照 + 项目名称 upsert + 移除库中不在快照内的旧报项（充分去重）
+        # R89 拆分自适应：上传行使用「拆分父编号」时，按分组配置自动归属
+        # （unit_spread：该选手单位最少的未满组；random：人数最少的未满组；全满时进入人数最少组并提示）
+        def _route_split(proj, num, unit):
+            rows_cfg = db.rows(conn.execute(
+                "SELECT child_code, cap, label, strategy FROM project_splits WHERE competition_id=? AND parent_code=?",
+                (competition_id, proj)))
+            if not rows_cfg:
+                return proj, False
+            counts, unit_counts = {}, {}
+            for r in rows_cfg:
+                counts[r["child_code"]] = conn.execute(
+                    "SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
+                    (competition_id, r["child_code"])).fetchone()["c"]
+                if unit:
+                    unit_counts[r["child_code"]] = conn.execute(
+                        "SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=? AND unit=?",
+                        (competition_id, r["child_code"], unit)).fetchone()["c"]
+            chosen = None
+            if rows_cfg[0]["strategy"] == "unit_spread" and unit:
+                for r in sorted(rows_cfg, key=lambda r: (unit_counts.get(r["child_code"], 0), counts[r["child_code"]])):
+                    if r["cap"] and counts[r["child_code"]] >= r["cap"]:
+                        continue
+                    chosen = r["child_code"]
+                    break
+            if chosen is None:
+                for r in sorted(rows_cfg, key=lambda r: (counts[r["child_code"]], r["label"])):
+                    if r["cap"] and counts[r["child_code"]] >= r["cap"]:
+                        continue
+                    chosen = r["child_code"]
+                    break
+                if chosen is None:
+                    chosen = sorted(rows_cfg, key=lambda r: (counts[r["child_code"]], r["label"]))[0]["child_code"]
+                    problems.append("分组 {0} 已全部达到每组上限，{1}（{2}）溢出计入 {3}".format(
+                        proj, num, unit or "无单位", chosen))
+            return chosen, True
+        final_keys = set()
         for key, v in snap.items():
+            proj_w, routed = _route_split(v["proj"], v["num"], v["unit"] or "")
             conn.execute(
                 "INSERT OR REPLACE INTO competitors(competition_id, number, project_code, name, partner, partner_unit, unit, role, partner_role) VALUES(?,?,?,?,?,?,?,?,?)",
-                (competition_id, v["num"], v["proj"], v["nm"], v["pt"], v["pu"], v["unit"], v["rl"], v["prl"]))
-            if v["proj"]:   # R81：报项唯一格式携带项目名称——自动赛程/导出用它生成场次名
-                pn = ""
-                if i_pname is not None:
-                    for r in data_rows:
-                        if (r[i_num].strip() == v["num"]
-                                and (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else "") == v["proj"]):
-                            pn = r[i_pname].strip() if i_pname is not None and i_pname < len(r) else ""
-                            break
-                pn_c = _clean_round_words(pn)
+                (competition_id, v["num"], proj_w, v["nm"], v["pt"], v["pu"], v["unit"], v["rl"], v["prl"]))
+            final_keys.add((proj_w, v["num"]))
+            if not routed and v.get("pn"):
+                pn_c = _clean_round_words(v["pn"])
                 if pn_c:
                     conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
                                  "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
@@ -1498,7 +1531,7 @@ def _import_rows_impl(conn, competition_id, kind, header, data_rows):
             "SELECT number, project_code FROM competitors WHERE competition_id=?", (competition_id,)))
         removed = []
         for r in existing:
-            if (r["project_code"], r["number"]) not in snap:
+            if (r["project_code"], r["number"]) not in final_keys:
                 conn.execute("DELETE FROM competitors WHERE competition_id=? AND project_code=? AND number=?",
                              (competition_id, r["project_code"], r["number"]))
                 removed.append("{0}/{1}".format(r["project_code"], r["number"]))
@@ -1954,6 +1987,175 @@ async def api_calculate(ceid: int, request: Request = None):
 
 
 _auto_calc_notes = {}   # R85：自动计算失败的可见化（ceid -> 原因），progress API 暴露给控制台
+
+
+# ---------------- R89 项目拆分/分组（赛事管理员对具体项目的可操作项） ----------------
+def _split_labels(style, n):
+    if style == "数字":
+        return [str(i + 1) for i in range(n)]
+    out = []
+    for i in range(n):
+        if i < 26:
+            out.append(chr(ord("A") + i))
+        else:   # 超过 26 组：A2/B2 双字符
+            out.append(chr(ord("A") + i % 26) + str(i // 26 + 1))
+    return out
+
+
+def _assign_groups(members, n_groups, strategy, seed):
+    """成员 [(背番号, 单位)] → n_groups 分组。
+    random：洗牌后轮转发牌；unit_spread：同单位尽量排开（单位频次降序逐个放入该单位最少的组）。"""
+    rng = random.Random(seed)
+    groups = [[] for _ in range(n_groups)]
+    if strategy == "unit_spread":
+        unit_count = {}
+        for _, unit in members:
+            if unit:
+                unit_count[unit] = unit_count.get(unit, 0) + 1
+        members = sorted(members, key=lambda m: (-unit_count.get(m[1], 0), m[0]))
+        for num, unit in members:
+            best, best_key = None, None
+            for gi, g in enumerate(groups):
+                same = sum(1 for _, u in g if u == unit)
+                key = (same, len(g))
+                if best_key is None or key < best_key:
+                    best, best_key = gi, key
+            groups[best].append((num, unit))
+    else:
+        members = members[:]
+        rng.shuffle(members)
+        for i, m in enumerate(members):
+            groups[i % n_groups].append(m)
+    return groups
+
+
+@app.post("/api/projects/{project_code}/split-preview")
+async def api_split_preview(project_code: str, request: Request = None):
+    """R89 拆分预览：按参数计算分组结果（组数/每组人数/单位分布），不写库。"""
+    require_admin(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    comp = _current_competition(request)
+    cid_target = int(body.get("competition_id")) if body.get("competition_id") else (comp["id"] if comp else None)
+    if not cid_target:
+        raise HTTPException(status_code=400, detail="无激活赛事")
+    cap = max(1, int(body.get("max_per_group") or 12))
+    strategy = body.get("strategy") or "random"
+    n = db.get_db().execute("SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
+                            (cid_target, project_code)).fetchone()["c"]
+    if n == 0:
+        raise HTTPException(status_code=400, detail="该项目没有报项选手")
+    n_groups = max(2, -(-n // cap))
+    conn = db.get_db()
+    members = [(r["number"], (r["unit"] or "").strip()) for r in db.rows(conn.execute(
+        "SELECT number, unit FROM competitors WHERE competition_id=? AND project_code=? ORDER BY number",
+        (cid_target, project_code)))]
+    groups = _assign_groups(members, n_groups, strategy, project_code)
+    import collections as _col
+    return {"n": n, "n_groups": n_groups, "groups": [
+        {"index": i, "size": len(g),
+         "units": dict(_col.Counter(u for _, u in g if u))} for i, g in enumerate(groups)]}
+
+
+@app.post("/api/projects/{project_code}/split")
+async def api_project_split(project_code: str, request: Request = None):
+    """R89 项目拆分/分组：把人数过多的项目按可调的每组上限拆成多个子项目（名称体现分组），
+    分别计算名次；支持 随机 / 同单位排开 两种分配策略；可设置每轮晋级人数自动产生场次与分组。
+    拆分后原编号成为路由别名——新导入的选手自动归属到对应分组。仅待赛状态可拆。"""
+    s = require_admin(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    comp = _current_competition(request)
+    competition_id = int(body.get("competition_id")) if body.get("competition_id") else (comp["id"] if comp else None)
+    if not competition_id:
+        raise HTTPException(status_code=400, detail="无激活赛事")
+    conn = db.get_db()
+    evs = db.rows(conn.execute(
+        "SELECT id, status FROM events WHERE competition_id=? AND project_code=?",
+        (competition_id, project_code)))
+    if any(e["status"] != "pending" for e in evs):
+        raise HTTPException(status_code=409, detail="存在已开场/已计算/已发布场次，不能拆分（先退回并清理）")
+    cap = max(2, int(body.get("max_per_group") or 12))
+    strategy = "unit_spread" if body.get("strategy") == "unit_spread" else "random"
+    label_style = body.get("label_style") or "字母"
+    rounds_spec = str(body.get("rounds") or "").strip()
+    adv_counts = [int(x) for x in re.split(r"[,，]", rounds_spec) if x.strip().isdigit()] if rounds_spec else []
+    n = conn.execute("SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
+                     (competition_id, project_code)).fetchone()["c"]
+    if n == 0:
+        raise HTTPException(status_code=400, detail="该项目没有报项选手")
+    n_groups = max(2, -(-n // cap))
+    labels = _split_labels(label_style, n_groups)
+    members = [(r["number"], (r["unit"] or "").strip()) for r in db.rows(conn.execute(
+        "SELECT number, unit FROM competitors WHERE competition_id=? AND project_code=? ORDER BY number",
+        (competition_id, project_code)))]
+    groups = _assign_groups(members, n_groups, strategy, project_code)
+    display = _project_display_names(conn, competition_id).get(project_code, project_code)
+    for e in evs:   # 清掉原项目场次（结构由子项目重建）
+        conn.execute("DELETE FROM event_competitors WHERE event_id=?", (e["id"],))
+        conn.execute("DELETE FROM event_dances WHERE event_id=?", (e["id"],))
+    conn.execute("DELETE FROM events WHERE competition_id=? AND project_code=?", (competition_id, project_code))
+    conn.execute("DELETE FROM project_splits WHERE competition_id=? AND parent_code=?",
+                 (competition_id, project_code))
+    created_events, children = 0, []
+    for gi, label in enumerate(labels):
+        members_g = groups[gi]
+        child_code = project_code + label
+        while conn.execute("SELECT 1 FROM projects WHERE competition_id=? AND code=?",
+                           (competition_id, child_code)).fetchone():   # 子编号冲突自增
+            label = label + "X"
+            child_code = project_code + label
+        child_name = "{0} {1}组".format(_clean_round_words(display), label)
+        conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
+                     "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
+                     (competition_id, child_code, child_name))
+        conn.execute("INSERT INTO project_splits(competition_id, parent_code, child_code, label, cap, strategy, rounds) "
+                     "VALUES(?,?,?,?,?,?,?)",
+                     (competition_id, project_code, child_code, label, cap, strategy, rounds_spec))
+        children.append(child_code)
+        nums_g = [num for num, _ in members_g]
+        plan = ([("R{0}".format(i + 1), "第{0}轮".format(i + 1), "Mark制", adv, []) for i, adv in enumerate(adv_counts)]
+                + [("R{0}".format(len(adv_counts) + 1), "决赛", "顺位法", 0, nums_g)])
+        for suffix, rnd_name, styp, adv, roster_g in plan:
+            cur = conn.execute(
+                "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode) "
+                "VALUES(?,?,?,?,?,?,?, 'standard')",
+                (competition_id, "{0}-{1}".format(child_code, suffix),
+                 "{0} {1}".format(child_name, rnd_name), child_code, int(suffix[1:]), styp, adv))
+            conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,0)", (cur.lastrowid, "华尔兹"))
+            if rnd_name == "第1轮" or not adv_counts:   # 首轮带全名单；后续轮由晋级确认回填
+                for num in nums_g:
+                    conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
+                                 (cur.lastrowid, num))
+            created_events += 1
+        for num, _ in members_g:   # 拆分后选手归属子项目
+            conn.execute("UPDATE competitors SET project_code=? WHERE competition_id=? AND project_code=? AND number=?",
+                         (child_code, competition_id, project_code, num))
+    conn.commit()
+    _audit(_actor_name(s), "project_split", "comp:{0}".format(competition_id),
+           "拆分项目 {0}（{1} 人 → {2} 组，策略 {3}，轮次晋级 {4}）".format(
+               project_code, n, n_groups, strategy, rounds_spec or "单场决赛"), _client_ip(request))
+    sse.bus.publish(competition_id, "schedule_changed", {"split": project_code})
+    return {"ok": True, "groups": n_groups, "events": created_events, "children": children}
+
+
+@app.get("/api/events/{competition_id}/split-routing")
+async def api_split_routing(competition_id: int, request: Request = None):
+    """R89 拆分路由表：父编号 → 子分组配置与当前人数。"""
+    require_admin(request)
+    out = []
+    for r in db.rows(db.get_db().execute(
+            "SELECT parent_code, child_code, label, cap, strategy, rounds FROM project_splits WHERE competition_id=?",
+            (competition_id,))):
+        cnt = db.get_db().execute("SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
+                                  (competition_id, r["child_code"])).fetchone()["c"]
+        out.append({"parent": r["parent_code"], "child": r["child_code"], "label": r["label"],
+                    "cap": r["cap"], "strategy": r["strategy"], "rounds": r["rounds"], "count": cnt})
+    return {"routing": out}
 
 
 @app.post("/api/events/{competition_id}/reset-scoring")

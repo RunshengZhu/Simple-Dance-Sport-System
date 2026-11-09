@@ -81,7 +81,25 @@
 
 {% for proj, rounds in tree.items() %}
 <div class="card" data-project="{{ proj }}">
-  <h2>{{ proj }} <span class="tag gray">{{ rounds | sum(attribute="count") }} 场</span></h2>
+  <h2>{{ proj }} <span class="tag gray">{{ rounds | sum(attribute="count") }} 场</span>
+    <button class="btn small secondary" style="float:right" onclick="toggleSplitForm('{{ proj }}')">拆分/分组</button></h2>
+  <details class="split-form" id="split-{{ proj }}" style="display:none;margin:6px 0 12px">
+    <p class="muted">把该项目按「每组最多人数」拆成多个子项目（名称体现分组，如 {{ proj }}A / {{ proj }}B），各自独立计算名次；
+      支持 随机 / 同单位排开 两种分配；可设置每轮晋级人数（如 12,6 → 预赛取 12、次轮取 6、再决赛），系统自动产生场次与分组。
+      拆分后原编号成为路由别名——新导入的选手自动归属到对应分组。仅待赛状态可执行。</p>
+    <div class="row">
+      <label>每组最多人数 <input id="sp-cap-{{ proj }}" type="number" min="2" value="12" style="max-width:80px"></label>
+      <label>标签 <select id="sp-style-{{ proj }}" style="max-width:90px"><option>字母</option><option>数字</option></select></label>
+      <label>分配 <select id="sp-strategy-{{ proj }}" style="max-width:130px"><option value="unit_spread">同单位尽量排开</option><option value="random">随机</option></select></label>
+      <label>每轮晋级人数 <input id="sp-rounds-{{ proj }}" placeholder="如 12,6；留空=单场决赛" style="max-width:150px"></label>
+    </div>
+    <p>
+      <button class="btn secondary" onclick="previewSplit('{{ proj }}')">预览分组</button>
+      <button class="btn" onclick="doSplit('{{ proj }}')">执行拆分</button>
+      <span id="sp-msg-{{ proj }}" class="muted"></span>
+    </p>
+    <div id="sp-preview-{{ proj }}"></div>
+  </details>
   {% for r in rounds %}
   <h3>第 {{ r.round }} 轮
     {% if r.all_done %}<span class="tag ok">已全部计算</span>{% else %}<span class="tag warn">进行中/待开始</span>{% endif %}
@@ -225,6 +243,36 @@ async function delEvent(code) {
     await api('DELETE', '/api/competition-events/' + ceid, {});
     softReload();
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ---- R89 项目拆分/分组 ---- */
+function toggleSplitForm(proj) {
+  var el = document.getElementById('split-' + proj);
+  el.style.display = (el.style.display === 'none') ? '' : 'none';
+}
+function previewSplit(proj) {
+  var body = {max_per_group: parseInt(document.getElementById('sp-cap-' + proj).value, 10) || 12,
+              strategy: document.getElementById('sp-strategy-' + proj).value};
+  api('POST', '/api/projects/' + proj + '/split-preview', body).then(function (d) {
+    var rows = d.groups.map(function (g) {
+      var units = Object.keys(g.units).map(function (u) { return u + '×' + g.units[u]; }).join('、');
+      return '<tr><td>' + (d.groups.indexOf(g) + 1) + '</td><td>' + g.size + ' 人</td><td class="hm">' + (units || '—') + '</td></tr>';
+    }).join('');
+    document.getElementById('sp-preview-' + proj).innerHTML =
+      '<table><tr><th>组</th><th>人数</th><th>单位分布</th></tr>' + rows + '</table>';
+    document.getElementById('sp-msg-' + proj).textContent = '共 ' + d.n + ' 人 → ' + d.n_groups + ' 组';
+  }).catch(function (e) { document.getElementById('sp-msg-' + proj).textContent = e.message; });
+}
+function doSplit(proj) {
+  if (!confirm('拆分后原项目场次将被清除并按分组重建（各自独立计算名次），确认执行？')) return;
+  var body = {max_per_group: parseInt(document.getElementById('sp-cap-' + proj).value, 10) || 12,
+              strategy: document.getElementById('sp-strategy-' + proj).value,
+              label_style: document.getElementById('sp-style-' + proj).value,
+              rounds: document.getElementById('sp-rounds-' + proj).value.trim()};
+  api('POST', '/api/projects/' + proj + '/split', body).then(function (d) {
+    toast('已拆分：' + d.groups + ' 组 / ' + d.events + ' 场', 'ok');
+    setTimeout(softReload, 900);
+  }).catch(function (e) { toast(e.message, 'err'); });
 }
 
 /* ---- R81 按报项生成默认赛程 ---- */

@@ -256,6 +256,21 @@ CREATE TABLE IF NOT EXISTS visit_stats (
 );
 """)
 
+    if "project_splits" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='project_splits'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS project_splits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    competition_id INTEGER NOT NULL REFERENCES competitions(id),
+    parent_code TEXT NOT NULL,
+    child_code TEXT NOT NULL,
+    label TEXT DEFAULT '',
+    cap INTEGER DEFAULT 0,
+    strategy TEXT DEFAULT 'random',
+    rounds TEXT DEFAULT '',
+    UNIQUE(competition_id, child_code)
+);
+""")   # R89：项目拆分/分组配置——parent 为路由别名（新导入自适应归属），child 为实际参赛项目
+
     if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
         conn.executescript("""
 CREATE TABLE IF NOT EXISTS users (
