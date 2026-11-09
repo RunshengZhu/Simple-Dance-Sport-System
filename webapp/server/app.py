@@ -1489,10 +1489,11 @@ def _import_rows_impl(conn, competition_id, kind, header, data_rows):
                                 and (r[i_proj].strip() if i_proj is not None and i_proj < len(r) else "") == v["proj"]):
                             pn = r[i_pname].strip() if i_pname is not None and i_pname < len(r) else ""
                             break
-                if pn:
+                pn_c = _clean_round_words(pn)
+                if pn_c:
                     conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?) "
                                  "ON CONFLICT(competition_id, code) DO UPDATE SET name=excluded.name",
-                                 (competition_id, v["proj"], pn))
+                                 (competition_id, v["proj"], pn_c))
         existing = db.rows(conn.execute(
             "SELECT number, project_code FROM competitors WHERE competition_id=?", (competition_id,)))
         removed = []
@@ -1515,6 +1516,7 @@ def _import_rows_impl(conn, competition_id, kind, header, data_rows):
                                  (eid, gn))
             if ev_ids:
                 problems.append("待赛场次上场名单中的幽灵背号已同步移除")
+            problems.append("报项较此前有变化——请到「赛程编排」页使用『按报项生成默认赛程』同步上场名单（会按新人数重拆预赛/决赛）")
         count = len(snap)
         if no_partner:
             preview = "、".join("{0} {1}".format(n, m) for n, m in list(no_partner.items())[:8])
@@ -1661,7 +1663,7 @@ def _auto_schedule(conn, competition_id, replace=False):
         nums = sorted({r["number"] for r in db.rows(conn.execute(
             "SELECT number FROM competitors WHERE competition_id=? AND project_code=?",
             (competition_id, code)))}, key=lambda x: (len(x), x))
-        pname = (p["name"] or "").strip() or code
+        pname = _clean_round_words((p["name"] or "").strip()) or code
         plan = ([("R1", "预赛", "Mark制", 8, nums), ("R2", "决赛", "顺位法", 0, [])]
                 if len(nums) > 8 else [("R1", "决赛", "顺位法", 0, nums)])
         for suffix, rnd_name, styp, adv, roster in plan:
@@ -3135,8 +3137,15 @@ async def api_credentials_export(competition_id: int, request: Request = None):
                              headers={"Content-Disposition": 'attachment; filename="credentials-{0}.csv"'.format(competition_id)})
 
 
+def _clean_round_words(name):
+    """R88b 项目名清洗：去掉混入名称中的轮次字样（初赛/预赛/复赛/半决赛/决赛/第N轮）。
+    轮次属于场次维度（events），项目名应纯净——清洗后的名称用于入库/展示/自动赛程拼接。"""
+    cleaned = re.sub(r"(初赛|预赛|复赛|半决赛|决赛|第\s*\d+\s*轮)", "", name or "").strip()
+    return re.sub(r"\s{2,}", " ", cleaned)
+
+
 def _project_display_names(conn, competition_id):
-    """R81 项目展示名：projects 表（报项导入写入）优先（等于编号的占位名不算），回退赛程事件名（最末轮）。"""
+    """R81 项目展示名：projects 表（报项导入写入）优先（等于编号的占位名不算），回退赛程事件名（最末轮，清洗轮次字样）。"""
     pname = {r["code"]: (r["name"] or "").strip() for r in db.rows(conn.execute(
         "SELECT code, name FROM projects WHERE competition_id=?", (competition_id,)))}
     evname = {}
@@ -3149,7 +3158,8 @@ def _project_display_names(conn, competition_id):
         real = (pname.get(code) or "").strip()
         if real == code:   # 占位名（旧赛程导入曾以编号充名）不作为展示名
             real = ""
-        out[code] = real or evname.get(code) or code
+        out[code] = _clean_round_words(real or evname.get(code) or code)
+    return out
     return out
 
 
