@@ -13,6 +13,35 @@
   <span class="muted">报项有增删后可重建默认编排（≤8 人单场决赛；＞8 人预赛取前 8 + 决赛）；舞种默认华尔兹，生成后可逐场调整</span>
 </p>
 
+<div class="gen-tabs">
+  <button class="btn small" id="gt-proj">项目管理</button>
+  <button class="btn small secondary" id="gt-sched">赛程编排</button>
+</div>
+<div id="tab-proj">
+<div class="card">
+  <h2>统一生成配置（应用到全部项目）</h2>
+  <p class="muted">按「每场人数上限」自动拆分同轮分组并组（如预赛 24 人 → 2 组各 12，每组分别晋级，
+    晋级后下一轮并组），每轮晋级人数决定轮次数（如 8,4 → 预赛→复赛→决赛）。新生成保留名单/赛程定义，出场结构重算。</p>
+  <div class="row">
+    <label>每场人数上限 <input id="gcap" type="number" min="2" value="12" style="max-width:90px"></label>
+    <label>每轮晋级人数 <input id="gadv" placeholder="如 8,4；留空=单场决赛" style="max-width:150px"></label>
+    <label>分配 <select id="gstrategy" style="max-width:130px"><option value="unit_spread">同单位尽量排开</option><option value="random">随机</option></select></label>
+  </div>
+  <p>
+    <button class="btn secondary" id="gen-preview-btn">预览全部项目结构</button>
+    <button class="btn" id="gen-apply-btn">按配置生成全部项目赛程</button>
+    <span id="gen-msg" class="muted"></span>
+  </p>
+  <div id="gen-preview"></div>
+</div>
+<div class="card">
+  <h2>单项目自定义配置（覆盖统一配置）</h2>
+  <p class="muted">对特定项目使用不同的每组上限/晋级轮次/分配策略；保存后点「仅此项目生成」重建该项目。</p>
+  <div class="tbl-scroll"><table id="ov-table">
+    <tr><th>项目</th><th>名称</th><th>人数</th><th class="hm">每组上限</th><th class="hm">每轮晋级</th><th class="hm">分配</th><th>操作</th></tr>
+  </table></div>
+  <p class="muted" id="ov-msg"></p>
+</div>
 <div class="card">
   <h2>数据与材料</h2>
   <div class="mat-list">
@@ -45,6 +74,9 @@
   <p class="muted">成绩导出与团体总分仅含「已发布」场次；口令表含全部账号口令与免密直达链接，等同钥匙，请勿外传。</p>
 </div>
 
+</div>
+</div>
+<div id="tab-sched">
 {% if tree %}
 <div class="card" id="run-order-card">
   <h2>比赛顺序（防连场）</h2>
@@ -81,25 +113,7 @@
 
 {% for proj, rounds in tree.items() %}
 <div class="card" data-project="{{ proj }}">
-  <h2>{{ proj }} <span class="tag gray">{{ rounds | sum(attribute="count") }} 场</span>
-    <button class="btn small secondary" style="float:right" onclick="toggleSplitForm('{{ proj }}')">拆分/分组</button></h2>
-  <details class="split-form" id="split-{{ proj }}" style="display:none;margin:6px 0 12px">
-    <p class="muted">把该项目按「每组最多人数」拆成多个子项目（名称体现分组，如 {{ proj }}A / {{ proj }}B），各自独立计算名次；
-      支持 随机 / 同单位排开 两种分配；可设置每轮晋级人数（如 12,6 → 预赛取 12、次轮取 6、再决赛），系统自动产生场次与分组。
-      拆分后原编号成为路由别名——新导入的选手自动归属到对应分组。仅待赛状态可执行。</p>
-    <div class="row">
-      <label>每组最多人数 <input id="sp-cap-{{ proj }}" type="number" min="2" value="12" style="max-width:80px"></label>
-      <label>标签 <select id="sp-style-{{ proj }}" style="max-width:90px"><option>字母</option><option>数字</option></select></label>
-      <label>分配 <select id="sp-strategy-{{ proj }}" style="max-width:130px"><option value="unit_spread">同单位尽量排开</option><option value="random">随机</option></select></label>
-      <label>每轮晋级人数 <input id="sp-rounds-{{ proj }}" placeholder="如 12,6；留空=单场决赛" style="max-width:150px"></label>
-    </div>
-    <p>
-      <button class="btn secondary" onclick="previewSplit('{{ proj }}')">预览分组</button>
-      <button class="btn" onclick="doSplit('{{ proj }}')">执行拆分</button>
-      <span id="sp-msg-{{ proj }}" class="muted"></span>
-    </p>
-    <div id="sp-preview-{{ proj }}"></div>
-  </details>
+  <h2>{{ proj }} <span class="tag gray">{{ rounds | sum(attribute="count") }} 场</span></h2>
   {% for r in rounds %}
   <h3>第 {{ r.round }} 轮
     {% if r.all_done %}<span class="tag ok">已全部计算</span>{% else %}<span class="tag warn">进行中/待开始</span>{% endif %}
@@ -157,6 +171,7 @@
     <span id="f-msg"></span>
   </p>
   <p class="muted">提示：大项目分组（>40 对同项目同轮多场次）直接为每组建一场，编号区分（如 R1A/R1B/R1C），晋级确认页自动合并各组预案（FR-J2）。</p>
+</div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -246,10 +261,6 @@ async function delEvent(code) {
 }
 
 /* ---- R89 项目拆分/分组 ---- */
-function toggleSplitForm(proj) {
-  var el = document.getElementById('split-' + proj);
-  el.style.display = (el.style.display === 'none') ? '' : 'none';
-}
 function previewSplit(proj) {
   var body = {max_per_group: parseInt(document.getElementById('sp-cap-' + proj).value, 10) || 12,
               strategy: document.getElementById('sp-strategy-' + proj).value};
@@ -275,6 +286,77 @@ function doSplit(proj) {
   }).catch(function (e) { toast(e.message, 'err'); });
 }
 
+/* ---- R90 项目管理：统一配置 + 单项目覆盖 + 生成 ---- */
+function setTab(which) {
+  document.getElementById('tab-proj').style.display = which === 'proj' ? '' : 'none';
+  document.getElementById('tab-sched').style.display = which === 'sched' ? '' : 'none';
+  var bp = document.getElementById('gt-proj'), bs = document.getElementById('gt-sched');
+  bp.className = 'btn small ' + (which === 'proj' ? '' : 'secondary');
+  bs.className = 'btn small ' + (which === 'sched' ? '' : 'secondary');
+  if (which === 'proj') renderOvTable();
+}
+document.getElementById('gt-proj').onclick = function () { setTab('proj'); };
+document.getElementById('gt-sched').onclick = function () { setTab('sched'); };
+function genCfg() {
+  return {cap: parseInt(document.getElementById('gcap').value, 10) || 12,
+          advances: document.getElementById('gadv').value.trim(),
+          strategy: document.getElementById('gstrategy').value};
+}
+document.getElementById('gen-preview-btn').onclick = function () {
+  var body = genCfg(); body.competition_id = window.CID;
+  api('POST', '/api/events/' + window.CID + '/gen-preview', body).then(function (d) {
+    var rows = d.projects.map(function (p) {
+      return '<tr><td>' + p.project + '</td><td>' + p.name + '</td><td class="num">' + p.entries + '</td>' +
+        '<td class="num">' + p.cap + '</td><td class="hm">' + (p.advances || '单场决赛') + '</td><td>' + p.rounds.join(' → ') + '</td>' +
+        '<td class="hm">' + p.heats.join('/') + '</td></tr>';
+    }).join('');
+    document.getElementById('gen-preview').innerHTML =
+      '<div class="tbl-scroll"><table><tr><th>项目</th><th>名称</th><th>人数</th><th>每组上限</th><th>每轮晋级</th><th>轮次</th><th>每轮场数</th></tr>' +
+      rows + '</table></div>';
+    document.getElementById('gen-msg').textContent = '预览仅展示结构；点「应用」才会生成。';
+  }).catch(function (e) { document.getElementById('gen-msg').textContent = e.message; });
+};
+document.getElementById('gen-apply-btn').onclick = function () {
+  var btn = this;
+  if (!confirm('按当前配置重建全部项目赛程？\n所有场次将回到待开始并重新分组（名单保留在报项中不受影响）。')) return;
+  var body = genCfg(); body.competition_id = window.CID;
+  api('POST', '/api/events/' + window.CID + '/generate-schedule', body).then(function (d) {
+    toast('已生成 ' + d.projects + ' 个项目 / ' + d.events + ' 场', 'ok');
+    setTimeout(function () { location.reload(); }, 900);
+  }).catch(function (e) { toast(e.message, 'err'); });
+};
+var OV = [];
+function renderOvTable() {
+  var body = {cap: parseInt(document.getElementById('gcap').value, 10) || 12,
+              advances: document.getElementById('gadv').value.trim(),
+              strategy: document.getElementById('gstrategy').value, competition_id: window.CID};
+  api('POST', '/api/events/' + window.CID + '/gen-preview', body).then(function (d) {
+    OV = d.projects;
+    var t = document.getElementById('ov-table');
+    OV.forEach(function (p, i) {
+      var tr = t.insertRow();
+      tr.innerHTML = '<td>' + p.project + '</td><td>' + p.name + '</td><td class="num">' + p.entries + '</td>' +
+        '<td><input data-i="' + i + '" data-k="cap" class="ov-cap" value="' + p.cap + '" style="max-width:60px"></td>' +
+        '<td><input data-i="' + i + '" data-k="advances" class="ov-adv" value="' + p.advances + '" style="max-width:90px"></td>' +
+        '<td><select class="ov-sel" data-i="' + i + '" data-k="strategy" style="max-width:130px">' +
+        '<option value="' + p.strategy + '" selected>' + (p.strategy === 'unit_spread' ? '同单位排开' : '随机') + '</option>' +
+        '<option value="' + (p.strategy === 'unit_spread' ? 'random' : 'unit_spread') + '">' + (p.strategy === 'unit_spread' ? '随机' : '同单位排开') + '</option>' +
+        '</select></td>' +
+        '<td><button class="btn small secondary" onclick="applyOne(' + i + ')">仅此项目生成</button></td>';
+    });
+  }).catch(function (e) { document.getElementById('ov-msg').textContent = e.message; });
+}
+function applyOne(i) {
+  var p = OV[i];
+  var cap = document.querySelector('.ov-cap[data-i="' + i + '"]').value;
+  var adv = document.querySelector('.ov-adv[data-i="' + i + '"]').value;
+  var st = document.querySelector('select.ov-sel[data-i="' + i + '"]') ? document.querySelector('select.ov-sel[data-i="' + i + '"]').value : p.strategy;
+  if (!confirm('按自定义配置重建项目 ' + p.project + ' 的赛程？')) return;
+  api('POST', '/api/events/' + window.CID + '/generate-schedule',
+      {cap: parseInt(cap, 10) || 12, advances: adv, strategy: st, project_code: p.project, competition_id: window.CID})
+    .then(function (d) { toast('已生成 ' + p.project + '：' + d.events + ' 场', 'ok'); })
+    .catch(function (e) { toast(e.message, 'err'); });
+}
 /* ---- R81 按报项生成默认赛程 ---- */
 document.getElementById('gen-schedule-btn').addEventListener('click', async function () {
   if (!confirm('按当前报项重建默认赛程？\n（已有待赛场次将被重建；已开场/已发布的场次不受影响时才允许）')) return;

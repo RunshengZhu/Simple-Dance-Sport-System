@@ -271,6 +271,19 @@ CREATE TABLE IF NOT EXISTS project_splits (
 );
 """)   # R89：项目拆分/分组配置——parent 为路由别名（新导入自适应归属），child 为实际参赛项目
 
+    if "schedule_gen_config" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='schedule_gen_config'")}:
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS schedule_gen_config (
+    competition_id INTEGER NOT NULL,
+    project_code TEXT NOT NULL DEFAULT '',
+    cap INTEGER NOT NULL DEFAULT 12,
+    advances TEXT NOT NULL DEFAULT '',
+    strategy TEXT NOT NULL DEFAULT 'unit_spread',
+    updated_at TEXT,
+    PRIMARY KEY (competition_id, project_code)
+);
+""")   # R90：赛程生成配置（project_code 空串=全赛事统一默认；单项目覆盖写自己的行）
+
     if "users" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")}:
         conn.executescript("""
 CREATE TABLE IF NOT EXISTS users (
