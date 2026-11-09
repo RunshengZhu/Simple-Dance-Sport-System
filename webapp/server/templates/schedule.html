@@ -46,55 +46,6 @@
   <p class="muted" id="ov-msg"></p>
 </div>
 <div class="card">
-  <h2>数据与材料</h2>
-  <div class="mat-list">
-    <div class="mat-item"><span class="mat-label">赛程总表（出场抽签）</span>
-      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">打印</a>
-      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=csv">CSV</a>
-    </div>
-    <div class="mat-item"><span class="mat-label">赛程表</span>
-      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">全场打印</a>
-      <input id="unit-input" placeholder="按单位导出">
-      <button class="btn small secondary" id="unit-export" type="button">导出该单位</button>
-    </div>
-    <div class="mat-item"><span class="mat-label">选手信息（可回导）</span>
-      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
-    </div>
-    <div class="mat-item"><span class="mat-label">成绩（已发布场次）</span>
-      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports?format=markdown" target="_blank">Markdown</a>
-      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports?format=html" target="_blank">打印</a>
-    </div>
-    <div class="mat-item"><span class="mat-label">团体总分</span>
-      <a class="btn small secondary" href="/events/{{ comp.id }}/team-standings">查看</a>
-    </div>
-    <div class="mat-item"><span class="mat-label">免密直达链接</span>
-      <a class="btn small secondary" href="/events/{{ comp.id }}/direct-links" target="_blank">查看</a>
-    </div>
-    <div class="mat-item"><span class="mat-label">口令表（含直达链接）</span>
-      <a class="btn small secondary" href="/api/events/{{ comp.id }}/credentials">CSV</a>
-    </div>
-  </div>
-  <p class="muted">成绩导出与团体总分仅含「已发布」场次；口令表含全部账号口令与免密直达链接，等同钥匙，请勿外传。</p>
-</div>
-
-</div>
-</div>
-<div id="tab-sched" style="display:none">
-{% if tree %}
-<div class="card" id="run-order-card">
-  <h2>比赛顺序（防连场）</h2>
-  <p class="muted">「自动排序建议」在尊重同项目轮次依赖（未比前轮不得跳到后轮）的前提下，使相邻场次选手重叠最少；
-  建议可逐行 ↑↓ 微调，「连场 N 人」徽章实时显示相邻两场的共同选手数。仅对待赛场次生效，编辑自由度完整保留。</p>
-  <p>
-    <button class="btn" id="ro-suggest" type="button">自动排序建议</button>
-    <button class="btn" id="ro-save" type="button">保存顺序</button>
-    <button class="btn secondary" id="ro-clear" type="button">清空顺序</button>
-    <span id="ro-msg"></span>
-  </p>
-  <ol id="ro-list" class="run-order-list"></ol>
-</div>
-
-<div class="card">
   <h2>状态筛选</h2>
   <div class="status-filter">
     <button class="sf-btn active" data-st="all">全部</button>
@@ -104,7 +55,7 @@
     <button class="sf-btn" data-st="published">已发布</button>
   </div>
 </div>
-{% else %}
+{% if not tree %}
 <div class="card">
   <h2>三步开始</h2>
   <p>1.「导入」页上传选手 / 裁判 / 赛程三份 CSV；<br>
@@ -174,6 +125,55 @@
     <span id="f-msg"></span>
   </p>
   <p class="muted">提示：大项目分组（>40 对同项目同轮多场次）直接为每组建一场，编号区分（如 R1A/R1B/R1C），晋级确认页自动合并各组预案（FR-J2）。</p>
+</div>
+<div class="card">
+  <h2>数据与材料</h2>
+  <div class="mat-list">
+    <div class="mat-item"><span class="mat-label">赛程总表（出场抽签）</span>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=html" target="_blank">打印</a>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/runsheet?format=csv">CSV</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">赛程表</span>
+      <a class="btn small secondary" href="/api/public/events/{{ comp.id }}/exports/schedule?format=html" target="_blank">全场打印</a>
+      <input id="unit-input" placeholder="按单位导出">
+      <button class="btn small secondary" id="unit-export" type="button">导出该单位</button>
+    </div>
+    <div class="mat-item"><span class="mat-label">选手信息（可回导）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/competitors?format=csv">CSV</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">成绩（已发布场次）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports?format=markdown" target="_blank">Markdown</a>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/exports?format=html" target="_blank">打印</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">团体总分</span>
+      <a class="btn small secondary" href="/events/{{ comp.id }}/team-standings">查看</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">免密直达链接</span>
+      <a class="btn small secondary" href="/events/{{ comp.id }}/direct-links" target="_blank">查看</a>
+    </div>
+    <div class="mat-item"><span class="mat-label">口令表（含直达链接）</span>
+      <a class="btn small secondary" href="/api/events/{{ comp.id }}/credentials">CSV</a>
+    </div>
+  </div>
+  <p class="muted">成绩导出与团体总分仅含「已发布」场次；口令表含全部账号口令与免密直达链接，等同钥匙，请勿外传。</p>
+</div>
+
+</div>
+<div id="tab-sched" style="display:none">
+{% if not tree %}
+<div class="card"><p class="muted">尚未生成赛程——先到「项目管理」页签按报项生成场次结构，再回到这里编排出场顺序。</p></div>
+{% endif %}
+<div class="card" id="run-order-card">
+  <h2>比赛顺序（防连场）</h2>
+  <p class="muted">「自动排序建议」在尊重同项目轮次依赖（未比前轮不得跳到后轮）的前提下，使相邻场次选手重叠最少；
+  建议可逐行 ↑↓ 微调，「连场 N 人」徽章实时显示相邻两场的共同选手数。仅对待赛场次生效，编辑自由度完整保留。</p>
+  <p>
+    <button class="btn" id="ro-suggest" type="button">自动排序建议</button>
+    <button class="btn" id="ro-save" type="button">保存顺序</button>
+    <button class="btn secondary" id="ro-clear" type="button">清空顺序</button>
+    <span id="ro-msg"></span>
+  </p>
+  <ol id="ro-list" class="run-order-list"></ol>
 </div>
 </div>
 {% endblock %}
@@ -299,7 +299,7 @@ function setTab(which) {
   if (which === 'proj') renderOvTable();
 }
 document.getElementById('gt-proj').onclick = function () { setTab('proj'); };
-setTab('proj');
+setTab(location.hash === '#run-order-card' ? 'sched' : 'proj');
 document.getElementById('gt-sched').onclick = function () { setTab('sched'); };
 function genCfg() {
   return {max_entries: parseInt(document.getElementById('gmax').value, 10) || 24,
@@ -316,7 +316,7 @@ document.getElementById('gen-preview-btn').onclick = function () {
       return '<tr><td>' + p.project + '</td><td>' + p.name + '</td><td class="num">' + p.entries + '</td>' +
         '<td class="num">' + p.max_entries + '</td><td class="num">' + p.cap + '</td><td class="num">' + p.final_size + '</td>' +
         '<td class="hm">' + (p.mode === 'manual' ? '手动 ' + p.rounds_spec : '自动') + '</td>' +
-        '<td>' + p.round_names.join('→') + '</td><td class="hm">' + p.heats.join('/') + '</td></tr>';
+        '<td>' + p.round_names.join('→') + '</td><td class="hm">' + p.structure.map(function (s) { return s.heats; }).join('/') + '</td></tr>';
     }).join('');
     document.getElementById('gen-preview').innerHTML =
       '<div class="tbl-scroll"><table><tr><th>项目</th><th>名称</th><th>人数</th><th>项目上限</th><th>每场上限</th><th>决赛人数</th><th>晋级模式</th><th>轮次</th><th>每轮场数</th></tr>' +
@@ -348,7 +348,7 @@ function renderOvTable() {
       var tr = t.insertRow();
       tr.innerHTML = '<td>' + p.project + '</td><td>' + p.name + '</td><td class="num">' + p.entries + '</td>' +
         '<td><input data-i="' + i + '" data-k="cap" class="ov-cap" value="' + p.cap + '" style="max-width:60px"></td>' +
-        '<td><input data-i="' + i + '" data-k="advances" class="ov-adv" value="' + p.advances + '" style="max-width:90px"></td>' +
+        '<td><input data-i="' + i + '" data-k="advances" class="ov-adv" placeholder="留空=自动" value="' + (p.mode === 'manual' ? (p.rounds_spec || '') : '') + '" style="max-width:90px"></td>' +
         '<td><select class="ov-sel" data-i="' + i + '" data-k="strategy" style="max-width:130px">' +
         '<option value="' + p.strategy + '" selected>' + (p.strategy === 'unit_spread' ? '同单位排开' : '随机') + '</option>' +
         '<option value="' + (p.strategy === 'unit_spread' ? 'random' : 'unit_spread') + '">' + (p.strategy === 'unit_spread' ? '随机' : '同单位排开') + '</option>' +
@@ -360,11 +360,11 @@ function renderOvTable() {
 function applyOne(i) {
   var p = OV[i];
   var cap = document.querySelector('.ov-cap[data-i="' + i + '"]').value;
-  var adv = document.querySelector('.ov-adv[data-i="' + i + '"]').value;
+  var adv = document.querySelector('.ov-adv[data-i="' + i + '"]').value.trim();
   var st = document.querySelector('select.ov-sel[data-i="' + i + '"]') ? document.querySelector('select.ov-sel[data-i="' + i + '"]').value : p.strategy;
   if (!confirm('按自定义配置重建项目 ' + p.project + ' 的赛程？')) return;
   api('POST', '/api/events/' + window.CID + '/generate-schedule',
-      {cap: parseInt(cap, 10) || 12, advances: adv, strategy: st, project_code: p.project, competition_id: window.CID})
+      {cap: parseInt(cap, 10) || 12, mode: adv ? 'manual' : 'auto', rounds_spec: adv, strategy: st, project_code: p.project, competition_id: window.CID})
     .then(function (d) { toast('已生成 ' + p.project + '：' + d.events + ' 场', 'ok'); })
     .catch(function (e) { toast(e.message, 'err'); });
 }
