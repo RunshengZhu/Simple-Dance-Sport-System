@@ -302,8 +302,11 @@ document.getElementById('gt-proj').onclick = function () { setTab('proj'); };
 setTab('proj');
 document.getElementById('gt-sched').onclick = function () { setTab('sched'); };
 function genCfg() {
-  return {cap: parseInt(document.getElementById('gcap').value, 10) || 12,
-          advances: document.getElementById('gadv').value.trim(),
+  return {max_entries: parseInt(document.getElementById('gmax').value, 10) || 24,
+          cap: parseInt(document.getElementById('gcap').value, 10) || 12,
+          final_size: parseInt(document.getElementById('gfin').value, 10) || 8,
+          mode: document.getElementById('gmode').value,
+          rounds_spec: document.getElementById('gadv').value.trim(),
           strategy: document.getElementById('gstrategy').value};
 }
 document.getElementById('gen-preview-btn').onclick = function () {
@@ -332,8 +335,11 @@ document.getElementById('gen-apply-btn').onclick = function () {
 };
 var OV = [];
 function renderOvTable() {
-  var body = {cap: parseInt(document.getElementById('gcap').value, 10) || 12,
-              advances: document.getElementById('gadv').value.trim(),
+  var body = {max_entries: parseInt(document.getElementById('gmax').value, 10) || 24,
+              cap: parseInt(document.getElementById('gcap').value, 10) || 12,
+              final_size: parseInt(document.getElementById('gfin').value, 10) || 8,
+              mode: document.getElementById('gmode').value,
+              rounds_spec: document.getElementById('gadv').value.trim(),
               strategy: document.getElementById('gstrategy').value, competition_id: window.CID};
   api('POST', '/api/events/' + window.CID + '/gen-preview', body).then(function (d) {
     OV = d.projects;
