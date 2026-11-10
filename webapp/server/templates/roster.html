@@ -7,6 +7,13 @@
 {% block content %}
 {{ bar(comp, 'roster') }}
 <h1>名单 <span class="muted">{{ entries | length }} 条报项 · {{ judges | length }} 名裁判</span></h1>
+<div class="card">
+  <span class="roster-tabs">
+    <a class="roster-tab active" href="#entries-view" onclick="rbView('entries');return false">报项名单</a>
+    <a class="roster-tab" href="#teams-view" onclick="rbView('teams');return false">单位与队伍</a>
+  </span>
+</div>
+<div id="view-entries">
 
 {% set by_proj = entries | groupby("project_code") %}
 {% for proj, rows in by_proj %}
@@ -39,6 +46,40 @@
   </table>
   {% else %}<p class="muted">尚未导入裁判——到「导入」页上传（姓名必填、单位可选、编号自动分配）。</p>{% endif %}
 </div>
+</div>
+<div id="view-teams" style="display:none">
+<div class="grid c2">
+  <div class="card">
+    <h2>单位参赛统计</h2>
+    <table>
+      <tr><th>单位</th><th class="num">参赛对/人数</th></tr>
+      {% for u in unit_stats %}
+      <tr><td>{{ u.unit }}</td><td class="num">{{ u.pairs }}</td></tr>
+      {% endfor %}
+      {% if not unit_stats %}<tr><td class="muted">暂无数据</td></tr>{% endif %}
+    </table>
+  </div>
+  <div class="card">
+    <h2>集体队伍（FR-I1~I4）</h2>
+    <table>
+      <tr><th>编号</th><th>队伍</th><th>单位</th><th>项目</th></tr>
+      {% for t2 in teams %}
+      <tr><td>{{ t2.number }}</td><td>{{ t2.name }}</td><td>{{ t2.unit }}</td><td>{{ t2.project_code }}</td></tr>
+      {% endfor %}
+      {% if not teams %}<tr><td colspan="4" class="muted">暂无集体队伍（T 编号选手即集体队伍）</td></tr>{% endif %}
+    </table>
+    <p class="muted">队伍通过「报项导入」以 T 编号建立（项目编号,项目名称,背番号=T 编号,队名填选手姓名列,单位）。</p>
+  </div>
+</div>
+</div>
 {% endblock %}
 {% block scripts %}
+function rbView(v) {
+  document.getElementById('view-entries').style.display = v === 'entries' ? '' : 'none';
+  document.getElementById('view-teams').style.display = v === 'teams' ? '' : 'none';
+  var items = document.querySelectorAll('.roster-tab');
+  items[0].classList.toggle('active', v === 'entries');
+  items[1].classList.toggle('active', v === 'teams');
+}
+if (location.hash === '#teams') rbView('teams');
 {% endblock %}

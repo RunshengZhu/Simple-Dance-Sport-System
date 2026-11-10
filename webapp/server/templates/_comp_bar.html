@@ -1,23 +1,35 @@
 {% macro bar(comp, current) -%}
+{% set nav = request.state.nav if request.state is defined and request.state.nav else None %}
 <div class="comp-bar">
   <div class="comp-bar-head">
-    <a class="comp-name" href="/events/{{ comp.id }}/overview" title="赛事总览">{{ comp.name }}</a>
+    <a class="comp-name" href="/events/{{ comp.id }}/overview" title="赛事信息与向导">{{ comp.name }}</a>
     <span class="comp-meta">{% if comp.date %}{{ comp.date }}{% endif %}{% if comp.location %} · {{ comp.location }}{% endif %}</span>
     {% if request.state.is_compadmin %}<span class="tag gray phase-tag">赛事管理员</span>{% endif %}
+    <span class="comp-bar-head-right">
+      {% if not request.state.is_compadmin %}<a href="/users">用户</a>{% endif %}
+      <a href="#" class="exit-link" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+    </span>
   </div>
+  {% if nav %}
+  <div class="nav-groups">
+    {% for gid, glabel, items in nav.groups %}
+    <div class="nav-group {{ 'cur' if gid == nav.cur_group }}">
+      <a class="nav-group-label" href="{{ nav.base }}{{ items[0][0] }}">{{ glabel }}</a>
+      {% if gid == nav.cur_group %}
+      <span class="nav-sub">
+        {% for sp, sl in items %}
+        <a class="nav-sub-item {{ 'active' if sl == nav.cur_label }}" href="{{ nav.base }}{{ sp }}">{{ sl }}</a>
+        {% endfor %}
+      </span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
   <div class="comp-bar-links">
     <a href="/events/{{ comp.id }}/overview" class="{{ 'active' if current == 'overview' }}">总览</a>
-    <a href="/events/{{ comp.id }}/import" class="{{ 'active' if current == 'import' }}">导入</a>
-    <a href="/events/{{ comp.id }}/roster" class="{{ 'active' if current == 'roster' }}">名单</a>
-    <a href="/events/{{ comp.id }}/schedule" class="{{ 'active' if current == 'schedule' }}">赛程编排</a>
-    <a href="/events/{{ comp.id }}/advancement" class="{{ 'active' if current == 'advancement' }}">晋级确认</a>
     <a href="/events/{{ comp.id }}/results" class="{{ 'active' if current == 'results' }}">结果中心</a>
-    <a href="/events/{{ comp.id }}/team-standings" class="{{ 'active' if current == 'standings' }}">团体总分</a>
-    <a href="/events/{{ comp.id }}/teams" class="{{ 'active' if current == 'teams' }}">队伍</a>
-    <a href="/events/{{ comp.id }}/direct-links" class="{{ 'active' if current == 'links' }}">直达链接</a>
-    <a href="/events/{{ comp.id }}/screen-control" class="{{ 'active' if current == 'screen' }}">大屏控制</a>
-    {% if not request.state.is_compadmin %}<a href="/users">用户</a>{% endif %}
-    <a href="#" class="exit-link" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
   </div>
+  {% endif %}
 </div>
 {%- endmacro %}

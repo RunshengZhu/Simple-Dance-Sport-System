@@ -99,6 +99,42 @@ def _compadmin(request: Request):
 
 
 _COMPCID_RE = re.compile(r"^/(api/)?events/(\d+)")
+
+_NAV_GROUPS = [
+    ("prep", "筹备工作台", [
+        ("/overview", "赛事信息与向导"),
+        ("/import", "数据导入"),
+        ("/roster", "名单"),
+        ("/schedule", "赛程编排"),
+        ("/staff-links", "工作人员与直达链接"),
+    ]),
+    ("run", "比赛控制", [
+        ("/runboard", "赛程执行总表"),
+        ("/advancement", "晋级确认"),
+        ("/results", "成绩发布与导出"),
+    ]),
+    ("show", "展示与公开", [
+        ("/screen-control", "大屏控制"),
+        ("/team-standings", "团体总分"),
+    ]),
+]
+
+
+def _nav_for(path: str, comp_id: int):
+    """R100 两级导航：一级=工作阶段（筹备/比赛/展示），二级=阶段内功能页。
+    路径精确/前缀匹配定当前组；场次控制台(/console)归比赛控制组。"""
+    base = "/events/{0}".format(comp_id)
+    cur_g, cur_l = "", ""
+    for gid, glabel, items in _NAV_GROUPS:
+        for sub_path, sub_label in items:
+            full = base + sub_path
+            if path == full or path.startswith(full + "/") or path.startswith(full + "#"):
+                cur_g, cur_l = gid, sub_label
+        if path.startswith(base + "/console/"):
+            cur_g, cur_l = "run", "赛程执行总表"
+    items_out = [{"path": base + sp, "label": sl} for _, _, its in _NAV_GROUPS for sp, sl in its]
+    return {"base": base, "groups": _NAV_GROUPS, "cur_group": cur_g, "cur_label": cur_l, "items": items_out}
+
 _COMPCID_DENY_PREFIXES = ("/api/users", "/api/import/json", "/api/import/db",
                           "/api/export/json", "/api/export/db", "/api/backup")
 
@@ -157,6 +193,10 @@ async def compadmin_scope(request: Request, call_next):
         if gone:
             return deny("该赛事不存在或已被删除")
         return deny("赛事管理员仅可操作自己的赛事")
+    if not p.startswith("/api/"):
+        m2 = _COMPCID_RE.match(p)
+        if m2:
+            request.state.nav = _nav_for(p, int(m2.group(2)))
     return await call_next(request)
 
 
@@ -849,9 +889,15 @@ async def roster_page(request: Request, competition_id: int):
         "ORDER BY project_code, CAST(number AS INTEGER), number", (competition_id,)))
     judges = db.rows(conn.execute(
         "SELECT code, name, unit FROM judges WHERE competition_id=? ORDER BY code", (competition_id,)))
+    teams = db.rows(conn.execute(
+        "SELECT number, name, unit, project_code FROM competitors WHERE competition_id=? AND number LIKE 'T%' ORDER BY number",
+        (competition_id,)))
+    unit_stats = db.rows(conn.execute(
+        "SELECT unit, COUNT(*) AS pairs FROM competitors WHERE competition_id=? AND number NOT LIKE 'T%' AND unit<>'' GROUP BY unit ORDER BY pairs DESC",
+        (competition_id,)))
     return templates.TemplateResponse(request, "roster.html", {
         "request": request, "comp": comp, "entries": entries, "judges": judges,
-        "project_names": names})
+        "project_names": names, "teams": teams, "unit_stats": unit_stats})
 
 
 @app.get("/events/{competition_id}/import", response_class=HTMLResponse)
@@ -2933,17 +2979,8 @@ async def advancement_page(request: Request, competition_id: int):
 
 @app.get("/events/{competition_id}/teams", response_class=HTMLResponse)
 async def teams_page(request: Request, competition_id: int):
-    require_admin(request)
-    comp = _comp_or_404(competition_id)
-    conn = db.get_db()
-    teams = db.rows(conn.execute(
-        "SELECT number, name, unit, project_code FROM competitors WHERE competition_id=? AND number LIKE 'T%' ORDER BY number",
-        (competition_id,)))
-    unit_stats = db.rows(conn.execute(
-        "SELECT unit, COUNT(*) AS pairs FROM competitors WHERE competition_id=? AND number NOT LIKE 'T%' AND unit<>'' GROUP BY unit ORDER BY pairs DESC",
-        (competition_id,)))
-    return templates.TemplateResponse(request, "teams.html", {
-        "request": request, "comp": comp, "teams": teams, "unit_stats": unit_stats})
+    """R100 导航归位：单位与队伍并入名单页。"""
+    return RedirectResponse("/events/{0}/roster#teams".format(competition_id), status_code=302)
 
 
 @app.get("/events/{competition_id}/screen-control", response_class=HTMLResponse)
@@ -3298,6 +3335,56 @@ def _pending_events(competition_id):
         (competition_id,)))
 
 
+@app.get("/events/{competition_id}/runboard", response_class=HTMLResponse)
+async def runboard_page(request: Request, competition_id: int):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    return templates.TemplateResponse(request, "runboard.html", {"request": request, "comp": comp})
+
+
+@app.get("/api/events/{competition_id}/runboard")
+async def api_runboard(competition_id: int, request: Request = None):
+    """R100 赛程执行总表聚合：全部场次的 状态/检录/评分进度/结果摘要/播报态 一次拉取，
+    供比赛控制总表单页完成所有高频动作（开场/检录/发布/撤回/播报走既有端点）。"""
+    require_admin(request)
+    _comp_or_404(competition_id)
+    conn = db.get_db()
+    judges_n = len(judges_of(competition_id))
+    out = []
+    for ev in db.rows(conn.execute(
+            "SELECT * FROM events WHERE competition_id=? "
+            "ORDER BY COALESCE(run_seq, 9999), round, project_code, code", (competition_id,))):
+        dances = dances_of(ev["id"])
+        roster_list = roster(ev["id"])
+        checked = checked_roster(ev["id"])
+        pairs = conn.execute(
+            "SELECT COUNT(DISTINCT judge_code || '|' || dance_name) c FROM score_records WHERE event_id=?",
+            (ev["id"],)).fetchone()["c"]
+        total_pairs = judges_n * len(dances) if dances else 0
+        top3 = []
+        res = load_results(ev["id"])
+        if res and res.get("overall_results"):
+            for r0 in sorted(res["overall_results"], key=lambda x: x["rank"])[:3]:
+                top3.append({"rank": r0["rank"], "number": str(r0["competitor_number"]),
+                             "total": r0.get("total_score")})
+        # 评分矩阵（judge × dance 提交态，展开行用）
+        mat = {}
+        for r0 in conn.execute(
+                "SELECT DISTINCT judge_code, dance_name FROM score_records WHERE event_id=?", (ev["id"],)):
+            mat.setdefault(r0["dance_name"], []).append(r0["judge_code"])
+        out.append({
+            "id": ev["id"], "code": ev["code"], "name": ev["name"],
+            "project": ev["project_code"], "round": ev["round"],
+            "status": ev["status"], "published": bool(ev["published"]),
+            "announced": bool(ev["announced"]), "run_seq": ev["run_seq"],
+            "scoring_type": ev["scoring_type"], "advancement_count": ev["advancement_count"] or 0,
+            "dances": dances, "roster": roster_list, "checked": checked,
+            "judges_total": judges_n, "submitted_pairs": pairs, "total_pairs": total_pairs,
+            "top3": top3, "matrix": mat,
+        })
+    return {"events": out, "judges_total": judges_n}
+
+
 @app.get("/api/events/{competition_id}/run-order")
 async def api_run_order_get(competition_id: int, request: Request = None):
     """当前已保存的比赛顺序（仅待赛场次）；roster 供前端重排时自算连场数。"""
@@ -3435,8 +3522,9 @@ async def api_runsheet_export(competition_id: int, request: Request = None, form
     return HTMLResponse(html)
 
 
-@app.get("/events/{competition_id}/direct-links", response_class=HTMLResponse)
-async def direct_links_page(competition_id: int, request: Request = None):
+@app.get("/events/{competition_id}/staff-links", response_class=HTMLResponse)
+async def staff_links_page(competition_id: int, request: Request = None):
+    """R100 筹备工作台 · 工作人员与直达链接：工作人员账号（marshal/host）+ 全角色免密直达链接。"""
     require_admin(request)
     comp = _comp_or_404(competition_id)
     conn = db.get_db()
@@ -3448,12 +3536,19 @@ async def direct_links_page(competition_id: int, request: Request = None):
             (competition_id, competition_id))):
         links.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
                       "url": _abs_url(request, _direct_link(conn, competition_id, u["role"], u["username"]))})
-    for j in db.rows(conn.execute(
-            "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+    for j in db.rows(conn.execute("SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
         links.append({"role": "judge", "username": j["code"], "name": j["name"] or ("裁判" + j["code"]),
                       "url": _abs_url(request, _direct_link(conn, competition_id, "judge", j["code"]))})
-    return templates.TemplateResponse(request, "direct_links.html", {
-        "request": request, "comp": comp, "links": links})
+    staff = db.rows(conn.execute(
+        "SELECT username, display_name, role, active, created_at FROM users WHERE role IN ('host','marshal') ORDER BY role, username"))
+    return templates.TemplateResponse(request, "staff_links.html", {
+        "request": request, "comp": comp, "links": links, "staff": staff})
+
+
+@app.get("/events/{competition_id}/direct-links", response_class=HTMLResponse)
+async def direct_links_page(competition_id: int, request: Request = None):
+    """R100 导航归位：直达链接并入「工作人员与直达链接」。"""
+    return RedirectResponse("/events/{0}/staff-links".format(competition_id), status_code=302)
 
 
 @app.get("/api/events/{competition_id}/direct-links")

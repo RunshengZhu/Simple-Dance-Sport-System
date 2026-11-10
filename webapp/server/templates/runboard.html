@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
+{% set autorefresh = false %}
+{% block cid %}{{ comp.id }}{% endblock %}
+{% block title %}赛程执行总表 · {{ comp.name }}{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+{{ bar(comp, 'runboard') }}
+<h1>赛程执行总表 <span class="muted">{{ comp.name }}</span></h1>
+<div class="card" id="board-summary">
+  <span id="agg" class="muted">加载中…</span>
+  <span style="float:right">
+    <select id="rb-filter-st" class="rb-filter">
+      <option value="all">全部状态</option>
+      <option value="pending">待赛</option>
+      <option value="scoring">评分中</option>
+      <option value="calculated">已计算</option>
+      <option value="published">已发布</option>
+    </select>
+    <input id="rb-search" placeholder="搜编号/名称" class="rb-filter">
+    <button class="btn" id="rb-publish-all">一键发布全部</button>
+  </span>
+</div>
+<div id="board"><div class="card muted">加载中…</div></div>
+{% endblock %}
+{% block scripts %}
+var CID = {{ comp.id }};
+var DATA = null;
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+  return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+function stName(s) { return {pending: '待赛', scoring: '评分中', calculated: '已计算', published: '已发布'}[s] || s; }
+function stTag(s) {
+  var cls = {pending: 'gray', scoring: 'warn', calculated: 'acc', published: 'ok'}[s] || 'gray';
+  return '<span class="tag ' + cls + '">' + stName(s) + '</span>';
+}
+
+function render() {
+  if (!DATA) return;
+  var evs = DATA.events;
+  var stFilter = document.getElementById('rb-filter-st').value;
+  var q = document.getElementById('rb-search').value.trim().toLowerCase();
+  // 聚合条
+  var by = {};
+  evs.forEach(function (e) { by[e.status] = (by[e.status] || 0) + 1; });
+  document.getElementById('agg').innerHTML =
+    '共 ' + evs.length + ' 场 · ' +
+    ['published', 'calculated', 'scoring', 'pending'].map(function (s) {
+      return stName(s) + ' ' + (by[s] || 0);
+    }).join(' · ') + ' · 裁判 ' + DATA.judges_total + ' 名';
+  // 行卡
+  var box = document.getElementById('board');
+  var html = '';
+  evs.forEach(function (e, i) {
+    if (stFilter !== 'all' && e.status !== stFilter) return;
+    if (q && (e.code + ' ' + e.name).toLowerCase().indexOf(q) < 0) return;
+    var seq = (e.run_seq || (i + 1));
+    var prog = e.total_pairs ? Math.round(e.submitted_pairs / e.total_pairs * 100) : 0;
+    var checkedN = e.checked.length, rosterN = e.roster.length;
+    var actions = '';
+    if (e.status === 'pending' && rosterN) actions += '<button class="btn small" onclick="act(' + e.id + ',\'open\')">开场</button>';
+    if (e.status === 'scoring') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'checkin\')">一键全部检录</button>';
+    if (e.status === 'scoring') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'close\')">关闭评分</button>';
+    if (e.status === 'scoring') actions += '<button class="btn small danger" onclick="act(' + e.id + ',\'return\')">退回</button>';
+    if (e.status === 'calculated') actions += '<button class="btn small" onclick="act(' + e.id + ',\'publish\')">发布</button>';
+    if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'unpublish\')">撤回</button>';
+    if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'announce\')">' + (e.announced ? '取消播报' : '播报') + '</button>';
+    if (e.round === 1 && e.advancement_count > 0 && (e.status === 'calculated' || e.status === 'published'))
+      actions += '<a class="btn small" href="/events/' + CID + '/advancement?project=' + encodeURIComponent(e.project) + '&round=' + e.round + '">晋级确认</a>';
+    var top3 = e.top3.map(function (t) {
+      return '<span class="rb-top">第' + t.rank + ' ' + esc(t.number) + '</span>';
+    }).join(' ');
+    var progTxt = e.total_pairs ? (e.submitted_pairs + '/' + e.total_pairs + '（' + prog + '%）') : '—';
+    var checkedTxt = rosterN ? (checkedN + '/' + rosterN) : '—';
+    html += '<div class="card rb-row" data-ceid="' + e.id + '" data-st="' + e.status + '">' +
+      '<div class="rb-head" onclick="toggleDetail(' + e.id + ')">' +
+      '<span class="rb-seq">' + seq + '</span>' +
+      '<b class="rb-code">' + esc(e.code) + '</b> ' + esc(e.name) + ' ' + stTag(e.status) +
+      '<span class="rb-metrics">检录 ' + checkedTxt + ' · 评分 ' + progTxt +
+      (e.status === 'published' ? (e.announced ? ' · ✓播报' : ' · 未播报') : '') + '</span>' +
+      '<span class="rb-actions" onclick="event.stopPropagation()">' + actions +
+      '<a class="btn small secondary" href="/events/' + CID + '/console/' + e.id + '">详情</a></span>' +
+      '</div>';
+    if (e.status === 'calculated' || e.status === 'published') {
+      html += '<div class="rb-top3">' + (top3 || '<span class="muted">暂无结果</span>') + '</div>';
+    }
+    html += '<div class="rb-detail" id="rb-detail-' + e.id + '" style="display:none">';
+    if (rosterN) {
+      html += '<div class="rb-sec"><b>上场名单与检录</b> ';
+      e.roster.forEach(function (n) {
+        var on = e.checked.indexOf(n) > -1;
+        html += '<span class="chip ' + (on ? 'on' : 'off') + '" onclick="toggleCheckin(' + e.id + ',' + JSON.stringify(n) + ',' + (!on) + ')" title="点击切换检录">' + esc(n) + '</span>';
+      });
+      html += '</div>';
+    }
+    if (e.dances.length && DATA.judges_total) {
+      html += '<div class="rb-sec"><b>评分进度（裁判 × 舞种）</b> ';
+      e.dances.forEach(function (d) {
+        var done = (e.matrix[d] || []);
+        html += '<span class="rb-dance">' + esc(d) + ': ';
+        for (var j = 1; j <= DATA.judges_total; j++) {
+          html += '<span class="rb-j ' + (done.indexOf('J' + j) > -1 ? 'done' : '') + '">J' + j + '</span>';
+        }
+        html += '</span> ';
+      });
+      html += '</div>';
+    }
+    html += '<div class="rb-sec muted">深度操作（重开/退回/自动发布设置）在 <a href="/events/' + CID + '/console/' + e.id + '">场次详情</a></div>';
+    html += '</div></div>';
+  });
+  box.innerHTML = html || '<div class="card muted">该筛选条件下没有场次。</div>';
+}
+
+function toggleDetail(id) {
+  var el = document.getElementById('rb-detail-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+async function act(id, action) {
+  var path = '/api/competition-events/' + id + '/';
+  try {
+    if (action === 'open') {
+      var ev = DATA.events.filter(function (e) { return e.id === id; })[0];
+      await api('POST', path + 'open', {roster: ev.roster, reset: false});
+    } else if (action === 'checkin') {
+      var ev2 = DATA.events.filter(function (e) { return e.id === id; })[0];
+      await api('POST', path + 'checkin', {numbers: ev2.roster, state: true});
+    } else if (action === 'publish') { await api('POST', path + 'publish', {}); }
+    else if (action === 'unpublish') { await api('POST', path + 'unpublish', {}); }
+    else if (action === 'announce') { await api('POST', path + 'announce', {announced: 'toggle'}); }
+    else if (action === 'close') { await api('POST', path + 'close', {}); }
+    else if (action === 'return') {
+      if (!confirm('退回将清空本场全部评分与结果，确认？')) return;
+      await api('POST', path + 'return-scores', {});
+    }
+    await load();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function toggleCheckin(id, num, state) {
+  try { await api('POST', '/api/competition-events/' + id + '/checkin', {numbers: [num], state: state}); await load(); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
+document.getElementById('rb-publish-all').onclick = async function () {
+  if (!confirm('发布全部「已计算」场次？')) return;
+  var btn = this; btn.disabled = true;
+  var ok = 0;
+  DATA.events.filter(function (e) { return e.status === 'calculated'; });
+  for (var i = 0; i < DATA.events.length; i++) {
+    if (DATA.events[i].status !== 'calculated') continue;
+    try { await api('POST', '/api/competition-events/' + DATA.events[i].id + '/publish', {}); ok++; } catch (e) {}
+  }
+  btn.disabled = false;
+  toast('已发布 ' + ok + ' 场', 'ok');
+  await load();
+};
+document.getElementById('rb-filter-st').onchange = render;
+document.getElementById('rb-search').oninput = render;
+
+async function load() {
+  DATA = await api('GET', '/api/events/' + CID + '/runboard');
+  render();
+}
+load().catch(function (e) { document.getElementById('board').innerHTML = '<div class="card err">' + esc(e.message) + '</div>'; });
+if (window.CID && !window.__pageOwnSSE) {
+  window.__pageOwnSSE = true;
+  connectSSE('/api/events/' + window.CID + '/stream',
+    {score_submitted: load, calculation_done: load, results_published: load,
+     checkin_changed: load, schedule_changed: load, competition_event_opened: load},
+    load, 8000);
+}
+{% endblock %}

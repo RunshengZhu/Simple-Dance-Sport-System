@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
+{% block cid %}{{ comp.id }}{% endblock %}
+{% block title %}工作人员与直达链接 · {{ comp.name }}{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+{{ bar(comp, 'staff-links') }}
+<h1>工作人员与直达链接 <span class="muted">{{ comp.name }}</span></h1>
+
+<div class="card">
+  <h2>工作人员账号（检录 / 主持）</h2>
+  <p class="muted">创建检录长/检录员与主持人账号；裁判无需账号，按「直达链接」分发。</p>
+  <div class="grid c2">
+    <div>
+      <label>用户名（登录用，唯一）</label><input id="u-username" placeholder="如 marshal-wang">
+      <label>口令（至少 6 位）</label><input id="u-password" placeholder="分发前请妥善保存">
+    </div>
+    <div>
+      <label>显示名（检录台/主持台展示）</label><input id="u-display" placeholder="如 检录员-王老师">
+      <label>角色</label>
+      <select id="u-role">
+        <option value="marshal">检录长/检录员</option>
+        <option value="host">主持人</option>
+      </select>
+    </div>
+  </div>
+  <p><button class="btn" onclick="createUser()">创建账号</button> <span id="u-msg" class="muted"></span></p>
+  <div class="tbl-scroll"><table>
+    <tr><th>用户名</th><th>显示名</th><th>角色</th><th>状态</th><th>创建时间</th></tr>
+    {% for u in staff %}
+    <tr>
+      <td><b>{{ u.username }}</b></td><td>{{ u.display_name }}</td>
+      <td>{{ '主持人' if u.role == 'host' else '检录长/检录员' }}</td>
+      <td>{% if u.active %}<span class="tag ok">启用</span>{% else %}<span class="tag gray">停用</span>{% endif %}</td>
+      <td class="muted">{{ u.created_at }}</td>
+    </tr>
+    {% endfor %}
+    {% if not staff %}<tr><td colspan="5" class="muted">暂无工作人员账号——上方表单创建。</td></tr>{% endif %}
+  </table></div>
+  <p class="muted">账号停用/重置等全局操作在 <a href="/users">用户管理</a>（总管理员）。</p>
+</div>
+
+<div class="card">
+  <h2>各角色免密直达链接</h2>
+  <p class="muted">链接等同口令，仅分发给对应工作人员；泄露时重置口令即可作废全部旧链接。裁判无需账号，点击即以该裁判 ID 登录。</p>
+  <div class="tbl-scroll"><table>
+    <tr><th>角色</th><th>账号 / ID</th><th>姓名</th><th>直达链接（点击即登录）</th><th></th></tr>
+    {% for l in links %}
+    <tr>
+      <td>{{ {"compadmin": "赛事管理员", "marshal": "检录长/检录员", "host": "主持人", "judge": "裁判"}.get(l.role, l.role) }}</td>
+      <td><b>{{ l.username }}</b></td>
+      <td>{{ l.name }}</td>
+      <td class="table-fit"><a href="{{ l.url }}" target="_blank">{{ l.url }}</a></td>
+      <td><button class="btn small secondary" onclick="copyText('{{ l.url }}', '已复制 {{ l.username }} 的直达链接')">复制</button></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endblock %}
+{% block scripts %}
+async function createUser() {
+  var body = {
+    username: document.getElementById('u-username').value.trim(),
+    password: document.getElementById('u-password').value,
+    role: document.getElementById('u-role').value,
+    display_name: document.getElementById('u-display').value.trim()
+  };
+  if (!body.username || !body.password) { document.getElementById('u-msg').textContent = '用户名与口令必填'; return; }
+  try {
+    await api('POST', '/api/users', body);
+    toast('账号已创建：' + body.username, 'ok');
+    setTimeout(function () { location.reload(); }, 800);
+  } catch (e) { document.getElementById('u-msg').textContent = e.message; }
+}
+{% endblock %}
