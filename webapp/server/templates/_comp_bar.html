@@ -18,7 +18,7 @@
   </div>
   <div class="nav-level2">
     {% for item in nav.cur_items %}
-    <a class="nav-sub-item {{ 'active' if item.label == nav.cur_label }}" href="{{ nav.base }}{{ item.path }}">{{ item.label }}</a>
+    <a class="nav-sub-item {{ 'active' if item.label == nav.cur_label }}" href="{{ item.path }}">{{ item.label }}</a>
     {% endfor %}
   </div>
   {% else %}
