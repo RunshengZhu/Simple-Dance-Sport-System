@@ -11,18 +11,14 @@
     </span>
   </div>
   {% if nav %}
-  <div class="nav-groups">
+  <div class="nav-level1">
     {% for gid, glabel, items in nav.groups %}
-    <div class="nav-group {{ 'cur' if gid == nav.cur_group }}">
-      <a class="nav-group-label" href="{{ nav.base }}{{ items[0][0] }}">{{ glabel }}</a>
-      {% if gid == nav.cur_group %}
-      <span class="nav-sub">
-        {% for sp, sl in items %}
-        <a class="nav-sub-item {{ 'active' if sl == nav.cur_label }}" href="{{ nav.base }}{{ sp }}">{{ sl }}</a>
-        {% endfor %}
-      </span>
-      {% endif %}
-    </div>
+    <a class="nav-l1 {{ 'cur' if gid == nav.cur_group }}" href="{{ nav.base }}{{ items[0][0] }}">{{ glabel }}</a>
+    {% endfor %}
+  </div>
+  <div class="nav-level2">
+    {% for item in nav.cur_items %}
+    <a class="nav-sub-item {{ 'active' if item.label == nav.cur_label }}" href="{{ nav.base }}{{ item.path }}">{{ item.label }}</a>
     {% endfor %}
   </div>
   {% else %}

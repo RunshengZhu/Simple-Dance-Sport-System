@@ -70,20 +70,25 @@ function render() {
     var top3 = e.top3.map(function (t) {
       return '<span class="rb-top">第' + t.rank + ' ' + esc(t.number) + '</span>';
     }).join(' ');
-    var progTxt = e.total_pairs ? (e.submitted_pairs + '/' + e.total_pairs + '（' + prog + '%）') : '—';
+    var progTxt = e.total_pairs ? (e.submitted_pairs + '/' + e.total_pairs + ' · ' + prog + '%') : '—';
     var checkedTxt = rosterN ? (checkedN + '/' + rosterN) : '—';
+    // R100b 行卡分层：头部（序号/编号/名称/状态/动作）+ 指标条（块化，独立行）
     html += '<div class="card rb-row" data-ceid="' + e.id + '" data-st="' + e.status + '">' +
-      '<div class="rb-head" onclick="toggleDetail(' + e.id + ')">' +
+      '<div class="rb-head">' +
       '<span class="rb-seq">' + seq + '</span>' +
-      '<b class="rb-code">' + esc(e.code) + '</b> ' + esc(e.name) + ' ' + stTag(e.status) +
-      '<span class="rb-metrics">检录 ' + checkedTxt + ' · 评分 ' + progTxt +
-      (e.status === 'published' ? (e.announced ? ' · ✓播报' : ' · 未播报') : '') + '</span>' +
+      '<span class="rb-main" onclick="toggleDetail(' + e.id + ')">' +
+      '<b class="rb-code">' + esc(e.code) + '</b> <span class="rb-name">' + esc(e.name) + '</span> ' + stTag(e.status) +
+      '</span>' +
       '<span class="rb-actions" onclick="event.stopPropagation()">' + actions +
       '<a class="btn small secondary" href="/events/' + CID + '/console/' + e.id + '">详情</a></span>' +
+      '</div>' +
+      '<div class="rb-metrics" onclick="toggleDetail(' + e.id + ')">' +
+      '<span class="rb-metric"><span class="rb-k">检录</span><span class="rb-v">' + checkedTxt + '</span></span>' +
+      '<span class="rb-metric"><span class="rb-k">评分</span><span class="rb-v">' + progTxt + '</span></span>' +
+      (e.status === 'published' ? '<span class="rb-metric"><span class="rb-k">播报</span><span class="rb-v">' + (e.announced ? '✓' : '未') + '</span></span>' : '') +
+      ((e.status === 'calculated' || e.status === 'published') ? '<span class="rb-metric rb-metric-wide"><span class="rb-k">前三</span><span class="rb-v">' + (top3 || '—') + '</span></span>' : '') +
+      '<span class="rb-hint">点击展开/收起详情</span>' +
       '</div>';
-    if (e.status === 'calculated' || e.status === 'published') {
-      html += '<div class="rb-top3">' + (top3 || '<span class="muted">暂无结果</span>') + '</div>';
-    }
     html += '<div class="rb-detail" id="rb-detail-' + e.id + '" style="display:none">';
     if (rosterN) {
       html += '<div class="rb-sec"><b>上场名单与检录</b> ';

@@ -299,7 +299,11 @@ function setTab(which) {
   if (which === 'proj') renderOvTable();
 }
 document.getElementById('gt-proj').onclick = function () { setTab('proj'); };
-setTab(location.hash === '#run-order-card' ? 'sched' : 'proj');
+setTab(new URLSearchParams(location.search).get('tab') === 'projects' ? 'proj' : 'sched');
+// 导航「项目管理」入口带 ?tab=projects；「赛程编排」默认顺序编排视图
+if (new URLSearchParams(location.search).get('tab') === 'projects') {
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+}
 document.getElementById('gt-sched').onclick = function () { setTab('sched'); };
 function genCfg() {
   return {max_entries: parseInt(document.getElementById('gmax').value, 10) || 24,

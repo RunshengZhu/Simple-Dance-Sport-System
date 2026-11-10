@@ -105,6 +105,7 @@ _NAV_GROUPS = [
         ("/overview", "赛事信息与向导"),
         ("/import", "数据导入"),
         ("/roster", "名单"),
+        ("/schedule?tab=projects", "项目管理"),
         ("/schedule", "赛程编排"),
         ("/staff-links", "工作人员与直达链接"),
     ]),
@@ -120,20 +121,34 @@ _NAV_GROUPS = [
 ]
 
 
-def _nav_for(path: str, comp_id: int):
+def _nav_for(path: str, comp_id: int, query: str = ""):
     """R100 两级导航：一级=工作阶段（筹备/比赛/展示），二级=阶段内功能页。
-    路径精确/前缀匹配定当前组；场次控制台(/console)归比赛控制组。"""
+    路径精确/前缀匹配定当前组；场次控制台(/console)归比赛控制组。
+    R100b：项目管理与赛程编排同路径不同 tab 参数（?tab=projects），按 query 区分高亮。"""
     base = "/events/{0}".format(comp_id)
     cur_g, cur_l = "", ""
     for gid, glabel, items in _NAV_GROUPS:
         for sub_path, sub_label in items:
             full = base + sub_path
-            if path == full or path.startswith(full + "/") or path.startswith(full + "#"):
+            full_path = full.split("?")[0]
+            if path == full_path or path.startswith(full_path + "/") or path.startswith(full_path + "#"):
+                if "?" in sub_path:
+                    params = sub_path.split("?", 1)[1]
+                    if not all(pv.strip() in query for pv in params.split("&")):
+                        continue   # 带参数项：query 未命中则不匹配
+                else:
+                    # 无参项让位：同路径存在带参数兄弟项且 query 命中其参数
+                    sib = [sp0.split("?", 1)[1] for sp0, _sl in items
+                           if sp0.split("?", 1)[0] == sub_path and "?" in sp0]
+                    if sib and any(all(pv.strip() in query for pv in sp.split("&")) for sp in sib):
+                        continue
                 cur_g, cur_l = gid, sub_label
         if path.startswith(base + "/console/"):
             cur_g, cur_l = "run", "赛程执行总表"
     items_out = [{"path": base + sp, "label": sl} for _, _, its in _NAV_GROUPS for sp, sl in its]
-    return {"base": base, "groups": _NAV_GROUPS, "cur_group": cur_g, "cur_label": cur_l, "items": items_out}
+    cur_items = [{"path": base + sp, "label": sl} for gid, _, its in _NAV_GROUPS if gid == cur_g for sp, sl in its]
+    return {"base": base, "groups": _NAV_GROUPS, "cur_group": cur_g, "cur_label": cur_l,
+            "items": items_out, "cur_items": cur_items}
 
 _COMPCID_DENY_PREFIXES = ("/api/users", "/api/import/json", "/api/import/db",
                           "/api/export/json", "/api/export/db", "/api/backup")
@@ -196,7 +211,7 @@ async def compadmin_scope(request: Request, call_next):
     if not p.startswith("/api/"):
         m2 = _COMPCID_RE.match(p)
         if m2:
-            request.state.nav = _nav_for(p, int(m2.group(2)))
+            request.state.nav = _nav_for(p, int(m2.group(2)), str(request.url.query))
     return await call_next(request)
 
 

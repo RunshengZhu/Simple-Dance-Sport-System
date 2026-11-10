@@ -821,20 +821,42 @@ body.judge-sheet main, body.screen main { max-width: none; }
 .gen-tabs .btn.small { padding: 8px 22px; font-size: 1rem; border-radius: 8px 8px 0 0; border-bottom: none; }
 .gen-tabs .btn.small:not(.active) { background: var(--card); color: var(--muted); border-color: var(--line); }
 
-/* ---- R100 两级导航 ---- */
+/* ---- R100b 两级导航：一级独立行（大号），二级第二行 ---- */
 .comp-bar-head-right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
 .comp-bar-head-right a { color: var(--muted); font-size: 13px; }
 .comp-bar-head-right a:hover { color: var(--text); }
-.nav-groups { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; align-items: center; }
-.nav-group { display: flex; align-items: center; gap: 0; border-radius: 8px; }
-.nav-group-label { font-weight: 700; padding: 6px 10px; border-radius: 8px; color: var(--muted); font-size: 15px; }
-.nav-group.cur .nav-group-label { color: var(--text); background: var(--card); }
-.nav-sub { display: inline-flex; flex-wrap: wrap; gap: 2px; margin-left: 4px; }
-.nav-sub-item { padding: 5px 9px; border-radius: 7px; font-size: 13.5px; color: var(--muted); }
+.nav-level1 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.nav-l1 { font-size: 16px; font-weight: 800; padding: 8px 16px; border-radius: 10px;
+          color: var(--muted); letter-spacing: .02em; }
+.nav-l1:hover { color: var(--text); background: rgba(128,128,128,.1); }
+.nav-l1.cur { color: #fff; background: var(--acc, #c0392b); }
+.nav-level2 { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; padding: 4px 6px;
+              border-left: 3px solid var(--acc, #c0392b); }
+.nav-sub-item { padding: 6px 11px; border-radius: 8px; font-size: 14px; color: var(--muted); }
 .nav-sub-item:hover { color: var(--text); background: rgba(128,128,128,.12); }
-.nav-sub-item.active { color: #fff; background: var(--acc, #c0392b); }
+.nav-sub-item.active { color: var(--text); font-weight: 700; background: rgba(128,128,128,.16); }
 @media (max-width: 760px) {
-  .nav-groups { flex-direction: column; align-items: stretch; gap: 6px; }
-  .nav-group { flex-direction: column; align-items: flex-start; gap: 4px; }
-  .nav-sub { margin-left: 10px; }
+  .nav-level1 { gap: 4px; }
+  .nav-l1 { padding: 7px 12px; font-size: 15px; }
+  .nav-level2 { overflow-x: auto; flex-wrap: nowrap; }
 }
+
+/* ---- R100b runboard 行卡分层 ---- */
+.rb-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rb-main { cursor: pointer; }
+.rb-name { font-size: 15px; }
+.rb-metrics { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; cursor: pointer; align-items: center; }
+.rb-metric { display: inline-flex; align-items: center; gap: 6px; background: rgba(128,128,128,.1);
+             border-radius: 8px; padding: 4px 10px; }
+.rb-metric-wide { flex: 1 1 220px; }
+.rb-k { color: var(--muted); font-size: 12px; }
+.rb-v { font-weight: 700; font-size: 13.5px; }
+.rb-top { margin-right: 8px; }
+.rb-hint { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+.rb-actions { margin-left: auto; display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+
+.rb-dance { margin-right: 14px; display: inline-block; }
+.rb-j { display: inline-block; min-width: 26px; text-align: center; margin: 2px 3px 2px 0;
+        padding: 3px 4px; border-radius: 6px; font-size: 12px; font-weight: 700;
+        background: rgba(128,128,128,.14); color: var(--muted); }
+.rb-j.done { background: rgba(46,204,113,.22); color: #2ecc71; }
