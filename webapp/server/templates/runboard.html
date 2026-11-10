@@ -60,7 +60,10 @@ function render() {
     var actions = '';
     if (e.status === 'pending' && rosterN) actions += '<button class="btn small" onclick="act(' + e.id + ',\'open\')">开场</button>';
     if (e.status === 'scoring') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'checkin\')">一键全部检录</button>';
-    if (e.status === 'scoring') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'close\')">关闭评分</button>';
+    if (e.status === 'scoring') {
+      actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'calc\')">手动计算</button>';
+      actions += '<button class="btn small secondary" onclick="if(confirm(\'关闭评分将回到开场前状态，确认？\'))act(' + e.id + ',\'close\')">关闭评分</button>';
+    }
     if (e.status === 'scoring') actions += '<button class="btn small danger" onclick="act(' + e.id + ',\'return\')">退回</button>';
     if (e.status === 'calculated') actions += '<button class="btn small" onclick="act(' + e.id + ',\'publish\')">发布</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'unpublish\')">撤回</button>';
@@ -134,6 +137,7 @@ async function act(id, action) {
     else if (action === 'unpublish') { await api('POST', path + 'unpublish', {}); }
     else if (action === 'announce') { await api('POST', path + 'announce', {announced: 'toggle'}); }
     else if (action === 'close') { await api('POST', path + 'close', {}); }
+    else if (action === 'calc') { await api('POST', path + 'calculate', {}); }
     else if (action === 'return') {
       if (!confirm('退回将清空本场全部评分与结果，确认？')) return;
       await api('POST', path + 'return-scores', {});

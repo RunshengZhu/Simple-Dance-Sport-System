@@ -178,6 +178,11 @@ async def compadmin_scope(request: Request, call_next):
                     if eff != ev_cid:
                         return JSONResponse({"detail": "该场次不属于您所登录的赛事"}, status_code=403)
     ca = _compadmin(request)
+    # R101：nav 注入提前到 compadmin 钳制之前——总管理员（ca=None）同样需要两级导航
+    if not request.url.path.startswith("/api/"):
+        m2 = _COMPCID_RE.match(request.url.path)
+        if m2:
+            request.state.nav = _nav_for(request.url.path, int(m2.group(2)), str(request.url.query))
     if not ca:
         return await call_next(request)
     request.state.is_compadmin = True   # 模板按此隐藏全局能力入口（如数据库备份）
@@ -208,10 +213,6 @@ async def compadmin_scope(request: Request, call_next):
         if gone:
             return deny("该赛事不存在或已被删除")
         return deny("赛事管理员仅可操作自己的赛事")
-    if not p.startswith("/api/"):
-        m2 = _COMPCID_RE.match(p)
-        if m2:
-            request.state.nav = _nav_for(p, int(m2.group(2)), str(request.url.query))
     return await call_next(request)
 
 
