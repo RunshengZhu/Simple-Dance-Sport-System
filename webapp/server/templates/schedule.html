@@ -454,11 +454,15 @@ document.getElementById('ro-clear').addEventListener('click', function () {
     .catch(function (e) { toast(e.message, 'err'); });
 });
 api('GET', '/api/events/' + window.CID + '/run-order').then(function (d) {
-  var saved = d.order.filter(function (e) { return e.run_seq; }).sort(function (a, b) { return a.run_seq - b.run_seq; });
+  var all = d.order || [];
+  var saved = all.filter(function (e) { return e.run_seq; }).sort(function (a, b) { return a.run_seq - b.run_seq; });
   if (saved.length) {
     roItems = saved.map(function (e) { return {ceid: e.ceid, code: e.code, name: e.name, project: e.project, round: e.round, roster: e.roster}; });
     renderRo('已加载保存的顺序（' + saved.length + ' 场）');
-  } else renderRo('尚未设置顺序');
+  } else if (all.length) {
+    roItems = all.map(function (e) { return {ceid: e.ceid, code: e.code, name: e.name, project: e.project, round: e.round, roster: e.roster}; });
+    renderRo('尚未保存出场顺序——以下为默认顺序（' + all.length + ' 场待赛），可调整后点「保存顺序」');
+  } else renderRo('暂无待赛场次——先在「项目管理」生成赛程');
 }).catch(function () { renderRo(); });
 }
 {% endblock %}
