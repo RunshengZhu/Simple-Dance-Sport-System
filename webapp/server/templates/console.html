@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_comp_bar.html" import bar with context %}
+{% block cid %}{{ comp.id }}{% endblock %}
 {% block title %}场次控制台 · {{ ev.name }}{% endblock %}
 {% block nav %}{% endblock %}
 {% block content %}

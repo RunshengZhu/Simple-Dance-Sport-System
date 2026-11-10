@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_comp_bar.html" import bar with context %}
 {% set autorefresh = true %}
+{% block cid %}{{ comp.id }}{% endblock %}
 {% block title %}结果中心 · {{ comp.name }}{% endblock %}
 {% block nav %}{% endblock %}
 {% block content %}
