@@ -137,7 +137,7 @@ async def compadmin_scope(request: Request, call_next):
     def deny(msg="赛事管理员无此权限"):
         if p.startswith("/api"):
             return JSONResponse({"detail": msg}, status_code=403)
-        return PlainTextResponse(msg, status_code=403)
+        return _friendly_error_page(msg + "。<br>请关闭旧页面，从公开赛事重新进入当前赛事。")
 
     if p.rstrip("/") in ("/events", "/users", "/files"):
         return RedirectResponse(f"/events/{cid}/overview", status_code=302)
@@ -155,7 +155,7 @@ async def compadmin_scope(request: Request, call_next):
         gone = not db.get_db().execute("SELECT 1 FROM competitions WHERE id=?",
                                        (int(m.group(2)),)).fetchone()
         if gone:
-            return deny("该赛事不存在或已被删除——请关闭旧页面，从公开赛事重新进入当前赛事")
+            return deny("该赛事不存在或已被删除")
         return deny("赛事管理员仅可操作自己的赛事")
     return await call_next(request)
 
@@ -270,11 +270,29 @@ def require_admin(request: Request):
 
 
 
+def _friendly_error_page(message):
+    """R98 页面路由的 404 友好页（旧书签/已删除赛事）：替代裸 JSON。"""
+    return HTMLResponse(
+        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        "<title>页面不可用 · 体育舞蹈工具箱</title></head>"
+        "<body style=\"font-family:system-ui,sans-serif;max-width:560px;margin:12vh auto;padding:0 20px;text-align:center\">"
+        "<h1 style=\"font-size:22px\">页面不可用</h1>"
+        "<p style=\"color:#666;line-height:1.6\">" + message + "</p>"
+        "<p><a href=\"/competitions\" style=\"display:inline-block;padding:10px 22px;border-radius:8px;"
+        "background:#c0392b;color:#fff;text-decoration:none\">从公开赛事进入</a>　"
+        "<a href=\"/\" style=\"display:inline-block;padding:10px 22px;border-radius:8px;"
+        "background:#eee;color:#333;text-decoration:none\">返回首页</a></p>"
+        "</body></html>", status_code=404)
+
+
 @app.exception_handler(HTTPException)
 async def html_auth_redirect(request: Request, exc: HTTPException):
-    """页面路由的登录/权限异常改为跳转登录页（API 路由维持 JSON），避免用户看到裸错误。"""
+    """页面路由的登录/权限异常改为跳转登录页；404 改为友好提示页（API 路由维持 JSON）。"""
     if not request.url.path.startswith("/api/") and exc.status_code in (401, 403):
         return RedirectResponse("/login", status_code=302)
+    if not request.url.path.startswith("/api/") and exc.status_code == 404:
+        return _friendly_error_page(str(exc.detail) + "。<br>该赛事可能已结束、被删除，或链接指向旧页面。")
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 
