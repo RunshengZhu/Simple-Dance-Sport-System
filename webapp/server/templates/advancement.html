@@ -47,7 +47,7 @@ document.getElementById('confirm-btn')?.addEventListener('click', async function
   if (!names.length) { document.getElementById('msg').textContent = '请先勾选晋级名单'; return; }
   if (!confirm('确认晋级 ' + names.length + ' 组（对）并回填下一轮？')) return;
   try {
-    var r = await api('POST', '/api/projects/' + PROJECT + '/rounds/' + ROUND + '/advancement-confirm', {advancing: names});
+    var r = await api('POST', '/api/projects/' + PROJECT + '/rounds/' + ROUND + '/advancement-confirm', {advancing: names, competition_id: CID});
     document.getElementById('msg').className = 'ok-text';
     document.getElementById('msg').textContent = '已回填：' + JSON.stringify(r.filled);
   } catch (e) { document.getElementById('msg').className = 'err'; document.getElementById('msg').textContent = e.message; }

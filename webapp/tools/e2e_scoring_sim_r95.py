@@ -236,12 +236,12 @@ def main():
                         all_ok = False
             # 同轮全部打完 → 晋级确认（非末轮）
             if not is_last:
-                c, d, _ = api("GET", f"/api/projects/{proj}/rounds/{rnd}/advancement-proposal", cookie=ck)
+                c, d, _ = api("GET", f"/api/projects/{proj}/rounds/{rnd}/advancement-proposal?competition_id={CID}", cookie=ck)
                 prop = [str(x["competitor_number"]) for x in d.get("proposal", [])]
                 assert_(f"{proj} R{rnd} 晋级预案 {len(prop)} 人", len(prop) > 0,
                         str(sorted(prop, key=num_key)[:6]) + "…")
                 c, d, _ = api("POST", f"/api/projects/{proj}/rounds/{rnd}/advancement-confirm",
-                              {"advancing": prop}, cookie=ck)
+                              {"advancing": prop, "competition_id": CID}, cookie=ck)
                 assert_(f"{proj} R{rnd} 晋级确认回填 R{rnd+1}", c == 200, str(d)[:80])
 
     # ---------- P5 服务端结果校验（ssh 只读） ----------

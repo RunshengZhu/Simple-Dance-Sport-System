@@ -9,7 +9,7 @@
 {% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
 
 {% if is_mark %}
-<p class="muted">Mark 制（预赛晋级票）：点击选手行给予 <b>Mark</b>（通常为晋级名额数量）；再点一次取消。已选 <span id="mark-count">0</span> / <span id="mark-cap">{{ checked|length }}</span></p>
+<p class="muted">Mark 制（预赛晋级票）：点击选手行给予 <b>Mark</b>，再点一次取消。勾选人数不限——票数供名次参考，实际晋级由晋级人数参数与晋级确认决定{% if ev.advancement_count %}（本场晋级名额 <b>{{ ev.advancement_count }}</b>）{% endif %}。已选 <span id="mark-count">0</span> / 已检录 <span id="mark-cap">{{ checked|length }}</span></p>
 <div class="mark-list">
   {% for num in roster %}
   {% set ok = num in checked %}

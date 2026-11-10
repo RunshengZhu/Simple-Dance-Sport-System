@@ -2737,14 +2737,18 @@ async def api_announce(ceid: int, request: Request = None):
 # ------------------------------------------------------------------ advancement
 @app.get("/api/projects/{project_code}/rounds/{round_no}/advancement-proposal")
 async def api_proposal(project_code: str, round_no: int, request: Request = None, competition_id: int = None):
-    ca = _compadmin(request)
-    if ca:
-        comp = _current_competition(request)
-        if not comp or comp["id"] != ca["comp_id"]:
-            raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
     require_admin(request)
-    comp = _current_competition(request)
-    cid = competition_id or (comp or {}).get("id")
+    # R97 显式赛事优先（页面知道自己在哪个赛事；多赛事并存时会话回落会查错赛）。
+    ca = _compadmin(request)
+    if competition_id is not None:
+        comp = _comp_or_404(competition_id)
+        if ca and comp["id"] != ca["comp_id"]:
+            raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    else:
+        comp = _current_competition(request)
+        if ca and (not comp or comp["id"] != ca["comp_id"]):
+            raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    cid = comp["id"] if comp else None
     if not cid:
         raise HTTPException(status_code=400, detail="无激活赛事")
     return {"proposal": advancement_proposal(cid, project_code, round_no)}
@@ -2752,24 +2756,36 @@ async def api_proposal(project_code: str, round_no: int, request: Request = None
 
 @app.post("/api/projects/{project_code}/rounds/{round_no}/advancement-confirm")
 async def api_confirm(project_code: str, round_no: int, request: Request = None):
-    ca = _compadmin(request)
-    if ca:
-        comp = _current_competition(request)
-        if not comp or comp["id"] != ca["comp_id"]:
-            raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
     require_admin(request)
-    comp = _current_competition(request)
-    if not comp:
-        raise HTTPException(status_code=400, detail="无激活赛事")
     body = await request.json()
     advancing = body.get("advancing") or []
     if not advancing:
         raise HTTPException(status_code=400, detail="晋级名单为空")
+    # R97 显式赛事优先：晋级页传 competition_id（页面 CID）——多赛事并存时若仍按会话回落，
+    # 会话绑在别赛会查到空的下一轮（容量 0 误导报错）甚至静默回填他赛名单（总管回落最新激活赛）。
+    bind_cid = body.get("competition_id")
+    if bind_cid is not None:
+        try:
+            bind_cid = int(bind_cid)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="competition_id 须为整数")
+        comp = _comp_or_404(bind_cid)
+    else:
+        comp = _current_competition(request)
+        if not comp:
+            raise HTTPException(status_code=400, detail="无激活赛事")
+    ca = _compadmin(request)
+    if ca and comp["id"] != ca["comp_id"]:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
     conn = db.get_db()
     # R91 容量校验：确认数不得超过下一轮总容量（场数 × 每场上限）
     next_round = db.rows(conn.execute(
         "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
         (comp["id"], project_code, round_no + 1)))
+    if not next_round:
+        raise HTTPException(status_code=400,
+                            detail="赛事 {0} 中项目 {1} 第 {2} 轮之后没有下一轮场次，无法回填（请核对赛事与项目，或在赛程编排生成后续轮次）".format(
+                                comp["id"], project_code, round_no + 1))
     sgc = db.rowdict(conn.execute(
         "SELECT cap FROM schedule_gen_config WHERE competition_id=? AND project_code=?",
         (comp["id"], project_code)).fetchone()) or db.rowdict(conn.execute(
