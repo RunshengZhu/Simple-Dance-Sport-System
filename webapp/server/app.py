@@ -920,6 +920,7 @@ async def console_page(request: Request, competition_id: int, ceid: int):
         "comp": comp, "ev": ev,
         "dances": dances_of(ev["id"]), "roster": roster(ev["id"]),
         "all_competitors": all_competitors, "checked": checked,
+        "comp_map": {c["number"]: c for c in all_competitors},
         "checked_n": len(checked), "total": len(roster(ev["id"])),
         "judges": judges_of(competition_id), "result": load_results(ev["id"]),
         "next_ev": next_ev,

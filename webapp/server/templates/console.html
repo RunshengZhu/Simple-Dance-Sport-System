@@ -7,30 +7,45 @@
 {{ bar(comp, 'schedule') }}
 {% macro roster_card() %}
 <details class="card card-roster" {% if ev.status == 'pending' %}open{% endif %}>
-  <summary><b>上场选手管理</b> <span class="muted">{{ checked_n }}/{{ total }} 已检录 · {% if ev.status == 'pending' %}默认全部上场，可取消个别后开赛{% else %}展开可调整（评分中调整将清空已有评分）{% endif %}</span></summary>
-  <p class="muted">从选手库勾选本场上场选手。<span class="tag ok">已检录</span> / <span class="tag gray">未检录</span> 标识与检录台同步。</p>
-  <div class="roster-tools">
-    <button type="button" class="btn secondary" onclick="candAll(1)">全选</button>
-    <button type="button" class="btn secondary" onclick="candAll(0)">全不选</button>
-    <button type="button" class="btn secondary" onclick="candFlip()">反选</button>
-    <span class="muted" id="cand-count"></span>
-  </div>
+  <summary><b>上场选手（确认上场状态）</b> <span class="muted">{{ checked_n }}/{{ total }} 已检录 · 与检录台/主持台同一份本场上场名单{% if ev.status == 'pending' %} · 勾选确定开场名单{% endif %}</span></summary>
+  <p class="muted">{% if ev.status == 'pending' %}勾选确定本场上场名单（默认全上）；{% endif %}检录状态与检录台实时同步，可直接在此检录/撤销。</p>
   <div id="roster-box">
-    {% for c in all_competitors %}
-    <label><input type="checkbox" class="cand" value="{{ c.number }}"
-      {% if c.number|string in roster or (ev.status == 'pending' and not roster) %}checked{% endif %}> {{ c.number }} {{ c.name }}
-      {% if c.number|string in roster %}{% if c.number|string in checked %}<span class="tag ok">已检录</span>{% else %}<span class="tag gray">未检录</span>{% endif %}
-      {% else %}<span class="muted">未上场</span>{% endif %}
-      <span class="muted">{{ c.unit }}</span></label>
+    {% for num in roster %}
+    <label class="roster-line"><b>{{ num }}</b> {{ comp_map.get(num, {}).get("name", "") }}
+      <span class="muted">{{ comp_map.get(num, {}).get("unit", "") }}</span>
+      {% if num in checked %}<span class="tag ok">已检录</span>{% else %}<span class="tag gray">未检录</span>{% endif %}
+      <input type="checkbox" class="cand" value="{{ num }}" checked {% if ev.status != 'pending' %}hidden{% endif %}>
+      {% if ev.status in ('pending', 'scoring') %}
+      <button type="button" class="btn secondary small" onclick="toggleCheckin('{{ num }}', {% if num in checked %}false{% else %}true{% endif %})">{% if num in checked %}撤销检录{% else %}检录{% endif %}</button>
+      {% else %}
+      <input type="checkbox" class="cand" value="{{ num }}" checked>
+      {% endif %}
+    </label>
     {% endfor %}
-    {% if not all_competitors %}<span class="muted">选手库为空，请先导入选手</span>{% endif %}
+    {% if not roster %}<span class="muted">本场上场名单为空——请在下方选手库勾选后开启评分。</span>{% endif %}
   </div>
   <p>
     <button class="btn" onclick="openEvent(false)">开启评分</button>
     <button class="btn secondary" onclick="openEvent(true)">重开（清空评分）</button>
     <button class="btn secondary" onclick="closeEvent()">关闭评分</button>
     <button class="btn danger" onclick="returnScores()">退回评分（FR-G5）</button>
+    <span id="cand-count" class="muted"></span>
   </p>
+  <details class="pool">
+    <summary><b>从选手库调整上场名单</b> <span class="muted">{{ all_competitors|length - roster|length }} 人未在本场（临时换人时展开勾选，勾选后重新开启评分生效）</span></summary>
+    <div class="roster-tools">
+      <button type="button" class="btn secondary" onclick="candAll(1)">全选</button>
+      <button type="button" class="btn secondary" onclick="candAll(0)">全不选</button>
+      <button type="button" class="btn secondary" onclick="candFlip()">反选</button>
+    </div>
+    <div id="pool-box">
+      {% for c in all_competitors %}
+      {% if c.number|string not in roster %}
+      <label><input type="checkbox" class="cand" value="{{ c.number }}" {% if ev.status == 'pending' and not roster %}checked{% endif %}> {{ c.number }} {{ c.name }} <span class="muted">{{ c.unit }}</span></label>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </details>
 </details>
 {% endmacro %}
 <h1>场次控制台 · {{ ev.name }} <span class="muted">{{ ev.code }} / {{ ev.project_code }} 第{{ ev.round }}轮 / {{ ev.scoring_type }}</span></h1>
@@ -86,6 +101,13 @@
 var CID = {{ comp.id }}, CEID = {{ ev.id }};
 var DANCES = {{ dances|tojson }}, JUDGES = {{ judges|tojson }};
 
+async function toggleCheckin(num, state) {
+  try {
+    await api('POST', '/api/competition-events/' + CEID + '/checkin', {numbers: [num], state: state});
+    toast(state ? ('已检录 ' + num) : ('已撤销检录 ' + num), 'ok');
+    softReload();
+  } catch (e) { toast(e.message, 'err'); }
+}
 function selectedRoster() {
   return Array.from(document.querySelectorAll('.cand:checked')).map(function (c) { return c.value; });
 }
