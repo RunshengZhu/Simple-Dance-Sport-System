@@ -82,7 +82,7 @@ def _parse_rate(s: str, default):
 
 
 RATE_GENERAL = _parse_rate(os.environ.get("DSPORT_RATE_GENERAL", ""), (300, 10))   # 常规页面/接口
-RATE_LOGIN = _parse_rate(os.environ.get("DSPORT_RATE_LOGIN", ""), (10, 60))        # 登录防爆破
+RATE_LOGIN = _parse_rate(os.environ.get("DSPORT_RATE_LOGIN", ""), (30, 60))        # 登录限速（R98d 10→30：比赛日场馆同 IP 下 11 裁判+工作人员集中登录的合法场景；防爆破仍由 api_login 内失败封禁兜底）
 MAX_BODY = int(os.environ.get("DSPORT_MAX_BODY", str(220 * 1024 * 1024)))          # 上传保护
 _RATE: dict = {}   # (slot, window_start) -> count（内存态，单 worker；重启即清零）
 
@@ -2924,7 +2924,7 @@ async def advancement_page(request: Request, competition_id: int):
     return templates.TemplateResponse(request, "advancement.html", {
         "request": request, "comp": comp, "projects": projects, "project": project,
         "rounds": rounds, "round": rnd, "proposal": proposal,
-        "adv": conn.execute("SELECT COALESCE(MAX(advancement_count),0) a FROM events WHERE competition_id=? AND project_code=? AND round=?",
+        "adv": conn.execute("SELECT COALESCE(SUM(advancement_count),0) a FROM events WHERE competition_id=? AND project_code=? AND round=?",
                             (competition_id, project, rnd)).fetchone()["a"],
         "next_exists": next_exists,
     })

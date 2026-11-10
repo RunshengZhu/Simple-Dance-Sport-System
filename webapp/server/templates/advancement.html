@@ -17,7 +17,7 @@
     {% for r in rounds %}<option value="{{ r }}" {% if r == round %}selected{% endif %}>第 {{ r }} 轮</option>{% endfor %}
   </select>
   <button class="btn secondary" onclick="location.href='?project='+document.getElementById('proj').value+'&round='+document.getElementById('rnd').value">生成预案</button>
-  <span class="muted">晋级名额（本类场次最大值）：{{ adv or 0 }} ·
+  <span class="muted">本类合计晋级名额（各场之和）：{{ adv or 0 }} ·
     {% if next_exists %}下一轮已配置{% else %}<span class="tag warn">赛程中无下一轮（决赛轮）</span>{% endif %}</span>
 </div>
 {% if proposal %}
@@ -28,7 +28,7 @@
     {% for p in proposal %}
     <tr>
       <td><input type="checkbox" class="adv-check" data-num="{{ p.competitor_number }}"
-           {% if loop.index <= (adv or 0) %}checked{% endif %}></td>
+           checked></td>
       <td>{{ loop.index }}</td><td>{{ p.competitor_number }}</td><td class="num">{{ p.total_score }}</td>
     </tr>
     {% endfor %}
