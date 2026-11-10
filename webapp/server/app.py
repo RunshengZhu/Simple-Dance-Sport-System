@@ -151,6 +151,11 @@ async def compadmin_scope(request: Request, call_next):
         return deny("赛事管理员不可修改全局大屏设置")
     m = _COMPCID_RE.match(p)
     if m and int(m.group(2)) != cid:
+        # R98：赛事已不存在（旧标签页指向被清理的赛事）时给准确文案，避免误导为权限问题
+        gone = not db.get_db().execute("SELECT 1 FROM competitions WHERE id=?",
+                                       (int(m.group(2)),)).fetchone()
+        if gone:
+            return deny("该赛事不存在或已被删除——请关闭旧页面，从公开赛事重新进入当前赛事")
         return deny("赛事管理员仅可操作自己的赛事")
     return await call_next(request)
 
