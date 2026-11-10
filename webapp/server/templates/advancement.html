@@ -50,7 +50,11 @@ document.getElementById('confirm-btn')?.addEventListener('click', async function
   try {
     var r = await api('POST', '/api/projects/' + PROJECT + '/rounds/' + ROUND + '/advancement-confirm', {advancing: names, competition_id: CID});
     document.getElementById('msg').className = 'ok-text';
-    document.getElementById('msg').textContent = '已回填：' + JSON.stringify(r.filled);
+    var parts = [];
+    for (var code in r.filled) {
+      parts.push(code + '（' + r.filled[code].length + ' 人：' + r.filled[code].join('、') + '）');
+    }
+    document.getElementById('msg').textContent = '已按名次蛇形回填下一轮——' + parts.join('；');
   } catch (e) { document.getElementById('msg').className = 'err'; document.getElementById('msg').textContent = e.message; }
 });
 {% endblock %}

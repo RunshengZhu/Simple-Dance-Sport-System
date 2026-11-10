@@ -1470,12 +1470,10 @@ async def api_import_file(competition_id: int, request: Request = None):
     count, problems = _import_rows_impl(conn, competition_id, kind, header, data_rows)
     conn.commit()
     sse.bus.publish(competition_id, "schedule_changed")
-    auto = _maybe_auto_schedule(conn, competition_id) if kind == "competitors" and count else None
-    if auto is not None:
-        conn.commit()
+    # R102：不再自动生成旧默认赛程——v4 工作流下由「项目管理」页生成，避免「赛程已就绪」误判
     resp = {"ok": True, "imported": count, "problems": problems}
-    if auto is not None:
-        resp["auto_schedule"] = {"created": auto, "note": "已按报项自动生成默认赛程，请到「赛程编排」检查调整"}
+    if kind == "competitors" and count:
+        resp["next_step"] = "报项已导入——到「项目管理」页设置参数生成赛程"
     return resp
 
 
@@ -1505,12 +1503,9 @@ async def api_import(competition_id: int, kind: str, request: Request = None):
     count, problems = _import_rows_impl(conn, competition_id, kind, header, data_rows)
     conn.commit()
     sse.bus.publish(competition_id, "schedule_changed")
-    auto = _maybe_auto_schedule(conn, competition_id) if kind == "competitors" and count else None
-    if auto is not None:
-        conn.commit()
     resp = {"ok": True, "imported": count, "problems": problems}
-    if auto is not None:
-        resp["auto_schedule"] = {"created": auto, "note": "已按报项自动生成默认赛程，请到「赛程编排」检查调整"}
+    if kind == "competitors" and count:
+        resp["next_step"] = "报项已导入——到「项目管理」页设置参数生成赛程"
     return resp
 
 
@@ -3727,7 +3722,8 @@ async def api_judges_export(competition_id: int, request: Request = None):
     w = csv.writer(buf)
     w.writerow(["裁判ID", "姓名", "单位"])
     for j in db.rows(conn.execute(
-            "SELECT code, name, unit FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+            "SELECT code, name, unit FROM judges WHERE competition_id=? "
+            "ORDER BY CAST(SUBSTR(code, 2) AS INTEGER), code", (competition_id,))):
         w.writerow([j["code"], j["name"] or "", j["unit"] or ""])
     return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="judges-{0}.csv"'.format(competition_id)})

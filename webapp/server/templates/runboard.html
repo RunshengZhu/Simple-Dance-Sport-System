@@ -167,8 +167,12 @@ document.getElementById('rb-publish-all').onclick = async function () {
 document.getElementById('rb-filter-st').onchange = render;
 document.getElementById('rb-search').oninput = render;
 
+var LOAD_SEQ = 0;
 async function load() {
-  DATA = await api('GET', '/api/events/' + CID + '/runboard');
+  var seq = ++LOAD_SEQ;
+  var d = await api('GET', '/api/events/' + CID + '/runboard');
+  if (seq !== LOAD_SEQ) return;   // R102：并发 load 竞态保护——只应用最新一次
+  DATA = d;
   render();
 }
 load().catch(function (e) { document.getElementById('board').innerHTML = '<div class="card err">' + esc(e.message) + '</div>'; });
