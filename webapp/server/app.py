@@ -2478,17 +2478,38 @@ async def api_gen_preview(competition_id: int, request: Request = None):
         "SELECT * FROM schedule_gen_config WHERE competition_id=? AND project_code!=''",
         (competition_id,)))}
     out = []
-    projs = db.rows(conn.execute(
-        "SELECT project_code, COUNT(*) c FROM competitors WHERE competition_id=? GROUP BY project_code ORDER BY project_code",
-        (competition_id,)))
+    # R105b：项目清单/名称/团体计分回显一律来自**实际场次**（与场次总表导入保持一致），
+    # 报项表（competitors）只决定该项目能否按参数重新生成名单（can_generate）。
+    ev_projs = db.rows(conn.execute(
+        "SELECT project_code, MIN(run_seq) seq FROM events WHERE competition_id=? "
+        "GROUP BY project_code ORDER BY MIN(run_seq)", (competition_id,)))
     disp = _project_display_names(conn, competition_id)
-    for p in projs:
+    comp_counts = {r["project_code"]: r["c"] for r in db.rows(conn.execute(
+        "SELECT project_code, COUNT(DISTINCT number) c FROM competitors WHERE competition_id=? GROUP BY project_code",
+        (competition_id,)))}
+    for p in ev_projs:
         code = p["project_code"]
         ov = overrides.get(code) or {}
+        # 实际上场人数（该项目全部场次去重背番号）
+        roster = conn.execute(
+            "SELECT COUNT(DISTINCT competitor_number) c FROM event_competitors ec "
+            "JOIN events e ON e.id=ec.event_id WHERE e.competition_id=? AND e.project_code=?",
+            (competition_id, code)).fetchone()["c"]
+        # events 上的实际团体计分（同项目应一致；多值时取非 standard 优先）
+        modes = [r["team_mode"] or "standard" for r in db.rows(conn.execute(
+            "SELECT DISTINCT team_mode FROM events WHERE competition_id=? AND project_code=?",
+            (competition_id, code)))]
+        ev_mode = modes[0] if len(modes) == 1 else ("exclude" if "exclude" in modes else ("freshman_half" if "freshman_half" in modes else "standard"))
         c = dict(cfg, **{k: ov[k] for k in ("max_entries", "cap", "final_size", "mode", "rounds_spec", "strategy", "team_mode") if ov.get(k)})
-        rounds = _derive_rounds(p["c"], c["cap"], c["final_size"], c["mode"], _parse_rounds_spec(c["rounds_spec"]))
+        if not c.get("team_mode"):
+            c["team_mode"] = ev_mode   # 覆盖表回显实际值
+        # 报项表人数 ≥ 实际上场名单才允许按参数重建（生成引擎按 competitors 取名单）
+        can_gen = comp_counts.get(code, 0) >= roster and roster > 0
+        entries_disp = roster
+        rounds = _derive_rounds(entries_disp, c["cap"], c["final_size"], c["mode"], _parse_rounds_spec(c["rounds_spec"]))
         rounds_txt = " → ".join("{0} 场×{1}取{2}".format(r["heats"], r["entries"], r["per_heat"] or "决赛") for r in rounds)
-        out.append({"project": code, "name": disp.get(code, code), "entries": p["c"],
+        out.append({"project": code, "name": disp.get(code, code), "entries": entries_disp,
+                    "roster": roster, "can_generate": can_gen,
                     "max_entries": c["max_entries"], "cap": c["cap"], "final_size": c["final_size"],
                     "mode": c["mode"], "rounds_spec": c["rounds_spec"], "strategy": c["strategy"],
                     "team_mode": c.get("team_mode") or "",
@@ -2530,6 +2551,13 @@ async def api_generate_schedule(competition_id: int, request: Request = None):
     # 全量模式：先整体检查所有项目全部 pending
     targets = []
     if only:
+        # R105b：单项目生成要求报项表有该项目（名单来源）——场次总表导入的项目不能按参数重建
+        has_comp = conn.execute(
+            "SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
+            (competition_id, only)).fetchone()["c"]
+        if not has_comp:
+            raise HTTPException(status_code=400,
+                                detail="项目 {0} 的上场名单来自场次总表导入（报项表无该项目的选手），不能按参数重新生成；如需调整请重新执行场次总表导入".format(only))
         targets.append(only)
     else:
         for p in db.rows(conn.execute(

@@ -365,7 +365,7 @@ function renderOvTable() {
         '<option value="' + p.strategy + '" selected>' + (p.strategy === 'unit_spread' ? '同单位排开' : '随机') + '</option>' +
         '<option value="' + (p.strategy === 'unit_spread' ? 'random' : 'unit_spread') + '">' + (p.strategy === 'unit_spread' ? '随机' : '同单位排开') + '</option>' +
         '</select></td>' +
-        '<td><button class="btn small secondary" onclick="applyOne(' + i + ')">仅此项目生成</button></td>';
+        '<td>' + (p.can_generate ? '<button class="btn small secondary" onclick="applyOne(' + i + ')">仅此项目生成</button>' : '<span class="muted" title="上场名单来自场次总表导入，按参数重建需要报项表有该项目">名单来自总表导入</span>') + '</td>';
     });
   }).catch(function (e) { document.getElementById('ov-msg').textContent = e.message; });
 }
