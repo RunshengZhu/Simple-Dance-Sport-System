@@ -207,7 +207,14 @@ async def compadmin_scope(request: Request, call_next):
         return deny("赛事管理员不可修改全局大屏设置")
     m = _COMPCID_RE.match(p)
     if m and int(m.group(2)) != cid:
-        # R98：赛事已不存在（旧标签页指向被清理的赛事）时给准确文案，避免误导为权限问题
+        # R108：赛事管理员访问其他赛事/已删除赛事的页面 → 静默弹回自己赛事对应页面，
+        # 不再显示 404/权限页（观感即「被退出登录」）。API 仍返回 JSON 403/404。
+        if not p.startswith("/api/"):
+            remainder = p[len("/events/{0}".format(int(m.group(2)))):] or "/overview"
+            if remainder.startswith("/console/"):
+                remainder = "/runboard"   # 旧场次 id 不属于本赛事 → 落总表
+            target = "/events/{0}{1}".format(cid, remainder)
+            return RedirectResponse(target, status_code=302)
         gone = not db.get_db().execute("SELECT 1 FROM competitions WHERE id=?",
                                        (int(m.group(2)),)).fetchone()
         if gone:
