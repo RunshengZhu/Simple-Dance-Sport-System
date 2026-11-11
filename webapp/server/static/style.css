@@ -860,3 +860,16 @@ body.judge-sheet main, body.screen main { max-width: none; }
         padding: 3px 4px; border-radius: 6px; font-size: 12px; font-weight: 700;
         background: rgba(128,128,128,.14); color: var(--muted); }
 .rb-j.done { background: rgba(46,204,113,.22); color: #2ecc71; }
+
+/* R103 移动端适配：导航壳溢出修复 + 触控目标 */
+.comp-bar { overflow-x: hidden; }
+.nav-level2 { min-width: 0; }
+.comp-bar-head { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .nav-l1 { padding: 9px 14px; }
+  .nav-sub-item { padding: 8px 12px; }
+}
+
+@media (max-width: 760px) {
+  .comp-bar { margin-left: -10px; margin-right: -10px; }
+}
