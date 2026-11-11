@@ -282,12 +282,15 @@ CREATE TABLE IF NOT EXISTS schedule_gen_config (
     mode TEXT NOT NULL DEFAULT 'auto',
     rounds_spec TEXT NOT NULL DEFAULT '',
     strategy TEXT NOT NULL DEFAULT 'unit_spread',
+    team_mode TEXT NOT NULL DEFAULT '',
     updated_at TEXT,
     PRIMARY KEY (competition_id, project_code)
 );
 """)   # R91：赛程生成配置 v4（项目上限/每场上限/决赛人数/晋级模式/分配策略）
     else:
         sgc_cols = {r[1] for r in conn.execute("PRAGMA table_info(schedule_gen_config)")}
+        if "team_mode" not in sgc_cols:
+            conn.execute("ALTER TABLE schedule_gen_config ADD COLUMN team_mode TEXT NOT NULL DEFAULT ''")
         if "final_size" not in sgc_cols:   # 旧 v3 表结构升级（配置数据可丢弃）
             conn.execute("DROP TABLE schedule_gen_config")
             conn.executescript("""
@@ -300,6 +303,7 @@ CREATE TABLE IF NOT EXISTS schedule_gen_config (
     mode TEXT NOT NULL DEFAULT 'auto',
     rounds_spec TEXT NOT NULL DEFAULT '',
     strategy TEXT NOT NULL DEFAULT 'unit_spread',
+    team_mode TEXT NOT NULL DEFAULT '',
     updated_at TEXT,
     PRIMARY KEY (competition_id, project_code)
 );

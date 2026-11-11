@@ -1937,7 +1937,7 @@ async def api_event_edit(ceid: int, request: Request = None):
     conn = db.get_db()
     body = await request.json()
     fields, vals = [], []
-    for key, col in (("name", "name"), ("type", "scoring_type"), ("adv", "advancement_count")):
+    for key, col in (("name", "name"), ("type", "scoring_type"), ("adv", "advancement_count"), ("team_mode", "team_mode")):
         if key in body:
             v = body[key]
             if key == "type":
@@ -1945,6 +1945,8 @@ async def api_event_edit(ceid: int, request: Request = None):
                 v = typ_map.get(str(v).strip().upper())
                 if not v:
                     raise HTTPException(status_code=400, detail="评分类型须为 SKATING/MARK/SCORE")
+            if key == "team_mode" and str(v).strip() not in ("standard", "freshman_half", "exclude"):
+                raise HTTPException(status_code=400, detail="团体计分模式须为 standard/freshman_half/exclude")
             vals.append(v); fields.append(f"{col}=?")
     if fields:
         vals.append(ceid)
@@ -2051,8 +2053,10 @@ def _heat_labels(n):
     return [chr(ord("A") + i) if i < 26 else chr(ord("A") + i % 26) + str(i // 26 + 1) for i in range(n)]
 
 
-def _team_mode_for(conn, competition_id, project_code, display_name):
-    """生成场次时保留/推导 team_mode：既有场次已有非 standard → 沿用；否则按项目名（含 老带新 → freshman_half）。"""
+def _team_mode_for(conn, competition_id, project_code, display_name, explicit=None):
+    """生成场次时确定 team_mode：显式指定（项目管理 UI）> 既有非 standard 沿用 > 项目名推导。"""
+    if explicit in ("standard", "freshman_half", "exclude"):
+        return explicit
     prev = conn.execute(
         "SELECT team_mode FROM events WHERE competition_id=? AND project_code=? AND team_mode IS NOT NULL AND team_mode!='' "
         "ORDER BY id DESC LIMIT 1", (competition_id, project_code)).fetchone()
@@ -2108,7 +2112,7 @@ def _generate_project_schedule(conn, competition_id, project_code, cfg):
                             detail="项目 {0} 存在已开场/已计算/已发布场次，不能重新生成".format(project_code))
     names = _project_display_names(conn, competition_id)
     display = _clean_round_words(names.get(project_code) or project_code)
-    team_mode = _team_mode_for(conn, competition_id, project_code, display)
+    team_mode = _team_mode_for(conn, competition_id, project_code, display, explicit=cfg.get("team_mode"))
     for e in evs:
         conn.execute("DELETE FROM event_competitors WHERE event_id=?", (e["id"],))
         conn.execute("DELETE FROM event_dances WHERE event_id=?", (e["id"],))
@@ -2215,12 +2219,13 @@ async def api_gen_preview(competition_id: int, request: Request = None):
     for p in projs:
         code = p["project_code"]
         ov = overrides.get(code) or {}
-        c = dict(cfg, **{k: ov[k] for k in ("max_entries", "cap", "final_size", "mode", "rounds_spec", "strategy") if ov.get(k)})
+        c = dict(cfg, **{k: ov[k] for k in ("max_entries", "cap", "final_size", "mode", "rounds_spec", "strategy", "team_mode") if ov.get(k)})
         rounds = _derive_rounds(p["c"], c["cap"], c["final_size"], c["mode"], _parse_rounds_spec(c["rounds_spec"]))
         rounds_txt = " → ".join("{0} 场×{1}取{2}".format(r["heats"], r["entries"], r["per_heat"] or "决赛") for r in rounds)
         out.append({"project": code, "name": disp.get(code, code), "entries": p["c"],
                     "max_entries": c["max_entries"], "cap": c["cap"], "final_size": c["final_size"],
                     "mode": c["mode"], "rounds_spec": c["rounds_spec"], "strategy": c["strategy"],
+                    "team_mode": c.get("team_mode") or "",
                     "n_groups": rounds[0]["heats"] if rounds else 0,
                     "round_names": _round_names(len(rounds)),
                     "structure": [{"round": r["entries"], "heats": r["heats"], "per_heat": r["per_heat"]} for r in rounds],
@@ -2234,7 +2239,8 @@ def _gen_cfg_from_body(body):
             "final_size": max(1, int(body.get("final_size") or 8)),
             "mode": "manual" if body.get("mode") == "manual" else "auto",
             "rounds_spec": str(body.get("rounds_spec") or "").strip(),
-            "strategy": body.get("strategy") or "unit_spread"}
+            "strategy": body.get("strategy") or "unit_spread",
+            "team_mode": str(body.get("team_mode") or "").strip() or None}
 
 
 def _parse_rounds_spec(spec):
@@ -2276,15 +2282,15 @@ async def api_generate_schedule(competition_id: int, request: Request = None):
     created_total = 0
     for code in sorted(targets):
         ov = overrides.get(code) or {}
-        c = dict(cfg, **{k: ov[k] for k in ("max_entries", "cap", "final_size", "mode", "rounds_spec", "strategy") if ov.get(k)})
+        c = dict(cfg, **{k: ov[k] for k in ("max_entries", "cap", "final_size", "mode", "rounds_spec", "strategy", "team_mode") if ov.get(k)})
         created, structure = _generate_project_schedule(conn, competition_id, code, c)
         created_total += created
-        conn.execute("INSERT INTO schedule_gen_config(competition_id, project_code, max_entries, cap, final_size, mode, rounds_spec, strategy, updated_at) "
-                     "VALUES(?,?,?,?,?,?,?,?,datetime('now','localtime')) "
+        conn.execute("INSERT INTO schedule_gen_config(competition_id, project_code, max_entries, cap, final_size, mode, rounds_spec, strategy, team_mode, updated_at) "
+                     "VALUES(?,?,?,?,?,?,?,?,?,datetime('now','localtime')) "
                      "ON CONFLICT(competition_id, project_code) DO UPDATE SET max_entries=excluded.max_entries, cap=excluded.cap, "
                      "final_size=excluded.final_size, mode=excluded.mode, rounds_spec=excluded.rounds_spec, strategy=excluded.strategy, "
-                     "updated_at=excluded.updated_at",
-                     (competition_id, code, c["max_entries"], c["cap"], c["final_size"], c["mode"], c["rounds_spec"], c["strategy"]))
+                     "team_mode=excluded.team_mode, updated_at=excluded.updated_at",
+                     (competition_id, code, c["max_entries"], c["cap"], c["final_size"], c["mode"], c["rounds_spec"], c["strategy"], c.get("team_mode") or ""))
     conn.commit()
     _audit(_actor_name(s), "generate_schedule", "comp:{0}".format(competition_id),
            "按配置生成赛程：{0} 个项目 / {1} 场（项目上限 {2}，每场上限 {3}，决赛 {4}，晋级 {5}）".format(
@@ -2918,6 +2924,8 @@ def _team_standings(competition_id, published_only):
             continue
         pr = ev["project_code"]
         mode = ev["team_mode"] if "team_mode" in ev.keys() else "standard"
+        if mode == "exclude":
+            continue   # R104：该项目不计入团体总分
         for r in data.get("overall_results") or []:
             num = str(r["competitor_number"])
             m = member_by_key.get((pr, num))

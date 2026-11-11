@@ -29,6 +29,7 @@
     <label>每轮晋级 <select id="gmode" style="max-width:100px"><option value="auto">自动（约减半）</option><option value="manual">手动序列</option></select>
       <input id="gadv" placeholder="如 8,4" style="max-width:110px;display:none"></label>
     <label>分配 <select id="gstrategy" style="max-width:130px"><option value="unit_spread">同单位尽量排开</option><option value="random">随机</option></select></label>
+    <label>团体计分 <select id="gteam" style="max-width:110px"><option value="">按导入/项目名推导</option><option value="standard">标准</option><option value="freshman_half">老带新半分</option><option value="exclude">不计入总分</option></select></label>
   </div>
   <p>
     <button class="btn secondary" id="gen-preview-btn">预览全部项目结构</button>
@@ -41,7 +42,7 @@
   <h2>单项目自定义配置（覆盖统一配置）</h2>
   <p class="muted">对特定项目使用不同的每组上限/晋级轮次/分配策略；保存后点「仅此项目生成」重建该项目。</p>
   <div class="tbl-scroll"><table id="ov-table">
-    <tr><th>项目</th><th>名称</th><th>人数</th><th class="hm">每组上限</th><th class="hm">每轮晋级</th><th class="hm">分配</th><th>操作</th></tr>
+    <tr><th>项目</th><th>名称</th><th>人数</th><th class="hm">团体计分</th><th class="hm">每组上限</th><th class="hm">每轮晋级</th><th class="hm">分配</th><th>操作</th></tr>
   </table></div>
   <p class="muted" id="ov-msg"></p>
 </div>
@@ -307,6 +308,7 @@ if (new URLSearchParams(location.search).get('tab') === 'projects') {
 document.getElementById('gt-sched').onclick = function () { setTab('sched'); };
 function genCfg() {
   return {max_entries: parseInt(document.getElementById('gmax').value, 10) || 24,
+          team_mode: document.getElementById('gteam').value || undefined,
           cap: parseInt(document.getElementById('gcap').value, 10) || 12,
           final_size: parseInt(document.getElementById('gfin').value, 10) || 8,
           mode: document.getElementById('gmode').value,
@@ -350,7 +352,13 @@ function renderOvTable() {
     var t = document.getElementById('ov-table');
     OV.forEach(function (p, i) {
       var tr = t.insertRow();
+      var tmSel = '<select class="ov-tm" data-i="' + i + '" style="max-width:110px">' +
+        ['标准:standard', '老带新半分:freshman_half', '不计入总分:exclude'].map(function (o) {
+          var lab = o.split(':')[0], val = o.split(':')[1];
+          return '<option value="' + val + '"' + (p.team_mode === val ? ' selected' : '') + '>' + lab + '</option>';
+        }).join('') + '</select>';
       tr.innerHTML = '<td>' + p.project + '</td><td>' + p.name + '</td><td class="num">' + p.entries + '</td>' +
+        '<td class="hm">' + tmSel + '</td>' +
         '<td><input data-i="' + i + '" data-k="cap" class="ov-cap" value="' + p.cap + '" style="max-width:60px"></td>' +
         '<td><input data-i="' + i + '" data-k="advances" class="ov-adv" placeholder="留空=自动" value="' + (p.mode === 'manual' ? (p.rounds_spec || '') : '') + '" style="max-width:90px"></td>' +
         '<td><select class="ov-sel" data-i="' + i + '" data-k="strategy" style="max-width:130px">' +
@@ -366,9 +374,10 @@ function applyOne(i) {
   var cap = document.querySelector('.ov-cap[data-i="' + i + '"]').value;
   var adv = document.querySelector('.ov-adv[data-i="' + i + '"]').value.trim();
   var st = document.querySelector('select.ov-sel[data-i="' + i + '"]') ? document.querySelector('select.ov-sel[data-i="' + i + '"]').value : p.strategy;
+  var tm = document.querySelector('.ov-tm[data-i="' + i + '"]') ? document.querySelector('.ov-tm[data-i="' + i + '"]').value : '';
   if (!confirm('按自定义配置重建项目 ' + p.project + ' 的赛程？')) return;
   api('POST', '/api/events/' + window.CID + '/generate-schedule',
-      {cap: parseInt(cap, 10) || 12, mode: adv ? 'manual' : 'auto', rounds_spec: adv, strategy: st, project_code: p.project, competition_id: window.CID})
+      {cap: parseInt(cap, 10) || 12, mode: adv ? 'manual' : 'auto', rounds_spec: adv, strategy: st, team_mode: tm || undefined, project_code: p.project, competition_id: window.CID})
     .then(function (d) { toast('已生成 ' + p.project + '：' + d.events + ' 场', 'ok'); })
     .catch(function (e) { toast(e.message, 'err'); });
 }
