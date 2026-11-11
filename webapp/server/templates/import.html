@@ -1,6 +1,24 @@
 {% extends "base.html" %}
 {% from "_comp_bar.html" import bar with context %}
-{% block cid %}{{ comp.id }}{% endblock %}
+{% block cid %}{{ comp.id }}
+/* R105 场次总表导入 */
+document.getElementById('go-schedule').addEventListener('click', async function () {
+  var f = document.getElementById('f-schedule').files[0];
+  var msg = document.getElementById('msg-schedule');
+  if (!f) { msg.textContent = '请先选择 CSV 文件'; return; }
+  if (!confirm('确认用该文件替换全部现有场次？\n所有场次将被删除重建（评分/成绩同时清除，需全部场次为待开始）。')) return;
+  var text = await f.text();
+  try {
+    msg.textContent = '导入中…';
+    var r = await fetch('/api/events/{{ comp.id }}/imports/schedule-full', {
+      method: 'POST', headers: {'Content-Type': 'text/csv; charset=utf-8'}, body: text
+    }).then(function (x) { return x.json().then(function (j) { if (!x.ok) throw new Error(j.detail || '导入失败'); return j; }); });
+    msg.textContent = '已导入 ' + r.events + ' 场 / ' + r.entries + ' 条上场记录';
+    toast('场次总表导入完成', 'ok');
+    setTimeout(function () { location.reload(); }, 1200);
+  } catch (e) { msg.textContent = e.message; toast(e.message, 'err'); }
+});
+{% endblock %}
 {% set autorefresh = true %}
 {% block title %}数据导入 · {{ comp.name }}{% endblock %}
 {% block nav %}{% endblock %}
@@ -38,6 +56,20 @@
     当前数据：<a class="btn small secondary" href="/api/events/{{ comp.id }}/exports/judges">下载 CSV</a>
     <span class="muted">同名重传即覆盖；建议 5 或 7 名（顺位法按多数票计）</span></p>
   <div id="rep-judges"></div>
+</div>
+
+<div class="card">
+  <h2>场次总表导入（替换式）</h2>
+  <p class="muted">从秩序册/编排表整理的<b>完整场次表</b>直接导入，<b>替换全部现有场次</b>（需全部场次为「待开始」）。
+    CSV 列（顺序固定）：<b>场次,项目序号,项目名称,轮次,背番号,选手姓名,选手单位,选手身份,搭档姓名,搭档单位,搭档身份,评分类型,晋级人数,团体计分,时间</b>。
+    「场次」为出场顺序号；轮次=该项目内第几轮（1 起始）；评分类型=顺位法/Mark制；晋级人数=0 表示决赛/表演；
+    团体计分=standard/freshman_half/exclude；背番号不在选手库中会自动建档。</p>
+  <div class="row">
+    <input type="file" id="f-schedule" accept=".csv">
+    <button class="btn" id="go-schedule">导入并替换全部场次</button>
+    <span id="msg-schedule" class="muted"></span>
+  </div>
+  <div id="rep-schedule"></div>
 </div>
 
 <div class="card">

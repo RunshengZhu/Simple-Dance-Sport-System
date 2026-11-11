@@ -1493,6 +1493,110 @@ _CSV_TEMPLATES = {
 }
 
 
+@app.post("/api/events/{competition_id}/imports/schedule-full")
+async def api_import_schedule_full(competition_id: int, request: Request = None):
+    """R105 场次总表直接导入（替换式）：CSV 列——场次,项目序号,项目名称,轮次,背番号,选手姓名,选手单位,
+    选手身份,搭档姓名,搭档单位,搭档身份,评分类型,晋级人数,团体计分,时间。
+    全部场次须为 pending（有评分/已发布 → 409）。按 项目序号+项目名称 聚合成场次重建：events/event_dances/
+    event_competitors 全量替换（run_seq=场次号），选手 upsert（背番号缺失则新建）。"""
+    require_admin(request)
+    _comp_or_404(competition_id)
+    raw = await request.body()
+    header, data_rows = _read_csv_body(raw)
+    h = {name.strip(): i for i, name in enumerate(header)}
+    need = ["场次", "项目序号", "项目名称", "背番号", "选手姓名", "选手单位", "评分类型", "晋级人数", "团体计分"]
+    missing = [c for c in need if c not in h]
+    if missing:
+        raise HTTPException(status_code=400, detail="缺少列: " + ",".join(missing))
+    conn = db.get_db()
+    # 前置检查：全部场次 pending
+    non_pending = db.rows(conn.execute(
+        "SELECT code, status FROM events WHERE competition_id=? AND status!='pending' LIMIT 3",
+        (competition_id,)))
+    if non_pending:
+        raise HTTPException(status_code=409,
+                            detail="存在非待赛场次（%s…）——请先撤回/退回/清理后再导入" % non_pending[0]["code"])
+    # 聚合行 → 场次（key=场次号，保持每场一致的 项目/名称/轮次/类型/晋级/团体计分/时间）
+    groups = {}
+    order = []
+    for r in data_rows:
+        get = lambda c: (r[h[c]].strip() if h.get(c) is not None and h[c] < len(r) else "")
+        seq = get("场次")
+        if not seq or not get("项目序号") or not get("背番号"):
+            continue
+        key = int(seq)
+        if key not in groups:
+            groups[key] = {"proj": get("项目序号"), "name": get("项目名称"), "round": int(get("轮次") or 1),
+                           "styp": get("评分类型") or "顺位法", "adv": int(get("晋级人数") or 0),
+                           "tmode": get("团体计分") or "standard", "time": get("时间"), "rows": []}
+            order.append(key)
+        groups[key]["rows"].append({
+            "num": get("背番号"), "name": get("选手姓名"), "unit": get("选手单位"),
+            "role": get("选手身份") or "", "partner": get("搭档姓名") or "",
+            "partner_unit": get("搭档单位") or "", "partner_role": get("搭档身份") or ""})
+    if not groups:
+        raise HTTPException(status_code=400, detail="未解析到任何场次行")
+    styp_map = {"顺位法": "顺位法", "Mark制": "Mark制", "评分制": "评分制"}
+    tmode_ok = {"standard", "freshman_half", "exclude"}
+    # 选手 upsert + 场次重建
+    known = {c["number"] for c in db.rows(conn.execute(
+        "SELECT number FROM competitors WHERE competition_id=?", (competition_id,)))}
+    for seq in order:
+        g = groups[seq]
+        for p in g["rows"]:
+            if p["num"] not in known:
+                conn.execute(
+                    "INSERT INTO competitors(competition_id, number, project_code, name, unit, role, partner, partner_unit, partner_role) "
+                    "VALUES(?,?,?,?,?,?,?,?,?)",
+                    (competition_id, p["num"], g["proj"], p["name"], p["unit"], p["role"], p["partner"], p["partner_unit"], p["partner_role"]))
+                known.add(p["num"])
+    # 清空全部旧场次（含关联）
+    for ev in db.rows(conn.execute("SELECT id FROM events WHERE competition_id=?", (competition_id,))):
+        conn.execute("DELETE FROM score_records WHERE event_id=?", (ev["id"],))
+        conn.execute("DELETE FROM results WHERE event_id=?", (ev["id"],))
+        conn.execute("DELETE FROM event_dances WHERE event_id=?", (ev["id"],))
+        conn.execute("DELETE FROM event_competitors WHERE event_id=?", (ev["id"],))
+    conn.execute("DELETE FROM events WHERE competition_id=?", (competition_id,))
+    # 重建
+    created = 0
+    styp_fix = {"顺位法": "顺位法", "Mark制": "Mark制", "评分制": "评分制"}
+    # 同项目同轮多场 → 场标 A/B/C（heat 计数按 项目+轮次 分组，按场次号顺序）
+    heat_count = {}
+    code_by_seq = {}
+    for seq in order:
+        g = groups[seq]
+        hk = (g["proj"], g["round"])
+        heat_count[hk] = heat_count.get(hk, 0) + 1
+        n_same = sum(1 for s2 in order if (groups[s2]["proj"], groups[s2]["round"]) == hk)
+        label = (chr(ord("A") + heat_count[hk] - 1)) if n_same > 1 else ""
+        code_by_seq[seq] = "{0}-R{1}{2}".format(g["proj"], g["round"], label)
+    for seq in order:
+        g = groups[seq]
+        styp = styp_fix.get(g["styp"], "顺位法")
+        tmode = g["tmode"] if g["tmode"] in tmode_ok else "standard"
+        round_names = {1: "第1轮", 2: "第2轮", 3: "第3轮", 4: "第4轮"}
+        cur = conn.execute(
+            "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode, run_seq) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            (competition_id, code_by_seq[seq],
+             "{0} {1}".format(g["name"], round_names.get(g["round"], "")), g["proj"], g["round"],
+             styp, g["adv"], tmode, seq))
+        eid = cur.lastrowid
+        # 舞种：按项目名推断（复用 _infer_dances 逻辑内联）
+        pname = g["name"]
+        for k, dname in enumerate(_infer_dances(pname)):
+            conn.execute("INSERT INTO event_dances(event_id, name, ord) VALUES(?,?,?)", (eid, dname, k))
+        for p in g["rows"]:
+            conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)", (eid, p["num"]))
+        created += 1
+    conn.commit()
+    _audit(_actor_name(_session(request)), "schedule_import", "comp:{0}".format(competition_id),
+           "场次总表导入：{0} 场 / {1} 条上场记录".format(created, sum(len(g["rows"]) for g in groups.values())),
+           _client_ip(request))
+    sse.bus.publish(competition_id, "schedule_changed")
+    return {"ok": True, "events": created, "entries": sum(len(g["rows"]) for g in groups.values())}
+
+
 @app.post("/api/events/{competition_id}/imports/{kind}")
 async def api_import(competition_id: int, kind: str, request: Request = None):
     require_admin(request)
