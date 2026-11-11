@@ -873,3 +873,12 @@ body.judge-sheet main, body.screen main { max-width: none; }
 @media (max-width: 760px) {
   .comp-bar { margin-left: -10px; margin-right: -10px; }
 }
+
+/* ---- R108b runboard 展开行与 mark 快捷按钮 ---- */
+.rb-sec { margin: 6px 0 2px; }
+.rb-sec-title { display: block; margin-bottom: 4px; font-size: 13px; color: var(--muted); }
+#roster-box .chip, .rb-sec .chip { padding: 5px 9px; font-size: 12.5px; margin: 2px 3px 2px 0; }
+.rb-metric-wide { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rb-top3line { margin: 4px 0; }
+.mark-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.mark-tools .btn { min-height: 34px; }

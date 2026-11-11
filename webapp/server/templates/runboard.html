@@ -95,11 +95,13 @@ function render() {
       '<span class="rb-metric"><span class="rb-k">评分</span><span class="rb-v">' + progTxt + '</span></span>' +
       (e.status === 'published' ? '<span class="rb-metric"><span class="rb-k">播报</span><span class="rb-v">' + (e.announced ? '✓' : '未') + '</span></span>' : '') +
       ((e.status === 'calculated' || e.status === 'published') ? '<span class="rb-metric rb-metric-wide"><span class="rb-k">前三</span><span class="rb-v">' + (top3 || '—') + '</span></span>' : '') +
-      '<span class="rb-hint">点击展开/收起详情</span>' +
       '</div>';
     html += '<div class="rb-detail" id="rb-detail-' + e.id + '" style="display:none">';
+    if (e.top3.length) {
+      html += '<div class="rb-sec rb-top3line"><b>录取名次</b> ' + top3 + '</div>';
+    }
     if (rosterN) {
-      html += '<div class="rb-sec"><b>上场名单与检录</b> ';
+      html += '<div class="rb-sec"><b class="rb-sec-title">上场名单与检录</b> ';
       e.roster.forEach(function (n) {
         var on = e.checked.indexOf(n) > -1;
         html += '<span class="chip ' + (on ? 'on' : 'off') + '" onclick="toggleCheckin(' + e.id + ',' + JSON.stringify(n) + ',' + (!on) + ')" title="点击切换检录">' + esc(n) + '</span>';
@@ -107,7 +109,7 @@ function render() {
       html += '</div>';
     }
     if (e.dances.length && e.judges_eff.length) {
-      html += '<div class="rb-sec"><b>评分进度（裁判 × 舞种）</b> ';
+      html += '<div class="rb-sec"><b class="rb-sec-title">评分进度（裁判 × 舞种）</b> ';
       e.dances.forEach(function (d) {
         var done = (e.matrix[d] || []);
         html += '<span class="rb-dance">' + esc(d) + ': ';
@@ -118,7 +120,7 @@ function render() {
       });
       html += '</div>';
       if (e.status === 'pending' || e.status === 'scoring') {
-        html += '<div class="rb-sec"><b>上场裁判指派</b> <span class="muted">点击勾选本场裁判（全部勾选=全部登记裁判）；收齐判定按指派名单</span><br>';
+        html += '<div class="rb-sec"><b class="rb-sec-title">上场裁判指派</b> <span class="muted">点击勾选本场裁判（全部勾选=全部登记裁判）；收齐判定按指派名单</span>';
         DATA.judges_all.forEach(function (j) {
           var on = e.judges_assigned_on && e.judges_eff.indexOf(j) > -1;
           html += '<span class="chip ' + (on ? 'on' : 'off') + '" onclick="toggleJudge(' + e.id + ',\'' + j + '\',' + (!on) + ')">' + esc(j) + '</span>';

@@ -9,7 +9,12 @@
 {% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
 
 {% if is_mark %}
-<p class="muted">Mark 制（预赛晋级票）：点击选手行给予 <b>Mark</b>，再点一次取消。勾选人数不限——票数供名次参考，实际晋级由晋级人数参数与晋级确认决定{% if ev.advancement_count %}（本场晋级名额 <b>{{ ev.advancement_count }}</b>）{% endif %}。已选 <span id="mark-count">0</span> / 已检录 <span id="mark-cap">{{ checked|length }}</span></p>
+<p class="muted">Mark 制（预赛晋级票）：点击选手行给予 <b>Mark</b>，再点一次取消。勾选人数不限——票数供名次参考，实际晋级由晋级人数参数与晋级确认决定{% if ev.advancement_count %}（本场晋级名额 <b>{{ ev.advancement_count }}</b>）{% endif %}。已选 <span id="mark-count">0</span> / 已检录 <span id="mark-cap">{{ checked|length }}</span> <span id="adv-note" class="muted">{% if ev.advancement_count %}（还差 {{ ev.advancement_count }} 人满足名额 {{ ev.advancement_count }}）{% endif %}</span></p>
+<div class="mark-tools">
+  <button type="button" class="btn small secondary" onclick="markAll(1)">全选</button>
+  <button type="button" class="btn small secondary" onclick="markAll(0)">清空</button>
+  {% if ev.advancement_count %}<button type="button" class="btn small secondary" onclick="markTop({{ ev.advancement_count }})">按名额选前 {{ ev.advancement_count }}</button>{% endif %}
+</div>
 <div class="mark-list">
   {% for num in roster %}
   {% set ok = num in checked %}
@@ -232,7 +237,18 @@ if (SKATING) {
       if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
       else msgEl.textContent = '还有 ' + (CHECKED - done) + ' 支队伍未给 Mark';
     }
+    // R108c：Mark 预赛需勾满晋级名额才可提交（不足=提交键置灰）
+    var ADV = {{ ev.advancement_count or 0 }};
+    var sub = document.getElementById('submit');
+    if (sub && ADV > 0) {
+      var lack = ADV - done;
+      sub.disabled = lack > 0;
+      sub.title = lack > 0 ? '还需勾选 ' + lack + ' 名（晋级名额 ' + ADV + '）' : '';
+      var note = document.getElementById('adv-note');
+      if (note) note.textContent = lack > 0 ? '（还差 ' + lack + ' 人满足名额 ' + ADV + '）' : '（名额 ' + ADV + ' 已满足）';
+    }
   }
+  var ADV_READY = document.querySelectorAll('.mark-row input.val:checked').length > 0;   // 已有回显则不默认全选
   document.querySelectorAll('.mark-row').forEach(function (row) {
     row.addEventListener('click', function () {
       if (row.classList.contains('off')) { offToast(); return; }
@@ -241,7 +257,28 @@ if (SKATING) {
       renderMark();
     });
   });
+  // R108b Mark 快捷操作：全选/清空/按名额选前 N（触发行点击保持计数同步）
+  function markToggle(rows, want) {
+    rows.forEach(function (row) {
+      var cb = row.querySelector('input.val');
+      if (cb.checked !== want) row.click();
+    });
+  }
+  window.markAll = function (state) {
+    markToggle(Array.from(document.querySelectorAll('.mark-row:not(.off)')), !!state);
+  };
+  window.markTop = function (n) {
+    var rows = Array.from(document.querySelectorAll('.mark-row:not(.off)'));
+    markToggle(rows, false);                       // 先清空
+    rows.slice(0, Math.min(n, rows.length)).forEach(function (row) {
+      if (!row.querySelector('input.val').checked) row.click();
+    });
+  };
   renderMark();
+  // R108c：首次进入（无已有勾选）默认全选——裁判按需取消即可
+  if (!document.querySelectorAll('.mark-row input.val:checked').length && !ADV_READY) {
+    window.markAll(1);
+  }
 }
 
 async function submitSheet() {
