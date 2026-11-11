@@ -9,11 +9,35 @@
 <h1>名单 <span class="muted">{{ entries | length }} 条报项 · {{ judges | length }} 名裁判</span></h1>
 <div class="card">
   <span class="roster-tabs">
-    <a class="roster-tab active" href="#entries-view" onclick="rbView('entries');return false">报项名单</a>
+    <a class="roster-tab active" href="#parts-view" onclick="rbView('parts');return false">参赛名单</a>
+    <a class="roster-tab" href="#entries-view" onclick="rbView('entries');return false">报项名单</a>
     <a class="roster-tab" href="#teams-view" onclick="rbView('teams');return false">单位与队伍</a>
   </span>
 </div>
-<div id="view-entries">
+<div id="view-parts">
+{% for p in participants %}
+<div class="card">
+  <h2>{{ p.project }} <span class="muted">{{ p.name }}</span>
+    <span class="tag gray">{{ p.people | length }} 人</span>
+    {% if p.single %}<span class="tag gray">单人</span>{% endif %}</h2>
+  <div class="tbl-scroll"><table>
+    {% if p.single %}
+    <tr><th>背番号</th><th>姓名</th><th class="hm">单位</th></tr>
+    {% for x in p.people %}
+    <tr><td><b>{{ x.number }}</b></td><td>{{ x.name }}</td><td class="hm">{{ x.unit or "—" }}</td></tr>
+    {% endfor %}
+    {% else %}
+    <tr><th>背番号</th><th>选手</th><th class="hm">单位</th><th class="hm">身份</th><th class="hm">搭档</th><th class="hm">搭档单位</th><th class="hm">搭档身份</th></tr>
+    {% for x in p.people %}
+    <tr><td><b>{{ x.number }}</b></td><td>{{ x.name }}</td><td class="hm">{{ x.unit or "—" }}</td><td class="hm">{{ x.role or "—" }}</td><td class="hm">{{ x.partner or "—" }}</td><td class="hm">{{ x.partner_unit or "—" }}</td><td class="hm">{{ x.partner_role or "—" }}</td></tr>
+    {% endfor %}
+    {% endif %}
+  </table></div>
+</div>
+{% endfor %}
+{% if not participants %}<div class="card"><p class="muted">尚未编排场次——参赛名单在「场次总表导入」后生成。</p></div>{% endif %}
+</div>
+<div id="view-entries" style="display:none">
 
 {% set by_proj = entries | groupby("project_code") %}
 {% for proj, rows in by_proj %}
@@ -75,11 +99,12 @@
 {% endblock %}
 {% block scripts %}
 function rbView(v) {
-  document.getElementById('view-entries').style.display = v === 'entries' ? '' : 'none';
-  document.getElementById('view-teams').style.display = v === 'teams' ? '' : 'none';
+  ['parts', 'entries', 'teams'].forEach(function (k) {
+    var el = document.getElementById('view-' + k);
+    if (el) el.style.display = (v === k) ? '' : 'none';
+  });
   var items = document.querySelectorAll('.roster-tab');
-  items[0].classList.toggle('active', v === 'entries');
-  items[1].classList.toggle('active', v === 'teams');
+  items.forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + v + '-view'); });
 }
 if (location.hash === '#teams') rbView('teams');
 {% endblock %}

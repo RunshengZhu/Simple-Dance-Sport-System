@@ -911,9 +911,37 @@ async def roster_page(request: Request, competition_id: int):
     unit_stats = db.rows(conn.execute(
         "SELECT unit, COUNT(*) AS pairs FROM competitors WHERE competition_id=? AND number NOT LIKE 'T%' AND unit<>'' GROUP BY unit ORDER BY pairs DESC",
         (competition_id,)))
+    # R107 参赛名单（按实际场次编排）：每项目=实际场次去重背番号，详情取报项表（新建档也可）
+    event_projects = db.rows(conn.execute(
+        "SELECT project_code, MIN(run_seq) seq FROM events WHERE competition_id=? GROUP BY project_code ORDER BY MIN(run_seq)",
+        (competition_id,)))
+    participants = []
+    for p in event_projects:
+        code = p["project_code"]
+        nums = [r["competitor_number"] for r in db.rows(conn.execute(
+            "SELECT DISTINCT ec.competitor_number FROM event_competitors ec JOIN events e ON e.id=ec.event_id "
+            "WHERE e.competition_id=? AND e.project_code=? ORDER BY CAST(ec.competitor_number AS INTEGER), ec.competitor_number",
+            (competition_id, code)))]
+        people = []
+        for n in nums:
+            c = conn.execute(
+                "SELECT name, unit, role, partner, partner_unit, partner_role FROM competitors "
+                "WHERE competition_id=? AND number=? ORDER BY project_code LIMIT 1",
+                (competition_id, n)).fetchone()
+            people.append({"number": n,
+                           "name": (c["name"] if c else "") or "",
+                           "unit": (c["unit"] if c else "") or "",
+                           "role": (c["role"] if c else "") or "",
+                           "partner": (c["partner"] if c else "") or "",
+                           "partner_unit": (c["partner_unit"] if c else "") or "",
+                           "partner_role": (c["partner_role"] if c else "") or ""})
+        participants.append({"project": code, "name": names.get(code, code),
+                             "seq": p["seq"], "people": people, "single": all(
+                                 not (x["partner"] or x["partner_unit"]) for x in people)})
     return templates.TemplateResponse(request, "roster.html", {
         "request": request, "comp": comp, "entries": entries, "judges": judges,
-        "project_names": names, "teams": teams, "unit_stats": unit_stats})
+        "project_names": names, "teams": teams, "unit_stats": unit_stats,
+        "participants": participants})
 
 
 @app.get("/events/{competition_id}/import", response_class=HTMLResponse)
@@ -1023,6 +1051,9 @@ async def judge_home(request: Request):
         evs = db.rows(db.get_db().execute(
             "SELECT * FROM events WHERE competition_id=? AND status='scoring' ORDER BY code", (comp["id"],)))
         for ev in evs:
+            assigned = [j.strip() for j in (ev["judges_assigned"] or "").split(",") if j.strip()] if "judges_assigned" in ev.keys() else []
+            if assigned and s["judge_code"] not in assigned:
+                continue   # R107：未被指派的场次不出现在裁判工作台
             ev["dances"] = dances_of(ev["id"])
             ev["my_done"] = _judge_sheet_status(ev["id"], s["judge_code"])
             assignments.append(ev)
@@ -1047,6 +1078,7 @@ def _judge_sheet_status(event_id, judge_code):
 async def judge_sheet_page(request: Request, ceid: int, dance: str):
     s = require_judge(request)
     ev = _event_or_404(ceid)
+    _judge_assigned_guard(ev, s["judge_code"])
     comp = _comp_or_404(ev["competition_id"])
     roster_list = roster(ev["id"])
     rows = {}
@@ -1546,7 +1578,8 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
         by_dance = _dd(lambda: _dd(dict))
         for r0 in records:
             by_dance[r0["dance_name"]][str(r0["competitor_number"])][r0["judge_code"]] = r0
-        judges = judges_of(ev["competition_id"])
+        ev_full = _event_or_404(ceid)
+        judges, _used = _event_judges(ev_full, ev["competition_id"])
         def num_key(n):
             return (len(str(n)), str(n))
         for d in dances:
@@ -2122,13 +2155,38 @@ async def api_close(ceid: int, request: Request = None):
     return {"ok": True}
 
 
+@app.post("/api/competition-events/{ceid}/judges-assign")
+async def api_judges_assign(ceid: int, request: Request = None):
+    """R107 本场上场裁判指派（赛事管理员）：judges=背号列表（J1…），空列表=恢复全部登记裁判。
+    收齐判定与 PDF 明细表列按指派名单；仅待开始/评分中场次可指派。"""
+    require_admin(request)
+    ev = _event_or_404(ceid)
+    if ev["status"] in ("calculated", "published"):
+        raise HTTPException(status_code=400, detail="场次已完成计算，裁判指派不再生效")
+    body = await request.json()
+    judges = [str(x).strip().upper() for x in (body.get("judges") or []) if str(x).strip()]
+    registered = {j["code"] for j in db.rows(db.get_db().execute(
+        "SELECT code FROM judges WHERE competition_id=?", (ev["competition_id"],)))}
+    unknown = [j for j in judges if j not in registered]
+    if unknown:
+        raise HTTPException(status_code=400, detail="裁判不在本赛事名单中: " + ",".join(unknown[:5]))
+    conn = db.get_db()
+    conn.execute("UPDATE events SET judges_assigned=? WHERE id=?", (",".join(judges), ceid))
+    conn.commit()
+    _audit(_actor_name(_session(request)), "judges_assign", "event:{0}".format(ceid),
+           ev["code"] + " 上场裁判: " + (",".join(judges) if judges else "全部登记裁判"), _client_ip(request))
+    sse.bus.publish(ev["competition_id"], "checkin_changed", {"event_id": ceid})
+    return {"ok": True, "assigned": judges}
+
+
 @app.get("/api/competition-events/{ceid}/progress")
 async def api_progress(ceid: int, request: Request = None):
     require_admin(request)
     ev = _event_or_404(ceid)
     roster_list = roster(ceid)
     dances = dances_of(ceid)
-    jcodes = judges_of(ev["competition_id"])
+    ev_full = _event_or_404(ceid)
+    jcodes, assigned = _event_judges(ev_full, ev["competition_id"])
     conn = db.get_db()
     matrix = {}
     for j in jcodes:
@@ -2141,7 +2199,8 @@ async def api_progress(ceid: int, request: Request = None):
         matrix[j] = per_dance
     complete = is_complete(ev, roster_list, dances, jcodes)
     return {"roster": roster_list, "dances": dances, "judges": jcodes, "matrix": matrix,
-            "complete": complete, "status": ev["status"],
+            "complete": complete, "status": ev["status"], "assigned": assigned,
+            "registered": judges_of(ev["competition_id"]),
             "calc_note": ("" if complete else _auto_calc_notes.get(ceid, ""))}
 
 
@@ -2678,10 +2737,33 @@ async def api_reset_scoring(competition_id: int, request: Request = None):
     return {"ok": True, "events_reset": len(ids)}
 
 
+def _event_judges(ev, competition_id):
+    """R107 本场有效裁判：管理员指派名单（judges_assigned 非空）优先，否则全部登记裁判。
+    返回 (有效裁判列表, 指派是否启用)。"""
+    assigned = []
+    if "judges_assigned" in ev.keys():
+        assigned = [j.strip() for j in (ev["judges_assigned"] or "").split(",") if j.strip()]
+    registered = judges_of(competition_id)
+    if assigned:
+        return [j for j in assigned if j in registered], True
+    return registered, False
+
+
+def _judge_assigned_guard(ev, judge_code):
+    """R107 指派门禁：本场已指派裁判名单且该裁判不在名单 → 拒绝提交/查看。
+    指派为空 = 全部登记裁判，不限制。"""
+    assigned = [j.strip() for j in (ev["judges_assigned"] or "").split(",") if j.strip()] if "judges_assigned" in ev.keys() else []
+    if assigned and str(judge_code) not in assigned:
+        raise HTTPException(status_code=403,
+                            detail="本场裁判名单为 " + "、".join(assigned) + "，您（" + str(judge_code) + "）未被指派")
+
+
 def _auto_calculate_if_ready(ev, comp):
     if ev["status"] != "scoring":
         return False
-    if not is_complete(ev, roster(ev["id"]), dances_of(ev["id"]), judges_of(comp["id"])):
+    ev = _event_or_404(ev["id"])
+    eff, _used = _event_judges(ev, comp["id"])
+    if not is_complete(ev, roster(ev["id"]), dances_of(ev["id"]), eff):
         return False
     try:
         calculate_event(ev)
@@ -2750,6 +2832,7 @@ async def api_assignments(request: Request = None):
 async def api_sheet(ceid: int, dance: str, request: Request = None):
     s = require_judge(request)
     ev = _event_or_404(ceid)
+    _judge_assigned_guard(ev, s["judge_code"])
     if ev["status"] != "scoring":
         raise HTTPException(status_code=400, detail="场次未在评分中")
     roster_list = roster(ceid)
@@ -2780,6 +2863,7 @@ def _sheet_placement_value(kind, v):
 async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
     s = require_judge(request)
     ev, comp = _require_active_event(ceid)
+    _judge_assigned_guard(ev, s["judge_code"])
     if ev["status"] != "scoring":
         raise HTTPException(status_code=400, detail="场次已关闭评分")
     if dance not in dances_of(ceid):   # R82：舞种必须属于本场次——防自动化/误操作污染评分记录
@@ -3673,7 +3757,8 @@ async def api_runboard(competition_id: int, request: Request = None):
         pairs = conn.execute(
             "SELECT COUNT(DISTINCT judge_code || '|' || dance_name) c FROM score_records WHERE event_id=?",
             (ev["id"],)).fetchone()["c"]
-        total_pairs = judges_n * len(dances) if dances else 0
+        eff_n, _au = _event_judges(ev, competition_id)
+        total_pairs = len(eff_n) * len(dances) if dances else 0
         top3 = []
         res = load_results(ev["id"])
         if res and res.get("overall_results"):
@@ -3685,6 +3770,7 @@ async def api_runboard(competition_id: int, request: Request = None):
         for r0 in conn.execute(
                 "SELECT DISTINCT judge_code, dance_name FROM score_records WHERE event_id=?", (ev["id"],)):
             mat.setdefault(r0["dance_name"], []).append(r0["judge_code"])
+        eff, assigned_used = _event_judges(ev, competition_id)
         out.append({
             "id": ev["id"], "code": ev["code"], "name": ev["name"],
             "project": ev["project_code"], "round": ev["round"],
@@ -3692,10 +3778,11 @@ async def api_runboard(competition_id: int, request: Request = None):
             "announced": bool(ev["announced"]), "run_seq": ev["run_seq"],
             "scoring_type": ev["scoring_type"], "advancement_count": ev["advancement_count"] or 0,
             "dances": dances, "roster": roster_list, "checked": checked,
-            "judges_total": judges_n, "submitted_pairs": pairs, "total_pairs": total_pairs,
+            "judges_total": judges_n, "judges_eff": eff, "judges_assigned_on": assigned_used,
+            "submitted_pairs": pairs, "total_pairs": total_pairs,
             "top3": top3, "matrix": mat,
         })
-    return {"events": out, "judges_total": judges_n}
+    return {"events": out, "judges_total": judges_n, "judges_all": judges_of(competition_id)}
 
 
 @app.get("/api/events/{competition_id}/run-order")

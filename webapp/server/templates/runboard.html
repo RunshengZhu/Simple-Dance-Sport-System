@@ -106,17 +106,25 @@ function render() {
       });
       html += '</div>';
     }
-    if (e.dances.length && DATA.judges_total) {
+    if (e.dances.length && e.judges_eff.length) {
       html += '<div class="rb-sec"><b>评分进度（裁判 × 舞种）</b> ';
       e.dances.forEach(function (d) {
         var done = (e.matrix[d] || []);
         html += '<span class="rb-dance">' + esc(d) + ': ';
-        for (var j = 1; j <= DATA.judges_total; j++) {
-          html += '<span class="rb-j ' + (done.indexOf('J' + j) > -1 ? 'done' : '') + '">J' + j + '</span>';
-        }
+        e.judges_eff.forEach(function (j) {
+          html += '<span class="rb-j ' + (done.indexOf(j) > -1 ? 'done' : '') + '">' + esc(j) + '</span>';
+        });
         html += '</span> ';
       });
       html += '</div>';
+      if (e.status === 'pending' || e.status === 'scoring') {
+        html += '<div class="rb-sec"><b>上场裁判指派</b> <span class="muted">点击勾选本场裁判（全部勾选=全部登记裁判）；收齐判定按指派名单</span><br>';
+        DATA.judges_all.forEach(function (j) {
+          var on = e.judges_assigned_on && e.judges_eff.indexOf(j) > -1;
+          html += '<span class="chip ' + (on ? 'on' : 'off') + '" onclick="toggleJudge(' + e.id + ',\'' + j + '\',' + (!on) + ')">' + esc(j) + '</span>';
+        });
+        html += '</div>';
+      }
     }
     html += '<div class="rb-sec muted">深度操作（重开/退回/自动发布设置）在 <a href="/events/' + CID + '/console/' + e.id + '">场次详情</a></div>';
     html += '</div></div>';
@@ -151,6 +159,15 @@ async function act(id, action) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+async function toggleJudge(id, code, on) {
+  var ev = DATA.events.filter(function (e) { return e.id === id; })[0];
+  var cur = ev && ev.judges_assigned_on ? ev.judges_eff.slice() : [];
+  var idx = cur.indexOf(code);
+  if (on && idx < 0) cur.push(code);
+  if (!on && idx >= 0) cur.splice(idx, 1);
+  try { await api('POST', '/api/competition-events/' + id + '/judges-assign', {judges: cur}); await load(); }
+  catch (e) { toast(e.message, 'err'); }
+}
 async function toggleCheckin(id, num, state) {
   try { await api('POST', '/api/competition-events/' + id + '/checkin', {numbers: [num], state: state}); await load(); }
   catch (e) { toast(e.message, 'err'); }
