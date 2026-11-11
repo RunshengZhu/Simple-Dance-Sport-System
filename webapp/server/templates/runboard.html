@@ -65,6 +65,11 @@ function render() {
       actions += '<button class="btn small secondary" onclick="if(confirm(\'关闭评分将回到开场前状态，确认？\'))act(' + e.id + ',\'close\')">关闭评分</button>';
     }
     if (e.status === 'scoring') actions += '<button class="btn small danger" onclick="act(' + e.id + ',\'return\')">退回</button>';
+    if (e.status === 'calculated' || e.status === 'published') {
+      var pdfType = (e.scoring_type === 'Mark制' && !e.name.includes('决赛')) ? 'mark' : 'rank';
+      var pdfLabel = pdfType === 'mark' ? '导出Mark明细表' : '导出名次表';
+      actions += '<a class="btn small secondary" href="/api/competition-events/' + e.id + '/export/pdf?type=' + pdfType + '" download>' + pdfLabel + '</a>';
+    }
     if (e.status === 'calculated') actions += '<button class="btn small" onclick="act(' + e.id + ',\'publish\')">发布</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'unpublish\')">撤回</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'announce\')">' + (e.announced ? '取消播报' : '播报') + '</button>';

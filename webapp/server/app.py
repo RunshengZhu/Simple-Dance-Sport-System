@@ -1493,6 +1493,168 @@ _CSV_TEMPLATES = {
 }
 
 
+@app.get("/api/competition-events/{ceid}/export/pdf")
+async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "auto"):
+    """R106 场次结果 PDF 导出（桌面版同格式，直接触发下载）：
+    type=auto：非决赛 Mark 制场次导出 Mark 明细表（裁判×选手 √ 矩阵+小计），
+    决赛/顺位场次导出名次表（排名/背番号/选手/单位/录取）。"""
+    from collections import defaultdict as _dd
+    from datetime import datetime as _dt
+    require_admin(request)
+    ev = _event_or_404(ceid)
+    conn = db.get_db()
+    comp = _comp_or_404(ev["competition_id"])
+    dances = dances_of(ceid)
+    res = load_results(ceid)
+    if not res:
+        raise HTTPException(status_code=400, detail="场次尚未计算，无结果可导出")
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib import colors
+
+    ok_font = _PdfFont.register()
+    fname = "chinese" if ok_font else "Helvetica"
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=40)
+    title_style = ParagraphStyle("T", fontName=fname, fontSize=16, alignment=TA_CENTER, spaceAfter=12)
+    normal_style = ParagraphStyle("N", fontName=fname, fontSize=10, alignment=TA_LEFT, spaceAfter=6)
+    comp_name = comp["name"]
+    ev_name = ev["name"]
+    adv_n = ev["advancement_count"] or 0
+    is_final = "决赛" in ev_name
+    kind = type if type != "auto" else ("mark" if ("Mark制" in (ev["scoring_type"] or "") and not is_final) else "rank")
+
+    def comp_info(num):
+        r = conn.execute(
+            "SELECT name, unit FROM competitors WHERE competition_id=? AND number=? AND project_code=?",
+            (ev["competition_id"], str(num), ev["project_code"])).fetchone()
+        if not r:
+            r = conn.execute(
+                "SELECT name, unit FROM competitors WHERE competition_id=? AND number=?",
+                (ev["competition_id"], str(num))).fetchone()
+        return ((r["name"] or "") if r else "", (r["unit"] or "") if r else "")
+
+    story = []
+    if kind == "mark":
+        t_head = ev_name if ("Mark制" in (ev["scoring_type"] or "") and not is_final) else comp_name + " - " + ev_name
+        story.append(Paragraph(t_head + " 详细评分表", title_style))
+        story.append(Spacer(1, 12))
+        records = db.rows(conn.execute(
+            "SELECT judge_code, competitor_number, dance_name, mark FROM score_records WHERE event_id=? ORDER BY id", (ceid,)))
+        by_dance = _dd(lambda: _dd(dict))
+        for r0 in records:
+            by_dance[r0["dance_name"]][str(r0["competitor_number"])][r0["judge_code"]] = r0
+        judges = judges_of(ev["competition_id"])
+        def num_key(n):
+            return (len(str(n)), str(n))
+        for d in dances:
+            drec = by_dance.get(d)
+            if not drec:
+                continue
+            story.append(Paragraph("舞种: " + d, ParagraphStyle("H", fontName=fname, fontSize=13, spaceAfter=6)))
+            rows = [["排名", "背番号"] + judges + ["小计"]]
+            for num in sorted(drec.keys(), key=num_key):
+                rank = ""
+                for r0 in res["dance_results"].get(d, []):
+                    if str(r0["competitor_number"]) == num:
+                        rank = r0["rank"]
+                        break
+                row = [str(rank), str(num)]
+                ticks = 0
+                for j in judges:
+                    rec = drec.get(num, {}).get(j)
+                    if rec is not None and rec["mark"]:
+                        row.append("√")
+                        ticks += 1
+                    else:
+                        row.append("")
+                row.append(str(ticks))
+                rows.append(row)
+            table = Table(rows, colWidths=[40, 55] + [38] * len(judges) + [45])
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("FONTNAME", (0, 0), (-1, -1), fname),
+                ("FONTSIZE", (0, 0), (-1, 0), 11),
+                ("FONTSIZE", (0, 1), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ("LINEBELOW", (0, 0), (-1, 0), 2, colors.black),
+            ]))
+            story.append(table)
+            story.append(Spacer(1, 10))
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("生成时间: " + _dt.now().strftime("%Y-%m-%d %H:%M:%S"), normal_style))
+    else:
+        hdr_label = "晋级" if ("Mark制" in (ev["scoring_type"] or "") and not is_final) else "录取"
+        t_head = ev_name if ("Mark制" in (ev["scoring_type"] or "") and not is_final) else comp_name + " - " + ev_name
+        story.append(Paragraph(t_head, title_style))
+        story.append(Spacer(1, 12))
+        rows = [["排名", "背番号", "选手", "单位", hdr_label]]
+        for r0 in sorted(res["overall_results"], key=lambda x: x["rank"]):
+            num = str(r0["competitor_number"])
+            nm, un = comp_info(num)
+            if adv_n > 0:
+                adv_txt = "是" if int(r0["rank"]) <= adv_n else ""
+            else:
+                adv_txt = "录取" if r0.get("advancement_status") else ""
+            rows.append([str(r0["rank"]), num, nm or ("选手" + num), un, adv_txt])
+        table = Table(rows, colWidths=[50, 70, 150, 150, 95])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("FONTNAME", (0, 0), (-1, 0), fname),
+            ("FONTSIZE", (0, 0), (-1, 0), 12),
+            ("FONTNAME", (0, 1), (-1, -1), fname),
+            ("FONTSIZE", (0, 1), (-1, -1), 10),
+            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ("LINEBELOW", (0, 0), (-1, 0), 2, colors.black),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("生成时间: " + _dt.now().strftime("%Y-%m-%d %H:%M:%S"), normal_style))
+
+    doc.build(story)
+    pdf = buf.getvalue()
+    fname_dl = "{0}-{1}.pdf".format(ev["code"], "mark明细表" if kind == "mark" else "名次表")
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''" + urllib.parse.quote(fname_dl)})
+
+
+class _PdfFont:
+    """R106 PDF 中文字体（桌面版同款路径列表 + 用户字体目录），惰性注册。"""
+    _done = False
+
+    @classmethod
+    def register(cls):
+        if cls._done:
+            return True
+        paths = [
+            os.path.expanduser("~/.fonts/wqy-zenhei.ttc"),
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "C:/Windows/Fonts/simhei.ttf",
+        ]
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        for p in paths:
+            if os.path.exists(p):
+                try:
+                    if p.endswith(".ttc"):
+                        pdfmetrics.registerFont(TTFont("chinese", p, subfontIndex=0))
+                    else:
+                        pdfmetrics.registerFont(TTFont("chinese", p))
+                    cls._done = True
+                    return True
+                except Exception:
+                    continue
+        return False
+
+
 @app.post("/api/events/{competition_id}/imports/schedule-full")
 async def api_import_schedule_full(competition_id: int, request: Request = None):
     """R105 场次总表直接导入（替换式）：CSV 列——场次,项目序号,项目名称,轮次,背番号,选手姓名,选手单位,
