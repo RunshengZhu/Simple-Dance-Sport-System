@@ -7,7 +7,7 @@
   <p class="muted" style="margin:0 0 10px">手机扫码直达——看赛程进度 / 查成绩 / 查选手</p>
   <img src="{{ qr_url }}" alt="赛事入口二维码" style="width:180px;height:180px;border-radius:12px;border:1px solid var(--line,#e3dfd8)">
   <p class="muted" style="margin:8px 0 0">将此卡打印张贴在场馆入口 / 检录处 / 观众区</p>
-  <p><a class="btn small secondary" href="{{ qr_url.replace('&size=6','&size=12') }}" download="comp-{{ comp.id }}-qr.png" target="_blank">下载高清二维码（张贴用）</a></p>
+  <p><a class="btn small secondary" href="/api/public/events/{{ comp.id }}/qr-a4" target="_blank">下载 A4 打印版二维码（PDF，含赛事信息）</a></p>
 </div>
 <section class="portal-hero" style="padding-bottom:12px">
   <h1>{{ comp.name }}</h1>

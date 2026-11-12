@@ -4213,6 +4213,97 @@ async def api_competition_qr(competition_id: int, request: Request = None, size:
                              "Content-Disposition": 'inline; filename="comp-{0}-qr.png"'.format(competition_id)})
 
 
+@app.get("/api/public/events/{competition_id}/qr-a4")
+async def api_competition_qr_a4(competition_id: int, request: Request = None):
+    """R111b 赛事二维码 A4 打印版（PDF 海报）：赛事名称/日期/地点标题 + 居中大二维码 + 扫码说明，可直接打印张贴。"""
+    comp = _comp_or_404(competition_id)
+    try:
+        import segno
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors as rl_colors
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        from reportlab.pdfgen import canvas as rl_canvas
+    except ImportError:
+        raise HTTPException(status_code=503, detail="服务器未安装二维码/PDF 生成库（segno/reportlab）")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "dancetkt.com"
+    scheme = "https" if (request.headers.get("x-forwarded-proto") == "https" or "dancetkt" in host) else "http"
+    url = "{0}://{1}/competitions/{2}".format(scheme, host, competition_id)
+
+    qr = segno.make(url, error="m")
+    matrix = list(qr.matrix)  # 不含静区，绘制时自行留白
+    n = len(matrix)
+
+    ok_font = _PdfFont.register()
+    fname = "chinese" if ok_font else "Helvetica"
+    ink = rl_colors.HexColor("#1F2937")
+    sub = rl_colors.HexColor("#4B5563")
+    mut = rl_colors.HexColor("#9CA3AF")
+
+    W, H = A4
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=A4)
+    c.setTitle("{0} · 赛事二维码".format(comp["name"] or ""))
+
+    def fit(text, font, size, max_w):
+        while size > 9 and stringWidth(text, font, size) > max_w:
+            size -= 1
+        return size
+
+    max_w = W - 60
+    # 顶部：引导语 + 赛事名 + 日期地点
+    c.setFillColor(sub)
+    c.setFont(fname, 15)
+    c.drawCentredString(W / 2, H - 64, "扫码进入赛事服务")
+    name = (comp["name"] or "").strip()
+    c.setFillColor(ink)
+    c.setFont(fname, fit(name, fname, 30, max_w))
+    c.drawCentredString(W / 2, H - 108, name)
+    meta = "　".join(x for x in [(comp["date"] or "").strip(), (comp["location"] or "").strip()] if x)
+    if meta:
+        c.setFillColor(sub)
+        c.setFont(fname, fit(meta, fname, 15, max_w))
+        c.drawCentredString(W / 2, H - 138, meta)
+    c.setStrokeColor(rl_colors.HexColor("#E5E7EB"))
+    c.setLineWidth(1)
+    c.line(70, H - 156, W - 70, H - 156)
+
+    # 居中大二维码（矢量绘制，模块化矩形，打印不失真）
+    quiet = 3
+    grid = n + quiet * 2
+    side = 330.0  # ≈116mm
+    qx = (W - side) / 2
+    qy = (H - 200) - side
+    mod = side / grid
+    c.setFillColor(rl_colors.white)
+    c.rect(qx, qy, side, side, stroke=0, fill=1)
+    c.setFillColor(ink)
+    for ry, row in enumerate(matrix):
+        for rx, dark in enumerate(row):
+            if dark:
+                c.rect(qx + (rx + quiet) * mod, qy + (grid - 1 - (ry + quiet)) * mod,
+                       mod + 0.15, mod + 0.15, stroke=0, fill=1)
+
+    # 二维码下方：网址 + 功能说明
+    c.setFillColor(sub)
+    c.setFont(fname, 12)
+    c.drawCentredString(W / 2, qy - 34, url)
+    c.setFillColor(ink)
+    c.setFont(fname, 17)
+    c.drawCentredString(W / 2, qy - 80, "看赛程进度 · 查选手 · 查成绩")
+
+    # 页脚
+    c.setFillColor(mut)
+    c.setFont(fname, 11)
+    c.drawCentredString(W / 2, 74, "打印建议：A4 纵向，100% 缩放")
+    c.drawCentredString(W / 2, 56, "dancetkt.com · 体育舞蹈评分系统")
+
+    c.showPage()
+    c.save()
+    return Response(buf.getvalue(), media_type="application/pdf",
+                    headers={"Cache-Control": "public, max-age=3600",
+                             "Content-Disposition": 'inline; filename="comp-{0}-qr-a4.pdf"'.format(competition_id)})
+
+
 @app.get("/api/public/events/{competition_id}/lookup")
 async def api_public_lookup(competition_id: int, num: str = "", name: str = ""):
     """按背番号或姓名查询公示信息。姓名命中多条返回 candidates 列表让前端选择；
