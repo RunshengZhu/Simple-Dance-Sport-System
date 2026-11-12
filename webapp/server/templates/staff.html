@@ -48,9 +48,9 @@
   </div>
 </div>
 {% else %}
-<div class="card st-event" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-need="{{ 1 if ev.checked_n < ev.total else 0 }}">
+<div class="card st-event{{ ' scoring-now' if ev.status == 'scoring' }}" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-need="{{ 1 if ev.checked_n < ev.total else 0 }}">
   <h3>{{ ev.code }} {{ ev.name }}
-    <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '评分中' if ev.status == 'scoring' else '待开始' }}</span>
+    <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '● 评分中' if ev.status == 'scoring' else '待开始' }}</span>
     <span class="muted">{{ ev.project }} 第{{ ev.round }}轮</span>
     <span class="tag" id="prog-{{ ev.id }}">检录 {{ ev.checked_n }} / {{ ev.total }}</span>
     {% if ev.advancement_count %}<span class="tag ok">晋级 {{ ev.advancement_count }}</span>{% endif %}
@@ -58,7 +58,7 @@
   <div class="chip-row">
     {% for r in ev.roster %}
     <button type="button" class="chip {{ 'on' if r.checked else 'off' }}" data-ceid="{{ ev.id }}" data-num="{{ r.number }}"
-            title="{{ '检录人: ' + r.by if r.by else '未检录' }}">{{ r.number }}</button>
+            title="{{ (r.name + ' · ') if r.name else '' }}{{ '检录人: ' + r.by if r.by else '未检录' }}">{{ r.number }}{% if r.name %}<small>{{ r.name }}</small>{% endif %}</button>
     {% endfor %}
   </div>
   {% if ev.total %}
@@ -66,6 +66,8 @@
     <button class="btn secondary" data-all="{{ ev.id }}" data-state="1">全部检录</button>
     <button class="btn secondary" data-all="{{ ev.id }}" data-state="0">全清</button>
   </p>
+  {% elif ev.round > 1 %}
+  <p class="muted">前置轮次未完成——上一轮晋级确认回填后自动生成上场名单，届时开始检录。</p>
   {% else %}
   <p class="muted">暂无上场名单，请由管理员在控制台勾选。</p>
   {% endif %}

@@ -960,3 +960,12 @@ tr.ev-detail > td { background: rgba(0,0,0,.022); }
 .dl-qr-box img { border: 1px solid var(--line, #ddd); border-radius: 10px; background: #fff; padding: 4px; }
 .dl-qr-info { display: flex; flex-direction: column; gap: 6px; }
 .dl-qr-info .dl-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ===== R112c 评分中场次显著提示 + 检录 chips 姓名 ===== */
+.card.st-event.scoring-now, .card.rb-row.scoring-now {
+  border-left: 4px solid var(--acc, #c0392b);
+  box-shadow: 0 0 0 1px rgba(192,57,43,.25), 0 3px 14px rgba(192,57,43,.14);
+}
+tr.scoring-now td { background: rgba(192,57,43,.08); }
+.chip small { display: block; font-size: 10.5px; font-weight: 500; opacity: .85; max-width: 96px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

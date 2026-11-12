@@ -34,7 +34,7 @@ var DATA = null;
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
   return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
-function stName(s) { return {pending: '待赛', scoring: '评分中', calculated: '已计算', published: '已发布'}[s] || s; }
+function stName(s) { return {pending: '待赛', scoring: '● 评分中', calculated: '已计算', published: '已发布'}[s] || s; }
 function stTag(s) {
   var cls = {pending: 'gray', scoring: 'warn', calculated: 'acc', published: 'ok'}[s] || 'gray';
   return '<span class="tag ' + cls + '">' + stName(s) + '</span>';
@@ -86,7 +86,7 @@ function render() {
     var progTxt = e.total_pairs ? (e.submitted_pairs + '/' + e.total_pairs + ' · ' + prog + '%') : '—';
     var checkedTxt = rosterN ? (checkedN + '/' + rosterN) : '—';
     // R100b 行卡分层：头部（序号/编号/名称/状态/动作）+ 指标条（块化，独立行）
-    html += '<div class="card rb-row" data-ceid="' + e.id + '" data-st="' + e.status + '">' +
+    html += '<div class="card rb-row' + (e.status === 'scoring' ? ' scoring-now' : '') + '" data-ceid="' + e.id + '" data-st="' + e.status + '">' +
       '<div class="rb-head">' +
       '<span class="rb-seq">' + seq + '</span>' +
       '<span class="rb-main" onclick="toggleDetail(' + e.id + ')">' +
@@ -133,6 +133,11 @@ function render() {
   });
   box.innerHTML = html || '<div class="card muted">该筛选条件下没有场次。</div>';
   renderJudgeBar();
+  // R112c 自动展开评分中场次详情（裁判评分矩阵+检录一目了然）
+  DATA.events.forEach(function (e) {
+    var el = document.getElementById('rb-detail-' + e.id);
+    if (el) el.style.display = (e.status === 'scoring') ? '' : 'none';
+  });
 }
 
 function toggleDetail(id) {

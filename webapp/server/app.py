@@ -1478,6 +1478,14 @@ def _display_names(conn, competition_id: int, project_code=None):
         q += " AND project_code=?"
         args.append(project_code)
     out = {}
+    # R112c 分组场次码回退：场次 project_code=P01Z01 而报项行=P01A/B/C——精确码查空时
+    # 按项目主干（正则 ^[A-Z]+\d+ 提取，如 P01Z01→P01）LIKE 前缀重查
+    if project_code is not None and project_code not in {r["project_code"] for r in db.rows(
+            conn.execute("SELECT DISTINCT project_code FROM competitors WHERE competition_id=?", (competition_id,)))}:
+        m0 = re.match(r"^[A-Z]+\d+", project_code or "")
+        if m0 and m0.group(0) != project_code:
+            q = "SELECT number, name, partner FROM competitors WHERE competition_id=? AND project_code LIKE ?"
+            args = [competition_id, m0.group(0) + "%"]
     for r in db.rows(conn.execute(q, args)):
         n = (r["name"] or "").strip()
         pt = (r["partner"] or "").strip()
@@ -3173,7 +3181,8 @@ async def staff_page(request: Request):
                 "WHERE event_id=? ORDER BY CAST(competitor_number AS INTEGER), competitor_number",
                 (ev["id"],)))
             roster = [{"number": r["competitor_number"], "checked": bool(r["checked_in"]),
-                       "by": r["checked_by"] or ""} for r in rows]
+                       "by": r["checked_by"] or "",
+                       "name": (name_by_number.get(r["competitor_number"]) or "").strip()} for r in rows]
             item = {"id": ev["id"], "code": ev["code"], "name": ev["name"],
                     "project": ev["project_code"], "round": ev["round"], "status": ev["status"],
                     "announced": bool(ev["announced"]),
