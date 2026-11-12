@@ -8,12 +8,13 @@
 </div>
 <script>
 /* CID 由 base.html 的 cid block 提供（window.CID） */
-function doLookup() {
+function doLookup(unit) {
   var val = document.getElementById('lookup-input').value.trim();
   var box = document.getElementById('lookup-result');
   if (!val) { box.textContent = '请输入背番号或姓名'; return; }
   var isNum = /^\d+$/.test(val);
   var url = '/api/public/events/' + window.CID + '/lookup?' + (isNum ? 'num=' : 'name=') + encodeURIComponent(val);
+  if (!isNum && unit) url += '&unit=' + encodeURIComponent(unit);
   fetch(url)
     .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || '查询失败'); }); return r.json(); })
     .then(function (d) {
@@ -26,24 +27,34 @@ function renderCandidates(cands) {
   var box = document.getElementById('lookup-result');
   var html = '<div class="lk-cands"><p class="muted">找到 ' + cands.length + ' 位姓名匹配的选手，请选择：</p>';
   cands.forEach(function (c) {
-    html += '<button class="btn small secondary lk-cand" data-num="' + c.number + '" style="margin:4px 6px 4px 0">' +
-      c.number + ' ' + c.name + (c.unit ? '（' + c.unit + '）' : '') + '</button>';
+    var esc = function (t) { return String(t || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); };
+    html += '<button class="btn small secondary lk-cand" data-num="' + esc(c.number) + '" data-unit="' + esc(c.unit) + '" style="margin:4px 6px 4px 0">' +
+      (c.number ? c.number + ' ' : '') + c.name + (c.unit ? '（' + c.unit + '）' : '') + '</button>';
   });
   html += '</div>';
   box.innerHTML = html;
   box.querySelectorAll('.lk-cand').forEach(function (b) {
     b.addEventListener('click', function () {
-      document.getElementById('lookup-input').value = b.dataset.num;
-      doLookup();
+      if (b.dataset.num) {
+        document.getElementById('lookup-input').value = b.dataset.num;
+        doLookup();
+      } else {
+        doLookup(b.dataset.unit);   // 无背号女生：按 name+unit 回查
+      }
     });
   });
 }
 function renderResult(d) {
   var box = document.getElementById('lookup-result');
   var html = '<div class="lk-profile">' +
-    '<span class="lk-num">' + d.number + '</span>' +
+    (d.number ? '<span class="lk-num">' + d.number + '</span>' : '') +
     '<div class="lk-info"><b class="lk-name">' + d.name + '</b>' +
     (d.unit ? '<span class="muted">' + d.unit + '</span>' : '') + '</div></div>';
+  if (d.partners && d.partners.length) {
+    html += '<div class="lk-projects muted">搭档：' + d.partners.map(function (p) {
+      return p.name + (p.number ? '（' + p.number + '）' : '');
+    }).join('、') + '</div>';
+  }
   if (d.projects && d.projects.length) {
     html += '<div class="lk-projects muted">参赛 ' + d.projects.length + ' 项：' + d.projects.join('、') + '</div>';
   }
@@ -69,6 +80,6 @@ function renderResult(d) {
   html += '<p class="muted" style="margin-top:8px">公示口径：仅姓名、单位、赛程状态与已发布成绩。</p>';
   box.innerHTML = html;
 }
-document.getElementById('lookup-go').addEventListener('click', doLookup);
+document.getElementById('lookup-go').addEventListener('click', function () { doLookup(); });
 document.getElementById('lookup-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLookup(); });
 </script>

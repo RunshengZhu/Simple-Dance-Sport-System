@@ -4325,8 +4325,29 @@ async def api_competition_qr_a4(competition_id: int, request: Request = None):
                              "Content-Disposition": 'inline; filename="comp-{0}-qr-a4.pdf"'.format(competition_id)})
 
 
+def _partner_for_rows(rows, code):
+    """场次项目码 → 该背号报名行的搭档名：优先精确码；未命中（如 P01Z 分组场次）
+    回退——该背号唯一搭档直接用，否则取与场次码最长公共前缀的报名行。"""
+    exact = {r["project_code"]: r for r in rows if r["project_code"]}
+    if code in exact:
+        return (exact[code]["partner"] or "").strip()
+    if len({(r["partner"] or "").strip() for r in rows}) == 1:
+        return (rows[0]["partner"] or "").strip()
+
+    def lcp(a, b):
+        n = 0
+        for x, y in zip(a or "", b or ""):
+            if x != y:
+                break
+            n += 1
+        return n
+
+    best = max(rows, key=lambda r: lcp(code, r["project_code"] or ""))
+    return (best["partner"] or "").strip()
+
+
 @app.get("/api/public/events/{competition_id}/lookup")
-async def api_public_lookup(competition_id: int, num: str = "", name: str = ""):
+async def api_public_lookup(competition_id: int, num: str = "", name: str = "", unit: str = ""):
     """按背番号或姓名查询公示信息。姓名命中多条返回 candidates 列表让前端选择；
     背番号直接命中。多舞伴/多项目：报名行按 项目+背号 取参赛组合（partner 随项目变化）。"""
     comp = _comp_or_404(competition_id)
@@ -4336,32 +4357,144 @@ async def api_public_lookup(competition_id: int, num: str = "", name: str = ""):
         raise HTTPException(status_code=400, detail="请输入背番号或姓名")
     conn = db.get_db()
     if not num and name:
-        # 姓名查找：选手名或搭档名（女生可能挂在搭档列）。同一背号多舞伴占多行——按背号聚合，不算同名
+        # 姓名查找三类命中：①背号选手（name 列命中）——按背号聚合，多舞伴不算同名，真同名→candidates；
+        # ②无背号女生（仅 partner 列命中）——按 partner_unit 聚合，多男伴=同一人不拆分；
+        # ③不同 partner_unit 的真重名女生→candidates，前端点选后按 name+unit 回查精确命中
         rows_n = db.rows(conn.execute(
-            "SELECT number, name, partner, unit FROM competitors "
+            "SELECT number, project_code, name, partner, partner_unit, unit FROM competitors "
             "WHERE competition_id=? AND (name=? OR partner=?) ORDER BY CAST(number AS INTEGER), number",
             (comp["id"], name, name)))
-        by_num = {}
-        for r in rows_n:
-            d = by_num.setdefault(r["number"], {"number": r["number"], "name": "", "unit": "", "partners": []})
-            if not d["name"] and r["name"]:
-                d["name"] = r["name"]
-            if not d["unit"] and r["unit"]:
-                d["unit"] = r["unit"]
-            p = (r["partner"] or "").strip()
-            if p and p not in d["partners"]:
-                d["partners"].append(p)
-        if not by_num:
+        as_name = [r for r in rows_n if (r["name"] or "").strip() == name]
+        as_partner = [r for r in rows_n
+                      if (r["partner"] or "").strip() == name and (r["name"] or "").strip() != name]
+        if as_name:
+            by_num = {}
+            for r in as_name:
+                d = by_num.setdefault(r["number"], {"number": r["number"], "name": "", "unit": "", "partners": []})
+                if not d["name"] and r["name"]:
+                    d["name"] = r["name"]
+                if not d["unit"] and r["unit"]:
+                    d["unit"] = r["unit"]
+                p = (r["partner"] or "").strip()
+                if p and p not in d["partners"]:
+                    d["partners"].append(p)
+            if len(by_num) > 1:
+                cands = []
+                for d in by_num.values():
+                    label = d["name"] or ""
+                    if d["partners"]:
+                        label = (label + " / " if label else "") + "、".join(d["partners"])
+                    cands.append({"number": d["number"], "name": label, "unit": d["unit"] or ""})
+                return {"candidates": cands}
+            num = next(iter(by_num))
+        elif as_partner:
+            if unit.strip():
+                as_partner = [r for r in as_partner if (r["partner_unit"] or "").strip() == unit.strip()]
+                if not as_partner:
+                    raise HTTPException(status_code=404, detail="未找到该姓名，请检查或改用背番号")
+            by_unit = {}
+            for r in as_partner:
+                by_unit.setdefault((r["partner_unit"] or "").strip(), []).append(r)
+            if len(by_unit) > 1:
+                cands = []
+                for u0, rs in by_unit.items():
+                    ps = []
+                    for pc, n in sorted({(r["project_code"], r["number"]) for r in rs}):
+                        mn = next((r["name"] or "").strip() for r in rs
+                                  if r["project_code"] == pc and r["number"] == n)
+                        ps.append((mn + "（" + n + "）") if mn else n)
+                    cands.append({"number": "", "name": name + " / " + "、".join(ps), "unit": u0})
+                return {"candidates": cands}
+            # 单一女生：组合档案（无背号；每场搭档=该场男伴，名次/晋级随男伴背号）
+            pairs = sorted({(r["project_code"], r["number"]) for r in as_partner},
+                           key=lambda t: (t[1].zfill(8), t[0]))
+            male_by_pair = {(r["project_code"], r["number"]): (r["name"] or "").strip() for r in as_partner}
+            # 按男伴背号全量取场次；报项码与场次码不一致（P01A → P01Z01 分组）时按前缀归属，
+            # 该男伴在其他报项项目（与其他女生的 pair）的精确码场次剔除
+            numbers = sorted({n for _, n in pairs})
+            marks = ",".join("?" * len(numbers))
+            ev_rows = db.rows(conn.execute(
+                "SELECT e.id, e.code, e.name, e.project_code, e.round, e.scoring_type, e.status, e.run_seq, "
+                "ec.competitor_number AS competitor_number, "
+                "(SELECT group_concat(name, ' / ') FROM (SELECT name FROM event_dances WHERE event_id=e.id ORDER BY ord)) AS dances "
+                "FROM event_competitors ec JOIN events e ON e.id=ec.event_id "
+                "WHERE e.competition_id=? AND ec.competitor_number IN (" + marks + ") "
+                "ORDER BY (e.run_seq IS NULL), e.run_seq, e.code",
+                [comp["id"]] + numbers))
+            male_all_codes = {}
+            for n in numbers:
+                male_all_codes[n] = {r["project_code"] for r in db.rows(conn.execute(
+                    "SELECT DISTINCT project_code FROM competitors WHERE competition_id=? AND number=?",
+                    (comp["id"], n)))}
+            pairs_by_number = {}
+            for pr in pairs:
+                pairs_by_number.setdefault(pr[1], []).append(pr)
+
+            def lcp(a, b):
+                n = 0
+                for x, y in zip(a or "", b or ""):
+                    if x != y:
+                        break
+                    n += 1
+                return n
+
+            st_names = {"pending": "待开赛", "scoring": "评分中", "calculated": "成绩整理中", "published": "已发布"}
+            schedule = []
+            for ev in ev_rows:
+                pair = (ev["project_code"], ev["competitor_number"])
+                if pair not in male_by_pair:
+                    if ev["project_code"] in male_all_codes[ev["competitor_number"]]:
+                        continue  # 该男伴在其他报项项目（与其他女生的 pair）的场次——不属于当前女生
+                    cps = pairs_by_number.get(ev["competitor_number"]) or []
+                    if not cps:
+                        continue
+                    scores = sorted((lcp(ev["project_code"], pr[0]) for pr in cps), reverse=True)
+                    if len(scores) > 1 and scores[0] == scores[1]:
+                        continue  # 前缀并列——归属不明确，宁缺勿错
+                    pair = max(cps, key=lambda pr: lcp(ev["project_code"], pr[0]))  # 分组场次按前缀归属
+                adv = None
+                nxt = db.rowdict(conn.execute(
+                    "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
+                    (comp["id"], ev["project_code"], ev["round"] + 1)).fetchone())
+                if nxt and ev["status"] == "published":
+                    in_next = conn.execute(
+                        "SELECT 1 FROM event_competitors WHERE event_id=? AND competitor_number=?",
+                        (nxt["id"], ev["competitor_number"])).fetchone()
+                    adv = bool(in_next)
+                rank = total = None
+                if ev["status"] == "published":
+                    res = load_results(ev["id"])
+                    if res:
+                        for r0 in res["overall_results"]:
+                            if str(r0["competitor_number"]) == ev["competitor_number"]:
+                                rank = r0["rank"]
+                                total = r0.get("total_score")
+                                break
+                schedule.append({"code": ev["code"], "name": ev["name"], "round": ev["round"],
+                                 "dance": ev["dances"], "scoring_type": ev["scoring_type"],
+                                 "status": ev["status"],
+                                 "status_label": st_names.get(ev["status"], ev["status"]),
+                                 "advancement": adv, "rank": rank, "total_score": total,
+                                 "partner": male_by_pair.get(pair, "")})
+            u0 = next(iter(by_unit))
+            seen_pairs = set()
+            partners = []
+            for pr in pairs:
+                if pr in seen_pairs:
+                    continue
+                seen_pairs.add(pr)
+                partners.append({"name": male_by_pair[pr], "number": pr[1]})
+            # 摘要按（名,号）去重：同一男伴跨多项目只列一次
+            uniq = {}
+            for p0 in partners:
+                uniq[(p0["name"], p0["number"])] = p0
+            partners = sorted(uniq.values(), key=lambda p0: (p0["number"].zfill(8), p0["name"]))
+            return {"number": "", "name": name, "unit": u0,
+                    "projects": sorted({p for p, _ in pairs}),
+                    "partners": partners, "schedule": schedule,
+                    "note": "公示口径：仅姓名、单位、赛程状态与已发布成绩"}
+        else:
             raise HTTPException(status_code=404, detail="未找到该姓名，请检查或改用背番号")
-        if len(by_num) > 1:
-            cands = []
-            for d in by_num.values():
-                label = d["name"] or ""
-                if d["partners"]:
-                    label = (label + " / " if label else "") + "、".join(d["partners"])
-                cands.append({"number": d["number"], "name": label, "unit": d["unit"] or ""})
-            return {"candidates": cands}
-        num = next(iter(by_num))
 
     rows = db.rows(conn.execute(
         "SELECT number, project_code, name, partner, unit FROM competitors "
@@ -4383,7 +4516,7 @@ async def api_public_lookup(competition_id: int, num: str = "", name: str = ""):
 
     schedule = []
     for ev in ev_rows:
-        reg = pcode_by_project.get(ev["project_code"]) or {}
+        partner_disp = _partner_for_rows(rows, ev["project_code"])
         # 晋级判定：非最末轮已发布、选手在下一轮名单中
         adv = None
         nxt = db.rowdict(conn.execute(
@@ -4409,7 +4542,7 @@ async def api_public_lookup(competition_id: int, num: str = "", name: str = ""):
                          "dance": ev["dances"], "scoring_type": ev["scoring_type"],
                          "status": ev["status"], "status_label": st_names.get(ev["status"], ev["status"]),
                          "advancement": adv, "rank": rank, "total_score": total,
-                         "partner": reg.get("partner") or ""})
+                         "partner": partner_disp})
 
     projects = sorted({ev["project_code"] for ev in ev_rows})
     # 展示名：跨项目聚合（多行取第一个非空名）
