@@ -244,6 +244,52 @@ def advancement_proposal(competition_id, project_code, round_no):
     return [{"competitor_number": n, "total_score": v[1]} for n, v in ordered]
 
 
+def advancement_plan(competition_id, project_code, round_no):
+    """R112 晋级确认数据：每场晋级明细（名额/实际/并列超额）+ 合并预案（稳定排序）
+    + 蛇形分配预览。并列超额：标准竞赛排名同分同名次，rank<=名额自动多进。"""
+    conn = db.get_db()
+    events = db.rows(conn.execute(
+        "SELECT * FROM events WHERE competition_id=? AND project_code=? AND round=? AND status IN ('calculated','published') "
+        "ORDER BY code", (competition_id, project_code, round_no)))
+    per_event, best = [], {}
+    for ev in events:
+        data = load_results(ev["id"])
+        if not data:
+            continue
+        skating = scoring_type_of(ev) == ScoringType.SKATING
+        adv_n = ev["advancement_count"] or 0
+        rows = [dict(r) for r in data["overall_results"] if r.get("advancement_status")]
+        rows.sort(key=lambda r: (float(r["rank"]), str(r["competitor_number"]).zfill(8)))
+        nums = [str(r["competitor_number"]) for r in rows]
+        # 并列超额：第 adv_n 名并列人数
+        tie_note = ""
+        tied = [r for r in rows if r["rank"] == adv_n]
+        if adv_n and len(tied) > 1:
+            tie_note = "第 {0} 名并列 {1} 人，本场实际晋级 {2} 对（超额 {3}）".format(
+                adv_n, len(tied), len(nums), len(nums) - adv_n)
+        per_event.append({"id": ev["id"], "code": ev["code"], "name": ev["name"],
+                          "adv": adv_n, "advancing": nums, "tie_note": tie_note})
+        for r in rows:
+            num = str(r["competitor_number"])
+            key = (float(r["rank"]), 0.0, num.zfill(8)) if skating else (0.0, -float(r.get("total_score") or 0), num.zfill(8))
+            if num not in best or key < best[num][0]:
+                best[num] = (key, float(r.get("total_score") or 0), ev["code"])
+    merged = [{"competitor_number": n, "total_score": v[1], "from_code": v[2]}
+              for n, v in sorted(best.items(), key=lambda kv: kv[1][0])]
+    next_events = db.rows(conn.execute(
+        "SELECT * FROM events WHERE competition_id=? AND project_code=? AND round=? ORDER BY code",
+        (competition_id, project_code, round_no + 1)))
+    next_info = [{"id": e["id"], "code": e["code"], "name": e["name"],
+                  "adv": e["advancement_count"] or 0} for e in next_events]
+    allocation = {}
+    if next_events:
+        groups = snake_distribution([m["competitor_number"] for m in merged], len(next_events))
+        allocation = {e["code"]: groups.get(i, []) for i, e in enumerate(next_events)}
+    overflow = len(merged) - sum(e["adv"] for e in per_event)
+    return {"merged": merged, "per_event": per_event, "next_events": next_info,
+            "allocation": allocation, "overflow": max(0, overflow)}
+
+
 def confirm_advancement(competition_id, project_code, round_no, advancing_numbers):
     """确认晋级：蛇形分配到下一轮场次并回填名单。"""
     conn = db.get_db()

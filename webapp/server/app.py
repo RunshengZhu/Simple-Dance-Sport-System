@@ -32,6 +32,7 @@ from core.data_models import ScoringType as ST
 
 from server import db, sse
 from server.scoring_service import (
+    advancement_plan,
     calculate_event, load_results, roster, dances_of, judges_of, is_complete,
     advancement_proposal, confirm_advancement, scoring_type_of, scoring_kind,
     checked_roster,
@@ -1081,9 +1082,6 @@ async def judge_home(request: Request):
         evs = db.rows(db.get_db().execute(
             "SELECT * FROM events WHERE competition_id=? AND status='scoring' ORDER BY code", (comp["id"],)))
         for ev in evs:
-            assigned = [j.strip() for j in (ev["judges_assigned"] or "").split(",") if j.strip()] if "judges_assigned" in ev.keys() else []
-            if assigned and s["judge_code"] not in assigned:
-                continue   # R107：未被指派的场次不出现在裁判工作台
             ev["dances"] = dances_of(ev["id"])
             ev["my_done"] = _judge_sheet_status(ev["id"], s["judge_code"])
             assignments.append(ev)
@@ -1108,8 +1106,23 @@ def _judge_sheet_status(event_id, judge_code):
 async def judge_sheet_page(request: Request, ceid: int, dance: str):
     s = require_judge(request)
     ev = _event_or_404(ceid)
-    _judge_assigned_guard(ev, s["judge_code"])
     comp = _comp_or_404(ev["competition_id"])
+    disabled = _disabled_judges(comp["id"])
+    judge_disabled = str(s["judge_code"]) in disabled
+    # R112 顶部常驻上/下场导航：全赛事场次序列（run_seq 序），相邻场次评分中才可点
+    all_evs = db.rows(db.get_db().execute(
+        "SELECT id, code, status FROM events WHERE competition_id=? "
+        "ORDER BY COALESCE(run_seq, 9999), code", (comp["id"],)))
+    idx = next((i for i, e in enumerate(all_evs) if e["id"] == ceid), None)
+    seq_idx, seq_total = (idx + 1 if idx is not None else 0), len(all_evs)
+
+    def _nav(e):
+        ds = dances_of(e["id"])
+        return {"id": e["id"], "code": e["code"], "status": e["status"],
+                "href": "/judge/competition-events/{0}/dances/{1}".format(e["id"], ds[0]) if ds and e["status"] == "scoring" else "",
+                "active": bool(ds) and e["status"] == "scoring"}
+    prev_ev = _nav(all_evs[idx - 1]) if idx and idx > 0 else None
+    next_ev = _nav(all_evs[idx + 1]) if idx is not None and idx + 1 < len(all_evs) else None
     roster_list = roster(ev["id"])
     rows = {}
     for num in roster_list:
@@ -1126,6 +1139,9 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         "is_mark": scoring_kind(ev) == "mark",
         "is_score": scoring_kind(ev) == "score",
         "n": len(roster_list),
+        "prev_ev": prev_ev, "next_ev": next_ev,
+        "seq_idx": seq_idx, "seq_total": seq_total,
+        "judge_disabled": judge_disabled,
     })
 
 
@@ -2185,28 +2201,34 @@ async def api_close(ceid: int, request: Request = None):
     return {"ok": True}
 
 
-@app.post("/api/competition-events/{ceid}/judges-assign")
-async def api_judges_assign(ceid: int, request: Request = None):
-    """R107 本场上场裁判指派（赛事管理员）：judges=背号列表（J1…），空列表=恢复全部登记裁判。
-    收齐判定与 PDF 明细表列按指派名单；仅待开始/评分中场次可指派。"""
+@app.post("/api/events/{competition_id}/judges-toggle")
+async def api_judges_toggle(competition_id: int, request: Request = None):
+    """R112 裁判启用/禁用（赛事管理员，竞赛级）：{judge: "J3", enabled: false}。
+    禁用裁判不能查看/提交任何场次评分；收齐判定按启用裁判。"""
     require_admin(request)
-    ev = _event_or_404(ceid)
-    if ev["status"] in ("calculated", "published"):
-        raise HTTPException(status_code=400, detail="场次已完成计算，裁判指派不再生效")
+    comp = _comp_or_404(competition_id)
+    ca = _compadmin(request)
+    if ca and comp["id"] != ca["comp_id"]:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
     body = await request.json()
-    judges = [str(x).strip().upper() for x in (body.get("judges") or []) if str(x).strip()]
+    judge = str(body.get("judge") or "").strip().upper()
+    enabled = bool(body.get("enabled"))
     registered = {j["code"] for j in db.rows(db.get_db().execute(
-        "SELECT code FROM judges WHERE competition_id=?", (ev["competition_id"],)))}
-    unknown = [j for j in judges if j not in registered]
-    if unknown:
-        raise HTTPException(status_code=400, detail="裁判不在本赛事名单中: " + ",".join(unknown[:5]))
+        "SELECT code FROM judges WHERE competition_id=?", (competition_id,)))}
+    if judge not in registered:
+        raise HTTPException(status_code=400, detail="裁判不在本赛事名单中: " + judge)
     conn = db.get_db()
-    conn.execute("UPDATE events SET judges_assigned=? WHERE id=?", (",".join(judges), ceid))
+    disabled = _disabled_judges(competition_id)
+    if enabled:
+        disabled = [j for j in disabled if j != judge]
+    elif judge not in disabled:
+        disabled.append(judge)
+    conn.execute("UPDATE competitions SET judges_disabled=? WHERE id=?", (",".join(disabled), competition_id))
     conn.commit()
-    _audit(_actor_name(_session(request)), "judges_assign", "event:{0}".format(ceid),
-           ev["code"] + " 上场裁判: " + (",".join(judges) if judges else "全部登记裁判"), _client_ip(request))
-    sse.bus.publish(ev["competition_id"], "checkin_changed", {"event_id": ceid})
-    return {"ok": True, "assigned": judges}
+    _audit(_actor_name(_session(request)), "judges_toggle", "competition:{0}".format(competition_id),
+           judge + (" 启用" if enabled else " 禁用"), _client_ip(request))
+    sse.bus.publish(competition_id, "checkin_changed", {"judges_toggle": judge})
+    return {"ok": True, "judge": judge, "enabled": enabled, "disabled": disabled}
 
 
 @app.get("/api/competition-events/{ceid}/progress")
@@ -2767,25 +2789,32 @@ async def api_reset_scoring(competition_id: int, request: Request = None):
     return {"ok": True, "events_reset": len(ids)}
 
 
+def _disabled_judges(competition_id):
+    """R112 竞赛级禁用裁判名单（逗号分隔，空=全部启用）。"""
+    row = db.get_db().execute(
+        "SELECT judges_disabled FROM competitions WHERE id=?", (competition_id,)).fetchone()
+    if row is None:
+        return []
+    raw = row["judges_disabled"] if "judges_disabled" in row.keys() else ""
+    return [j.strip() for j in (raw or "").split(",") if j.strip()]
+
+
 def _event_judges(ev, competition_id):
-    """R107 本场有效裁判：管理员指派名单（judges_assigned 非空）优先，否则全部登记裁判。
-    返回 (有效裁判列表, 指派是否启用)。"""
-    assigned = []
-    if "judges_assigned" in ev.keys():
-        assigned = [j.strip() for j in (ev["judges_assigned"] or "").split(",") if j.strip()]
+    """R112 本场有效裁判 = 全部登记裁判 - 竞赛级禁用名单（默认全部启用）。
+    返回 (有效裁判列表, 是否有禁用)。"""
     registered = judges_of(competition_id)
-    if assigned:
-        return [j for j in assigned if j in registered], True
+    disabled = _disabled_judges(competition_id)
+    if disabled:
+        return [j for j in registered if j not in disabled], True
     return registered, False
 
 
 def _judge_assigned_guard(ev, judge_code):
-    """R107 指派门禁：本场已指派裁判名单且该裁判不在名单 → 拒绝提交/查看。
-    指派为空 = 全部登记裁判，不限制。"""
-    assigned = [j.strip() for j in (ev["judges_assigned"] or "").split(",") if j.strip()] if "judges_assigned" in ev.keys() else []
-    if assigned and str(judge_code) not in assigned:
+    """R112 启用门禁：裁判被竞赛级禁用 → 拒绝提交/查看。"""
+    disabled = _disabled_judges(ev["competition_id"])
+    if str(judge_code) in disabled:
         raise HTTPException(status_code=403,
-                            detail="本场裁判名单为 " + "、".join(assigned) + "，您（" + str(judge_code) + "）未被指派")
+                            detail="您（" + str(judge_code) + "）已被管理员禁用评分，请联系赛事管理员")
 
 
 def _auto_calculate_if_ready(ev, comp):
@@ -3133,7 +3162,7 @@ async def staff_page(request: Request):
     name_by_number = {}
     if comp:
         events = db.rows(conn.execute(
-            "SELECT id,code,name,project_code,round,status,announced FROM events "
+            "SELECT id,code,name,project_code,round,status,announced,advancement_count FROM events "
             "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
             (comp["id"],)))
         for ev in events:
@@ -3146,7 +3175,9 @@ async def staff_page(request: Request):
                        "by": r["checked_by"] or ""} for r in rows]
             item = {"id": ev["id"], "code": ev["code"], "name": ev["name"],
                     "project": ev["project_code"], "round": ev["round"], "status": ev["status"],
-                    "announced": bool(ev["announced"]), "roster": roster,
+                    "announced": bool(ev["announced"]),
+                    "advancement_count": ev["advancement_count"] if "advancement_count" in ev.keys() else 0,
+                    "roster": roster,
                     "checked_n": sum(1 for x in roster if x["checked"]),
                     "total": len(roster)}
             if ev["status"] in ("calculated", "published"):
@@ -3389,15 +3420,15 @@ async def advancement_page(request: Request, competition_id: int):
     proposal = []
     status = ""
     try:
-        proposal = advancement_proposal(competition_id, project, rnd)
+        plan = advancement_plan(competition_id, project, rnd)
     except Exception:
-        pass
+        plan = {"merged": [], "per_event": [], "next_events": [], "allocation": {}, "overflow": 0}
     next_exists = bool(conn.execute(
         "SELECT 1 FROM events WHERE competition_id=? AND project_code=? AND round=? LIMIT 1",
         (competition_id, project, rnd + 1)).fetchone())
     return templates.TemplateResponse(request, "advancement.html", {
         "request": request, "comp": comp, "projects": projects, "project": project,
-        "rounds": rounds, "round": rnd, "proposal": proposal,
+        "rounds": rounds, "round": rnd, "plan": plan,
         "adv": conn.execute("SELECT COALESCE(SUM(advancement_count),0) a FROM events WHERE competition_id=? AND project_code=? AND round=?",
                             (competition_id, project, rnd)).fetchone()["a"],
         "next_exists": next_exists,
@@ -3777,6 +3808,8 @@ async def api_runboard(competition_id: int, request: Request = None):
     _comp_or_404(competition_id)
     conn = db.get_db()
     judges_n = len(judges_of(competition_id))
+    next_rounds = {(r["project_code"], r["round"]) for r in conn.execute(
+        "SELECT DISTINCT project_code, round FROM events WHERE competition_id=?", (competition_id,))}
     out = []
     for ev in db.rows(conn.execute(
             "SELECT * FROM events WHERE competition_id=? "
@@ -3807,12 +3840,14 @@ async def api_runboard(competition_id: int, request: Request = None):
             "status": ev["status"], "published": bool(ev["published"]),
             "announced": bool(ev["announced"]), "run_seq": ev["run_seq"],
             "scoring_type": ev["scoring_type"], "advancement_count": ev["advancement_count"] or 0,
+            "has_next": (ev["project_code"], ev["round"] + 1) in next_rounds,
             "dances": dances, "roster": roster_list, "checked": checked,
             "judges_total": judges_n, "judges_eff": eff, "judges_assigned_on": assigned_used,
             "submitted_pairs": pairs, "total_pairs": total_pairs,
             "top3": top3, "matrix": mat,
         })
-    return {"events": out, "judges_total": judges_n, "judges_all": judges_of(competition_id)}
+    return {"events": out, "judges_total": judges_n, "judges_all": judges_of(competition_id),
+            "judges_disabled": _disabled_judges(competition_id)}
 
 
 @app.get("/api/events/{competition_id}/run-order")

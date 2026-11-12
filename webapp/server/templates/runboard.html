@@ -21,6 +21,11 @@
     <button class="btn" id="rb-publish-all">一键发布全部</button>
   </span>
 </div>
+<div class="card" id="judge-bar" style="display:none">
+  <b>裁判启用</b>
+  <span id="judge-chips" style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:8px"></span>
+  <span class="muted" style="margin-left:8px">点击启用/禁用（禁用裁判不可评分，收齐判定按启用裁判）</span>
+</div>
 <div id="board"><div class="card muted">加载中…</div></div>
 {% endblock %}
 {% block scripts %}
@@ -73,7 +78,7 @@ function render() {
     if (e.status === 'calculated') actions += '<button class="btn small" onclick="act(' + e.id + ',\'publish\')">发布</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'unpublish\')">撤回</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'announce\')">' + (e.announced ? '取消播报' : '播报') + '</button>';
-    if (e.round === 1 && e.advancement_count > 0 && (e.status === 'calculated' || e.status === 'published'))
+    if (e.advancement_count > 0 && e.has_next && (e.status === 'calculated' || e.status === 'published'))
       actions += '<a class="btn small" href="/events/' + CID + '/advancement?project=' + encodeURIComponent(e.project) + '&round=' + e.round + '">晋级确认</a>';
     var top3 = e.top3.map(function (t) {
       return '<span class="rb-top">第' + t.rank + ' ' + esc(t.number) + '</span>';
@@ -93,6 +98,7 @@ function render() {
       '<div class="rb-metrics" onclick="toggleDetail(' + e.id + ')">' +
       '<span class="rb-metric"><span class="rb-k">检录</span><span class="rb-v">' + checkedTxt + '</span></span>' +
       '<span class="rb-metric"><span class="rb-k">评分</span><span class="rb-v">' + progTxt + '</span></span>' +
+      (e.advancement_count > 0 ? '<span class="rb-metric"><span class="rb-k">晋级</span><span class="rb-v">' + e.advancement_count + '</span></span>' : '') +
       (e.status === 'published' ? '<span class="rb-metric"><span class="rb-k">播报</span><span class="rb-v">' + (e.announced ? '✓' : '未') + '</span></span>' : '') +
       ((e.status === 'calculated' || e.status === 'published') ? '<span class="rb-metric rb-metric-wide"><span class="rb-k">前三</span><span class="rb-v">' + (top3 || '—') + '</span></span>' : '') +
       '</div>';
@@ -119,19 +125,14 @@ function render() {
         html += '</span> ';
       });
       html += '</div>';
-      if (e.status === 'pending' || e.status === 'scoring') {
-        html += '<div class="rb-sec"><b class="rb-sec-title">上场裁判指派</b> <span class="muted">点击勾选本场裁判（全部勾选=全部登记裁判）；收齐判定按指派名单</span>';
-        DATA.judges_all.forEach(function (j) {
-          var on = e.judges_assigned_on && e.judges_eff.indexOf(j) > -1;
-          html += '<span class="chip ' + (on ? 'on' : 'off') + '" onclick="toggleJudge(' + e.id + ',\'' + j + '\',' + (!on) + ')">' + esc(j) + '</span>';
-        });
-        html += '</div>';
-      }
+      html += '<div class="rb-sec muted">本场有效裁判 ' + e.judges_eff.length + ' / ' + e.judges_total +
+        ' 名（启用/禁用在顶部「裁判启用」栏）</div>';
     }
     html += '<div class="rb-sec muted">深度操作（重开/退回/自动发布设置）在 <a href="/events/' + CID + '/console/' + e.id + '">场次详情</a></div>';
     html += '</div></div>';
   });
   box.innerHTML = html || '<div class="card muted">该筛选条件下没有场次。</div>';
+  renderJudgeBar();
 }
 
 function toggleDetail(id) {
@@ -161,14 +162,27 @@ async function act(id, action) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-async function toggleJudge(id, code, on) {
-  var ev = DATA.events.filter(function (e) { return e.id === id; })[0];
-  var cur = ev && ev.judges_assigned_on ? ev.judges_eff.slice() : [];
-  var idx = cur.indexOf(code);
-  if (on && idx < 0) cur.push(code);
-  if (!on && idx >= 0) cur.splice(idx, 1);
-  try { await api('POST', '/api/competition-events/' + id + '/judges-assign', {judges: cur}); await load(); }
+async function toggleJudgeEnabled(code, enabled) {
+  try { await api('POST', '/api/events/' + CID + '/judges-toggle', {judge: code, enabled: enabled}); await load(); }
   catch (e) { toast(e.message, 'err'); }
+}
+function renderJudgeBar() {
+  var bar = document.getElementById('judge-bar');
+  if (!bar) return;
+  var dis = DATA.judges_disabled || [];
+  var box = document.getElementById('judge-chips');
+  box.innerHTML = '';
+  DATA.judges_all.forEach(function (j) {
+    var on = dis.indexOf(j) < 0;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip ' + (on ? 'on' : 'off');
+    b.textContent = j + (on ? ' ✓' : ' ✕');
+    b.title = on ? '点击禁用' : '点击启用';
+    b.onclick = function () { toggleJudgeEnabled(j, !on); };
+    box.appendChild(b);
+  });
+  bar.style.display = '';
 }
 async function toggleCheckin(id, num, state) {
   try { await api('POST', '/api/competition-events/' + id + '/checkin', {numbers: [num], state: state}); await load(); }

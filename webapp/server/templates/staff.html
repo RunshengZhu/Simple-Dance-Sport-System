@@ -53,6 +53,7 @@
     <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '评分中' if ev.status == 'scoring' else '待开始' }}</span>
     <span class="muted">{{ ev.project }} 第{{ ev.round }}轮</span>
     <span class="tag" id="prog-{{ ev.id }}">检录 {{ ev.checked_n }} / {{ ev.total }}</span>
+    {% if ev.advancement_count %}<span class="tag ok">晋级 {{ ev.advancement_count }}</span>{% endif %}
   </h3>
   <div class="chip-row">
     {% for r in ev.roster %}

@@ -20,21 +20,59 @@
   <span class="muted">本类合计晋级名额（各场之和）：{{ adv or 0 }} ·
     {% if next_exists %}下一轮已配置{% else %}<span class="tag warn">赛程中无下一轮（决赛轮）</span>{% endif %}</span>
 </div>
-{% if proposal %}
+{% if plan.per_event %}
+{% if plan.overflow %}
+<div class="card" style="border-left:4px solid #e67e22"><b>并列超额：本轮实际晋级 {{ plan.merged|length }} 对（名额合计 {{ adv }}，超出 {{ plan.overflow }} 对）。</b>
+  <span class="muted">同分并列按规则全部晋级；下一轮上场人数相应增加，决赛录取仍按各场次顺位名额截断。</span></div>
+{% endif %}
+
 <div class="card">
-  <h2>合并预案（按总分排序，勾选即晋级名单）</h2>
+  <h2>各场次晋级明细（按各场晋级名额自动产生）</h2>
   <table>
-    <tr><th></th><th>顺序</th><th>背番号</th><th class="num">总分</th></tr>
-    {% for p in proposal %}
+    <tr><th>场次</th><th class="num">名额</th><th class="num">实际晋级</th><th>晋级名单</th><th>并列说明</th></tr>
+    {% for e in plan.per_event %}
     <tr>
-      <td><input type="checkbox" class="adv-check" data-num="{{ p.competitor_number }}"
-           checked></td>
+      <td><b>{{ e.code }}</b></td>
+      <td class="num">{{ e.adv or "—" }}</td>
+      <td class="num">{{ e.advancing|length }}</td>
+      <td>{{ e.advancing|join("、") or "—" }}</td>
+      <td class="muted">{{ e.tie_note }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if plan.allocation %}
+<div class="card">
+  <h2>下一轮蛇形分配预览（确认后按此回填）</h2>
+  <table>
+    <tr><th>下一轮场次</th><th class="num">该场晋级名额</th><th>分配名单（蛇形）</th></tr>
+    {% for e in plan.next_events %}
+    <tr>
+      <td><b>{{ e.code }}</b></td>
+      <td class="num">{{ e.adv or "—" }}</td>
+      <td>{{ plan.allocation.get(e.code, [])|length }} 对：{{ plan.allocation.get(e.code, [])|join("、") or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">并列超额会使部分下一轮场次人数多于其名额——不影响晋级效力；决赛轮录取按顺位名额截断。</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>合并预案（按名次/总分排序，勾选即晋级名单）</h2>
+  <table>
+    <tr><th></th><th>顺序</th><th>背番号</th><th class="num">总分</th><th>来源场次</th></tr>
+    {% for p in plan.merged %}
+    <tr>
+      <td><input type="checkbox" class="adv-check" data-num="{{ p.competitor_number }}" checked></td>
       <td>{{ loop.index }}</td><td>{{ p.competitor_number }}</td><td class="num">{{ p.total_score }}</td>
+      <td class="muted">{{ p.from_code }}</td>
     </tr>
     {% endfor %}
   </table>
   <p><button class="btn" id="confirm-btn">确认并蛇形回填下一轮</button> <span id="msg"></span></p>
-  <p class="muted">说明：名单将按名次蛇形分配到下一轮各场次（FR-D6）；确认后下一轮上场名单被覆盖。</p>
+  <p class="muted">说明：名单按名次蛇形分配到下一轮各场次；确认后下一轮上场名单被覆盖。</p>
 </div>
 {% else %}
 <div class="card"><p class="muted">该项目该轮暂无可用的计算结果（需至少一场已计算/已发布）。</p></div>

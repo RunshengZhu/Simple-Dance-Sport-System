@@ -921,3 +921,32 @@ tr.ev-detail > td { background: rgba(0,0,0,.022); }
 .adv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .adv-chip { display: inline-block; background: #2ecc711a; color: #1e8e4e; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; }
 .ev-detail table.mini { margin-top: 6px; }
+
+/* ===== R112 裁判页：顶部常驻上/下场导航 + 底部提交栏常驻 ===== */
+.judge-sheet .sheet-nav {
+  position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 8px;
+  background: var(--bg, #f5f3ef); padding: 8px 0; margin-bottom: 4px;
+}
+.judge-sheet .sn-btn {
+  display: inline-flex; align-items: center; gap: 4px; padding: 7px 12px; border-radius: 8px;
+  background: var(--card, #fff); border: 1px solid var(--line, #ddd); font-weight: 700;
+  font-size: 13px; color: var(--ink, #222); text-decoration: none; max-width: 44%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.judge-sheet .sn-btn.off { opacity: .45; cursor: not-allowed; }
+.judge-sheet a.sn-btn:active { background: var(--acc-tint, #f7e6e2); }
+.judge-sheet .sn-pos { margin: 0 auto; color: var(--muted, #888); font-size: 12.5px; font-weight: 700; }
+.judge-sheet { padding-bottom: 96px; }
+.judge-sheet .submit-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
+  background: var(--card, #fff); padding: 12px 14px; margin: 0;
+  border-top: 2px solid var(--cream-line, #e3dfd8); box-shadow: 0 -3px 12px rgba(0,0,0,.09);
+}
+@media (max-width: 640px) {
+  .judge-sheet .submit-bar { padding: 9px 12px; }
+  .judge-sheet .submit-bar #progress { flex: 1 1 100%; white-space: normal; order: 1; text-align: center; font-size: .82rem; }
+  .judge-sheet .submit-bar .btn { order: 2; }
+  .judge-sheet .submit-bar #msg { order: 3; flex: 1 1 100%; text-align: center; }
+}
+/* ===== R112 runboard 裁判启用栏 ===== */
+#judge-bar .chip { cursor: pointer; user-select: none; }

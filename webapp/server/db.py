@@ -138,7 +138,10 @@ def init_db():
     if "team_mode" not in ev_cols:
         conn.execute("ALTER TABLE events ADD COLUMN team_mode TEXT DEFAULT 'standard'")   # R73：项目团体计分模式（standard/freshman_half）
     if "judges_assigned" not in ev_cols:
-        conn.execute("ALTER TABLE events ADD COLUMN judges_assigned TEXT DEFAULT ''")   # R107：本场上场裁判指派（空=全部登记裁判）
+        conn.execute("ALTER TABLE events ADD COLUMN judges_assigned TEXT DEFAULT ''")   # R112 起：列废弃（保留兼容），改用竞赛级 judges_disabled
+    comp_cols = {r[1] for r in conn.execute("PRAGMA table_info(competitions)")}
+    if "judges_disabled" not in comp_cols:
+        conn.execute("ALTER TABLE competitions ADD COLUMN judges_disabled TEXT DEFAULT ''")   # R112：禁用裁判名单（逗号分隔；空=全部启用）
     user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "pw_plain" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN pw_plain TEXT DEFAULT ''")   # R76c：口令留档（设置/重置时同步记录，供口令表导出；与直达链接同库同等保护）
