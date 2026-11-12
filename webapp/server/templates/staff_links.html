@@ -43,21 +43,40 @@
 <div class="card">
   <h2>各角色免密直达链接</h2>
   <p class="muted">链接等同口令，仅分发给对应工作人员；泄露时重置口令即可作废全部旧链接。裁判无需账号，点击即以该裁判 ID 登录。</p>
-  <div class="tbl-scroll"><table>
+  <div class="tbl-scroll"><table class="dl-table">
     <tr><th>角色</th><th>账号 / ID</th><th>姓名</th><th>直达链接（点击即登录）</th><th></th></tr>
     {% for l in links %}
-    <tr>
+    <tr class="dl-row" onclick="toggleQr({{ loop.index }})" title="点击展开二维码">
       <td>{{ {"compadmin": "赛事管理员", "marshal": "检录长/检录员", "host": "主持人", "judge": "裁判"}.get(l.role, l.role) }}</td>
       <td><b>{{ l.username }}</b></td>
       <td>{{ l.name }}</td>
-      <td class="table-fit"><a href="{{ l.url }}" target="_blank">{{ l.url }}</a></td>
-      <td><button class="btn small secondary" onclick="copyText('{{ l.url }}', '已复制 {{ l.username }} 的直达链接')">复制</button></td>
+      <td class="table-fit dl-url"><a href="{{ l.url }}" target="_blank" onclick="event.stopPropagation()">{{ l.url }}</a></td>
+      <td><button class="btn small secondary" onclick="event.stopPropagation();toggleQr({{ loop.index }})">二维码</button>
+          <button class="btn small secondary" onclick="event.stopPropagation();copyText('{{ l.url }}', '已复制 {{ l.username }} 的直达链接')">复制</button></td>
     </tr>
+    <tr class="dl-qr" id="dl-qr-{{ loop.index }}" hidden><td colspan="5">
+      <div class="dl-qr-box">
+        {% if l.qr %}<img src="{{ l.qr }}" alt="{{ l.username }} 直达二维码" width="150" height="150">{% endif %}
+        <div class="dl-qr-info">
+          <b>{{ {"compadmin": "赛事管理员", "marshal": "检录长/检录员", "host": "主持人", "judge": "裁判"}.get(l.role, l.role) }} · {{ l.name }}</b>
+          <span class="muted">手机扫码免登录直达{% if not l.qr %}（服务器未装二维码库，请复制链接）{% endif %}</span>
+          <span class="dl-actions">
+            <a class="btn small" href="{{ l.url }}" target="_blank">直接进入</a>
+            <button class="btn small secondary" onclick="copyText('{{ l.url }}', '已复制 {{ l.username }} 的直达链接')">复制链接</button>
+            <button class="btn small secondary" onclick="window.print()">打印</button>
+          </span>
+        </div>
+      </div>
+    </td></tr>
     {% endfor %}
   </table></div>
 </div>
 {% endblock %}
 {% block scripts %}
+function toggleQr(idx) {
+  var el = document.getElementById('dl-qr-' + idx);
+  if (el) el.hidden = !el.hidden;
+}
 async function createUser() {
   var body = {
     username: document.getElementById('u-username').value.trim(),

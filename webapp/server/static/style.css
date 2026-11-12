@@ -950,3 +950,13 @@ tr.ev-detail > td { background: rgba(0,0,0,.022); }
 }
 /* ===== R112 runboard 裁判启用栏 ===== */
 #judge-bar .chip { cursor: pointer; user-select: none; }
+
+/* ===== R112b 直达链接二维码展开行 ===== */
+.dl-table tr.dl-row { cursor: pointer; }
+.dl-table tr.dl-row:hover td { background: rgba(128,128,128,.06); }
+.dl-table tr.dl-row .dl-url a { word-break: break-all; }
+.dl-table tr.dl-qr > td { background: rgba(128,128,128,.04); }
+.dl-qr-box { display: flex; align-items: center; gap: 16px; padding: 8px 4px; flex-wrap: wrap; }
+.dl-qr-box img { border: 1px solid var(--line, #ddd); border-radius: 10px; background: #fff; padding: 4px; }
+.dl-qr-info { display: flex; flex-direction: column; gap: 6px; }
+.dl-qr-info .dl-actions { display: flex; gap: 8px; flex-wrap: wrap; }

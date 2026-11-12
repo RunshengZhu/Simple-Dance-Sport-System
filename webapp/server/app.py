@@ -3,6 +3,7 @@
 """体育舞蹈赛事评分系统 · 服务版（M1~M5）。FastAPI + Jinja2 + SQLite WAL + SSE，端口 8321。"""
 
 import asyncio
+import base64
 import csv
 import io
 import json
@@ -4004,6 +4005,16 @@ async def staff_links_page(competition_id: int, request: Request = None):
     for j in db.rows(conn.execute("SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
         links.append({"role": "judge", "username": j["code"], "name": j["name"] or ("裁判" + j["code"]),
                       "url": _abs_url(request, _direct_link(conn, competition_id, "judge", j["code"]))})
+    # R112b 每条链接预生成二维码（segno→PNG data URI），点击行展开扫码直达
+    try:
+        import segno
+        for l in links:
+            buf = io.BytesIO()
+            segno.make(l["url"], error="m").save(buf, kind="png", scale=6, border=2)
+            l["qr"] = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except ImportError:
+        for l in links:
+            l["qr"] = ""
     staff = db.rows(conn.execute(
         "SELECT username, display_name, role, active, created_at FROM users WHERE role IN ('host','marshal') ORDER BY role, username"))
     return templates.TemplateResponse(request, "staff_links.html", {
