@@ -1673,7 +1673,7 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
                         row.append("")
                 row.append(str(ticks))
                 ov = overall_by_num.get(num)
-                row.append("✓" if (ov and (ov.get("advancement_status") or (
+                row.append("√" if (ov and (ov.get("advancement_status") or (
                     adv_n and is_final and int(ov["rank"]) <= adv_n))) else "")
                 rows.append(row)
             table = Table(rows, colWidths=[40, 55] + [38] * len(judges) + [45, 42])
@@ -1701,9 +1701,9 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
             num = str(r0["competitor_number"])
             nm, un = comp_info(num)
             if adv_n > 0:
-                adv_txt = "✓" if int(r0["rank"]) <= adv_n else ""
+                adv_txt = "√" if int(r0["rank"]) <= adv_n else ""
             else:
-                adv_txt = "✓" if r0.get("advancement_status") else ""
+                adv_txt = "√" if r0.get("advancement_status") else ""
             rows.append([str(r0["rank"]), num, nm or ("选手" + num), un, adv_txt])
         table = Table(rows, colWidths=[50, 70, 150, 150, 95])
         table.setStyle(TableStyle([
