@@ -979,3 +979,11 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 }
 .ev-code { font-size: 12px; font-weight: 400; letter-spacing: .2px; }
 .rb-head .ev-code { margin: 0 4px; }
+
+/* ===== R112f 裁判快速进入 + 主持人开赛 ===== */
+.judge-now { border-left: 4px solid var(--acc, #c0392b); }
+.judge-now > b { color: var(--acc, #c0392b); }
+.jn-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.jn-btn { display: inline-flex; align-items: center; gap: 6px; }
+.jn-btn .st-seq { margin-right: 0; }
+.sn-btn.sn-jn { background: var(--acc, #c0392b); border-color: var(--acc, #c0392b); color: #fff; }

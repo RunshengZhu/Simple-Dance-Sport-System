@@ -5,8 +5,21 @@
 {% block content %}
 <h1>裁判工作台{% if comp %} · {{ comp.name }}{% endif %}<span id="j-progress"></span></h1>
 {% if not assignments %}<div class="card"><p style="margin:6px 0">
-    暂无进行中的评分场次。场次由赛事管理员在控制台「开启评分」后才会出现在这里；
+    暂无进行中的评分场次。场次由主持人/管理员「开赛」后出现在这里；
     可稍后刷新本页，或联系赛事管理员。</p></div>{% endif %}
+{% if assignments %}
+<div class="card judge-now">
+  <b>● 正在评分 · 快速进入</b>
+  <div class="jn-list">
+  {% for a in assignments %}
+    {% if a.first_undone %}
+    <a class="btn jn-btn" href="/judge/competition-events/{{ a.id }}/dances/{{ a.first_undone }}">
+      <span class="st-seq">{{ a.run_seq or "—" }}</span>{{ a.name }} · {{ a.first_undone }}</a>
+    {% endif %}
+  {% endfor %}
+  </div>
+</div>
+{% endif %}
 {% for a in assignments %}
 <div class="card">
   <h2><span class="st-seq">{{ a.run_seq or "—" }}</span>{{ a.name }}

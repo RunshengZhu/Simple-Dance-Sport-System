@@ -9,6 +9,9 @@
   {% else %}<span class="sn-btn off" title="该场次不在评分中">← {{ prev_ev.code }}</span>{% endif %}
   {% else %}<span class="sn-btn off">← 上一场</span>{% endif %}
   <span class="sn-pos">{{ seq_idx }} / {{ seq_total }}</span>
+  {% if scoring_nav %}
+  <a class="sn-btn sn-jn" href="{{ scoring_nav.href }}" title="跳到正在评分的场次">● 正在评分</a>
+  {% endif %}
   {% if next_ev %}{% if next_ev.active %}<a class="sn-btn" href="{{ next_ev.href }}">{{ next_ev.code }} →</a>
   {% else %}<span class="sn-btn off" title="该场次不在评分中">{{ next_ev.code }} →</span>{% endif %}
   {% else %}<span class="sn-btn off">下一场 →</span>{% endif %}

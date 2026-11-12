@@ -65,6 +65,9 @@
   </div>
   {% if ev.total %}
   <p>
+    {% if role in ('host', 'admin') and ev.status == 'pending' %}
+    <button class="btn" data-open="{{ ev.id }}">开赛</button>
+    {% endif %}
     <button class="btn secondary" data-all="{{ ev.id }}" data-state="1">全部检录</button>
     <button class="btn secondary" data-all="{{ ev.id }}" data-state="0">全清</button>
   </p>
@@ -81,6 +84,21 @@
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
+/* R112f 主持人/管理员开赛：以该场名单开启评分 */
+document.querySelectorAll('[data-open]').forEach(function (b) {
+  b.addEventListener('click', async function () {
+    var ceid = b.dataset.open;
+    if (!confirm('开启本场评分？开启后裁判即可提交。')) return;
+    var nums = [];
+    document.querySelectorAll('.chip[data-ceid="' + ceid + '"]').forEach(function (c) { nums.push(c.dataset.num); });
+    b.disabled = true;
+    try {
+      await api('POST', '/api/competition-events/' + ceid + '/open', {roster: nums, reset: false});
+      toast('已开赛', 'ok');
+      setTimeout(function () { location.reload(); }, 600);
+    } catch (e) { b.disabled = false; toast(e.message, 'err'); }
+  });
+});
 /* ---------- 场次筛选 + 搜索定位（首个匹配滚入视口并高亮） ---------- */
 (function () {
   var chips = document.querySelectorAll('.status-filter .sf-btn');

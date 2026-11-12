@@ -1081,10 +1081,15 @@ async def judge_home(request: Request):
     assignments = []
     if comp:
         evs = db.rows(db.get_db().execute(
-            "SELECT * FROM events WHERE competition_id=? AND status='scoring' ORDER BY code", (comp["id"],)))
+            "SELECT * FROM events WHERE competition_id=? AND status='scoring' "
+            "ORDER BY COALESCE(run_seq, 9999), code", (comp["id"],)))
         for ev in evs:
             ev["dances"] = dances_of(ev["id"])
-            ev["my_done"] = _judge_sheet_status(ev["id"], s["judge_code"])
+            st_list = _judge_sheet_status(ev["id"], s["judge_code"])
+            ev["my_done"] = st_list
+            # R112f 快速进入：直达第一个未提交的舞种（全提交则回第一舞种查看）
+            ev["first_undone"] = next((d["dance"] for d in st_list if not d["submitted"]),
+                                      st_list[0]["dance"] if st_list else None)
             assignments.append(ev)
     return templates.TemplateResponse(request, "judge_home.html", {
         "comp": comp, "judge_code": s["judge_code"], "assignments": assignments})
@@ -1124,6 +1129,9 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
                 "active": bool(ds) and e["status"] == "scoring"}
     prev_ev = _nav(all_evs[idx - 1]) if idx and idx > 0 else None
     next_ev = _nav(all_evs[idx + 1]) if idx is not None and idx + 1 < len(all_evs) else None
+    # R112f 正在评分场次直达（非本场时导航栏显示）
+    scoring_ev = next((e for e in all_evs if e["status"] == "scoring" and e["id"] != ceid), None)
+    scoring_nav = _nav(scoring_ev) if scoring_ev else None
     roster_list = roster(ev["id"])
     rows = {}
     for num in roster_list:
@@ -1142,7 +1150,7 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         "n": len(roster_list),
         "prev_ev": prev_ev, "next_ev": next_ev,
         "seq_idx": seq_idx, "seq_total": seq_total,
-        "judge_disabled": judge_disabled,
+        "judge_disabled": judge_disabled, "scoring_nav": scoring_nav,
     })
 
 
@@ -2166,7 +2174,10 @@ def _require_active_event(ceid):
 
 @app.post("/api/competition-events/{ceid}/open")
 async def api_open(ceid: int, request: Request = None):
-    require_admin(request)
+    # R112f 主持人可开赛：admin（含赛事管理员）或 host；marshal 仅检录不可开赛
+    s = require_staff(request, None)
+    if s["role"] not in ("host", "admin"):
+        raise HTTPException(status_code=403, detail="仅主持人或管理员可开赛")
     ev, comp = _require_active_event(ceid)
     body = await request.json()
     # roster 兼容数组与逗号字符串两种形态（A5：字符串此前被按字符拆分入库）
