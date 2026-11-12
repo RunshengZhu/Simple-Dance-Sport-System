@@ -9,7 +9,9 @@
     可稍后刷新本页，或联系赛事管理员。</p></div>{% endif %}
 {% for a in assignments %}
 <div class="card">
-  <h2>{{ a.name }} <span class="tag acc">评分中</span> <span class="muted">{{ a.code }} / 第{{ a.round }}轮</span></h2>
+  <h2><span class="st-seq">{{ a.run_seq or "—" }}</span>{{ a.name }}
+    <span class="tag acc">评分中</span>
+    <span class="muted">第{{ a.round }}轮 · <span class="ev-code">{{ a.code }}</span></span></h2>
   <p>舞种：
   {% for d in a.dances %}
     <a class="btn" href="/judge/competition-events/{{ a.id }}/dances/{{ d }}">{{ d }}

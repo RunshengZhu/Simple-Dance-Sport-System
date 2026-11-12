@@ -1363,7 +1363,7 @@ async def public_schedule(request: Request):
     evs = []
     if comp:
         evs = db.rows(db.get_db().execute(
-            "SELECT code,name,project_code,round,status FROM events WHERE competition_id=? "
+            "SELECT code,name,project_code,round,status,run_seq FROM events WHERE competition_id=? "
             "ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
             (comp["id"],)))
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
@@ -3171,7 +3171,7 @@ async def staff_page(request: Request):
     name_by_number = {}
     if comp:
         events = db.rows(conn.execute(
-            "SELECT id,code,name,project_code,round,status,announced,advancement_count FROM events "
+            "SELECT id,code,name,project_code,round,status,announced,advancement_count,run_seq FROM events "
             "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
             (comp["id"],)))
         for ev in events:
@@ -3186,6 +3186,7 @@ async def staff_page(request: Request):
             item = {"id": ev["id"], "code": ev["code"], "name": ev["name"],
                     "project": ev["project_code"], "round": ev["round"], "status": ev["status"],
                     "announced": bool(ev["announced"]),
+                    "run_seq": ev["run_seq"] if "run_seq" in ev.keys() else None,
                     "advancement_count": ev["advancement_count"] if "advancement_count" in ev.keys() else 0,
                     "roster": roster,
                     "checked_n": sum(1 for x in roster if x["checked"]),
@@ -3720,7 +3721,7 @@ def _public_payload(comp=None):
     if not comp:
         return None
     events = db.rows(db.get_db().execute(
-        "SELECT code,name,project_code,round,status,published,id FROM events WHERE competition_id=? "
+        "SELECT code,name,project_code,round,status,published,id,run_seq FROM events WHERE competition_id=? "
         "ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
         (comp["id"],)))
     published = []

@@ -18,9 +18,10 @@
   {% endif %}
 </div>
 <table>
-  <tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
+  <tr><th>序</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
   {% for ev in events %}
-  <tr class="{{ 'scoring-now' if ev.status == 'scoring' }}"><td>{{ ev.code }}</td><td>{{ ev.name }}</td><td>{{ ev.project_code }}</td><td>{{ ev.round }}</td>
+  <tr class="{{ 'scoring-now' if ev.status == 'scoring' }}"><td><b>{{ ev.run_seq or "—" }}</b></td>
+  <td>{{ ev.name }} <span class="ev-code muted">{{ ev.code }}</span></td><td>{{ ev.project_code }}</td><td>{{ ev.round }}</td>
   <td>{% if ev.status == "scoring" %}<span class="ok">● 评分中</span>{% elif ev.status == "published" %}已发布{% elif ev.status == "calculated" %}已计算{% else %}待赛{% endif %}</td></tr>
   {% endfor %}
   {% if not events %}<tr><td colspan="5" class="muted">暂无赛程</td></tr>{% endif %}

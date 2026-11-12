@@ -90,7 +90,7 @@ function render() {
       '<div class="rb-head">' +
       '<span class="rb-seq">' + seq + '</span>' +
       '<span class="rb-main" onclick="toggleDetail(' + e.id + ')">' +
-      '<b class="rb-code">' + esc(e.code) + '</b> <span class="rb-name">' + esc(e.name) + '</span> ' + stTag(e.status) +
+      '<span class="rb-name">' + esc(e.name) + '</span> <span class="ev-code muted">' + esc(e.code) + '</span> ' + stTag(e.status) +
       '</span>' +
       '<span class="rb-actions" onclick="event.stopPropagation()">' + actions +
       '<a class="btn small secondary" href="/events/' + CID + '/console/' + e.id + '">详情</a></span>' +

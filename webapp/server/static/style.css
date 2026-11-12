@@ -969,3 +969,13 @@ tr.ev-detail > td { background: rgba(0,0,0,.022); }
 tr.scoring-now td { background: rgba(192,57,43,.08); }
 .chip small { display: block; font-size: 10.5px; font-weight: 500; opacity: .85; max-width: 96px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ===== R112d 场序前置 + 场次编号弱化 ===== */
+.st-seq {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 26px; padding: 0 6px; margin-right: 8px;
+  border-radius: 8px; background: var(--acc, #c0392b); color: #fff;
+  font-size: 13.5px; font-weight: 800; vertical-align: 2px;
+}
+.ev-code { font-size: 12px; font-weight: 400; letter-spacing: .2px; }
+.rb-head .ev-code { margin: 0 4px; }

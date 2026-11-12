@@ -31,11 +31,11 @@
 <h2>赛程</h2>
 <div class="card table-fit">
   <table>
-    <tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
+    <tr><th>序</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
     {% for e in events %}
     <tr class="ev-row{% if e.results or e.advanced or e.status != 'pending' %} clickable{% endif %}{% if e.status == 'scoring' %} scoring-now{% endif %}">
-      <td><b>{{ e.code }}</b></td>
-      <td>{{ e.name }}</td>
+      <td><b>{{ e.run_seq or "—" }}</b></td>
+      <td>{{ e.name }} <span class="ev-code muted">{{ e.code }}</span></td>
       <td>{{ e.project_code }}</td>
       <td>第 {{ e.round }} 轮</td>
       <td>

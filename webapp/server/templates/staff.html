@@ -27,7 +27,8 @@
 {% if ev.is_done %}
 <div class="card st-event done-card" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}">
   <div class="done-head">
-    <h3>{{ ev.code }} {{ ev.name }}
+    <h3><span class="st-seq">{{ ev.run_seq or "—" }}</span>{{ ev.name }}
+      <span class="ev-code muted">{{ ev.code }}</span>
       <span class="tag {{ 'ok' if ev.status == 'published' else 'acc' }}">{{ '已发布' if ev.status == 'published' else '已计算' }}</span>
       <span class="tag {{ 'ok' if ev.announced else 'gray' }}">{{ '已播报 ✓' if ev.announced else '未播报' }}</span>
     </h3>
@@ -49,7 +50,8 @@
 </div>
 {% else %}
 <div class="card st-event{{ ' scoring-now' if ev.status == 'scoring' }}" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-need="{{ 1 if ev.checked_n < ev.total else 0 }}">
-  <h3>{{ ev.code }} {{ ev.name }}
+  <h3><span class="st-seq">{{ ev.run_seq or "—" }}</span>{{ ev.name }}
+    <span class="ev-code muted">{{ ev.code }}</span>
     <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '● 评分中' if ev.status == 'scoring' else '待开始' }}</span>
     <span class="muted">{{ ev.project }} 第{{ ev.round }}轮</span>
     <span class="tag" id="prog-{{ ev.id }}">检录 {{ ev.checked_n }} / {{ ev.total }}</span>
