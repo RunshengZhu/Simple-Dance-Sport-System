@@ -42,7 +42,7 @@
   <div class="done-body" id="done-body-{{ ev.id }}">
     <div>
     {% if ev.results %}
-    {% with rows = ev.results, names = ev.names %}{% include "_announce_table.html" %}{% endwith %}
+    {% with rows = ev.results, names = ev.names, is_final = ev.is_final, adv = ev.adv %}{% include "_announce_table.html" %}{% endwith %}
     <p><a class="btn secondary" href="/api/events/{{ ev.competition_id }}/exports?format=markdown&code={{ ev.code }}">下载本场成绩单 (.md)</a></p>
     {% else %}<p class="muted">无结果数据。</p>{% endif %}
     </div>

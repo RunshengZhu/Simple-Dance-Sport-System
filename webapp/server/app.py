@@ -1378,13 +1378,17 @@ async def public_results(request: Request):
         return RedirectResponse("/competitions", status_code=302)
     payload = []
     if comp:
+        next_rounds = {(r["project_code"], r["round"]) for r in db.get_db().execute(
+            "SELECT DISTINCT project_code, round FROM events WHERE competition_id=?", (comp["id"],))}
         evs = db.rows(db.get_db().execute(
             "SELECT * FROM events WHERE competition_id=? AND published=1 ORDER BY project_code, round, code", (comp["id"],)))
         for ev in evs:
             name_by_number = _display_names(db.get_db(), comp["id"], ev["project_code"])
             res = load_results(ev["id"])
             if res:
-                payload.append({"ev": ev, "results": res, "names": name_by_number})
+                payload.append({"ev": ev, "results": res, "names": name_by_number,
+                                "is_final": (ev["project_code"], ev["round"] + 1) not in next_rounds,
+                                "adv": ev["advancement_count"] or 0})
     standings = _team_standings(comp["id"], published_only=True) if comp else {"standings": []}
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
     return _etag_page(request, comp["id"] if comp else 0, "results", fp, lambda: templates.TemplateResponse(
@@ -1642,7 +1646,8 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
             if not drec:
                 continue
             story.append(Paragraph("舞种: " + d, ParagraphStyle("H", fontName=fname, fontSize=13, spaceAfter=6)))
-            rows = [["排名", "背番号"] + judges + ["小计"]]
+            overall_by_num = {str(r0["competitor_number"]): r0 for r0 in res.get("overall_results", [])}
+            rows = [["排名", "背番号"] + judges + ["小计", "晋级"]]
             for num in sorted(drec.keys(), key=num_key):
                 rank = ""
                 for r0 in res["dance_results"].get(d, []):
@@ -1659,8 +1664,11 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
                     else:
                         row.append("")
                 row.append(str(ticks))
+                ov = overall_by_num.get(num)
+                row.append("✓" if (ov and (ov.get("advancement_status") or (
+                    adv_n and is_final and int(ov["rank"]) <= adv_n))) else "")
                 rows.append(row)
-            table = Table(rows, colWidths=[40, 55] + [38] * len(judges) + [45])
+            table = Table(rows, colWidths=[40, 55] + [38] * len(judges) + [45, 42])
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -1685,9 +1693,9 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
             num = str(r0["competitor_number"])
             nm, un = comp_info(num)
             if adv_n > 0:
-                adv_txt = "是" if int(r0["rank"]) <= adv_n else ""
+                adv_txt = "✓" if int(r0["rank"]) <= adv_n else ""
             else:
-                adv_txt = "录取" if r0.get("advancement_status") else ""
+                adv_txt = "✓" if r0.get("advancement_status") else ""
             rows.append([str(r0["rank"]), num, nm or ("选手" + num), un, adv_txt])
         table = Table(rows, colWidths=[50, 70, 150, 150, 95])
         table.setStyle(TableStyle([
@@ -3196,6 +3204,10 @@ async def staff_page(request: Request):
                 item["results"] = (res or {}).get("overall_results", [])
                 item["names"] = name_by_number
                 item["is_done"] = True
+                item["is_final"] = (ev["project_code"], ev["round"] + 1) not in {
+                    (r["project_code"], r["round"]) for r in db.rows(conn.execute(
+                        "SELECT DISTINCT project_code, round FROM events WHERE competition_id=?", (comp["id"],)))}
+                item["adv"] = ev["advancement_count"] if "advancement_count" in ev.keys() else 0
             item["competition_id"] = comp["id"]
             items.append(item)
     return templates.TemplateResponse(request, "staff.html", {
@@ -3721,9 +3733,11 @@ def _public_payload(comp=None):
     if not comp:
         return None
     events = db.rows(db.get_db().execute(
-        "SELECT code,name,project_code,round,status,published,id,run_seq FROM events WHERE competition_id=? "
+        "SELECT code,name,project_code,round,status,published,id,run_seq,advancement_count FROM events WHERE competition_id=? "
         "ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
         (comp["id"],)))
+    next_rounds_pub = {(r["project_code"], r["round"]) for r in db.rows(db.get_db().execute(
+        "SELECT DISTINCT project_code, round FROM events WHERE competition_id=?", (comp["id"],)))}
     published = []
     for ev in events:
         name_by_number = _display_names(db.get_db(), comp["id"], ev["project_code"])
@@ -3736,7 +3750,9 @@ def _public_payload(comp=None):
                     r["competitor_name"] = name_by_number.get(str(r["competitor_number"]), "")
                     rows.append(r)
                 published.append({"code": ev["code"], "name": ev["name"], "project": ev["project_code"],
-                                  "round": ev["round"], "results": rows})
+                                  "round": ev["round"], "results": rows,
+                                  "is_final": (ev["project_code"], ev["round"] + 1) not in next_rounds_pub,
+                                  "adv": ev["advancement_count"] or 0})
     return {"competition": {k: comp[k] for k in ("id", "name", "date", "location")},
             "events": events, "published_results": published,
             "team_standings": _team_standings(comp["id"], published_only=True)}

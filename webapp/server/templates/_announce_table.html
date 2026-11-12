@@ -1,6 +1,12 @@
 {# 成绩公告共享表（公开成绩页 / 检录主持台复用同一套 UI 逻辑）。
-   调用方以 {% with rows=..., names=... %} 传入：rows=overall_results，names=背番号→姓名映射。 #}
-<table><tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th class="num">总分</th></tr>
+   调用方以 {% with rows=..., names=..., is_final=..., adv=... %} 传入：
+   rows=overall_results，names=背番号→姓名映射，is_final=是否决赛轮（最末轮），adv=该场录取/晋级名额。
+   R112e：非决赛显示「晋级 ✓/未晋级」；决赛显示「录取 ✓/不计名次」（决赛 skating 行无
+   advancement_status，统一按 rank<=名额 判定）。 #}
+<table><tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th class="num">总分</th><th>{{ "录取" if is_final else "晋级" }}</th></tr>
 {% for r in rows %}
-<tr><td>{{ r["rank"] }}</td><td>{{ r["competitor_number"] }}</td><td>{{ names.get(r["competitor_number"]|string, "") }}</td><td class="num">{{ r["total_score"] }}</td></tr>
+<tr><td>{{ r["rank"] }}</td><td>{{ r["competitor_number"] }}</td><td>{{ names.get(r["competitor_number"]|string, "") }}</td><td class="num">{{ r["total_score"] }}</td>
+<td>{% if is_final %}{% if adv and r["rank"] <= adv %}<b class="ok-text">✓ 录取</b>{% else %}<span class="muted">不计名次</span>{% endif %}
+{% else %}{% if r["advancement_status"] %}<b class="ok-text">✓ 晋级</b>{% else %}<span class="muted">未晋级</span>{% endif %}{% endif %}</td></tr>
 {% endfor %}</table>
+{% if is_final and adv %}<p class="muted" style="font-size:.85rem;margin:6px 0 0">本场 {{ rows|length }} 人（对）上场，顺位录取 {{ adv }} 名；超出名额者不计入名次。</p>{% endif %}

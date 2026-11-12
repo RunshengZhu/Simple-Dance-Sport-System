@@ -75,16 +75,19 @@
   <h3>{{ p.code }} {{ p.name }} <span class="tag ok">已发布</span></h3>
   <div class="table-fit">
     <table>
-      <tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th class="num">总分</th></tr>
+      <tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th class="num">总分</th><th>{{ "录取" if p.is_final else "晋级" }}</th></tr>
       {% for r in p.results %}
       <tr>
         <td><b>{{ r.rank }}</b></td>
         <td>{{ r.competitor_number }}</td>
         <td>{{ r.competitor_name or "—" }}</td>
         <td class="num">{{ r.total_score }}</td>
+        <td>{% if p.is_final %}{% if p.adv and r.rank <= p.adv %}<b class="ok-text">✓ 录取</b>{% else %}<span class="muted">不计名次</span>{% endif %}
+        {% else %}{% if r.advancement_status %}<b class="ok-text">✓ 晋级</b>{% else %}<span class="muted">未晋级</span>{% endif %}{% endif %}</td>
       </tr>
       {% endfor %}
     </table>
+    {% if p.is_final and p.adv %}<p class="muted" style="font-size:.85rem;margin:6px 0 0">本场 {{ p.results|length }} 人（对）上场，顺位录取 {{ p.adv }} 名；超出名额者不计入名次。</p>{% endif %}
   </div>
 </div>
 {% endfor %}

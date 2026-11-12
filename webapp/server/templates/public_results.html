@@ -22,7 +22,7 @@
 {% for p in payload %}
 <div class="card" id="ev-{{ p.ev.code }}">
   <h2>{{ p.ev.name }}（{{ p.ev.project_code }} 第{{ p.ev.round }}轮）</h2>
-  {% with rows = p.results["overall_results"], names = p.names %}{% include "_announce_table.html" %}{% endwith %}
+  {% with rows = p.results["overall_results"], names = p.names, is_final = p.is_final, adv = p.adv %}{% include "_announce_table.html" %}{% endwith %}
 </div>
 {% endfor %}
 {% if not payload %}<p class="muted">暂无已发布成绩。</p>{% endif %}
