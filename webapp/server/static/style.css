@@ -882,3 +882,30 @@ body.judge-sheet main, body.screen main { max-width: none; }
 .rb-top3line { margin: 4px 0; }
 .mark-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .mark-tools .btn { min-height: 34px; }
+
+/* ---- R111 选手查询卡片 ---- */
+.lk-profile { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+.lk-num { display: inline-flex; align-items: center; justify-content: center;
+          min-width: 48px; height: 48px; border-radius: 10px; background: var(--acc, #c0392b);
+          color: #fff; font-size: 18px; font-weight: 800; padding: 0 8px; }
+.lk-info { display: flex; flex-direction: column; gap: 2px; }
+.lk-name { font-size: 17px; }
+.lk-projects { margin: 4px 0 12px; }
+.lk-events { display: flex; flex-direction: column; gap: 10px; }
+.lk-event { border: 1px solid var(--line, #e3dfd8); border-radius: 10px; padding: 10px 12px; }
+.lk-ev-head { font-size: 14px; margin-bottom: 2px; }
+.lk-ev-head b { color: var(--acc, #c0392b); margin-right: 6px; }
+.lk-ev-name { font-size: 13px; }
+.lk-ev-meta { font-size: 12px; margin-bottom: 6px; }
+.lk-ev-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.lk-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+.lk-badge.lk-adv { background: #2ecc711a; color: #1e8e4e; }
+.lk-badge.lk-out { background: #95a5a626; color: #7f8c8d; }
+.lk-badge.lk-rank { background: #c0392b18; color: var(--acc, #c0392b); font-size: 13px; }
+.lk-badge.lk-st { background: #f39c1218; color: #d68910; }
+.lk-cands p { margin-bottom: 6px; }
+@media (max-width: 760px) {
+  .lookup-row { display: flex; gap: 8px; }
+  .lookup-row input { flex: 1; min-width: 0; }
+  .lk-event { padding: 10px; }
+}

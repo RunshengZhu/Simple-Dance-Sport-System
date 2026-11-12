@@ -680,7 +680,9 @@ async def competition_home(request: Request, competition_id: int):
     payload = _public_payload(comp) or {"events": [], "published_results": [],
                                         "team_standings": {"standings": []}}
     ca = _compadmin(request)
+    qr_url = "/api/public/events/{0}/qr?size=6".format(competition_id)
     return templates.TemplateResponse(request, "competition_home.html", {
+        "qr_url": qr_url,
         "request": request, "comp": comp, "events": payload["events"],
         "published": payload["published_results"],
         "standings": payload["team_standings"].get("standings", []),
@@ -4190,58 +4192,110 @@ async def api_public_schedule_export(competition_id: int, format: str = "html", 
     raise HTTPException(status_code=400, detail="未知格式")
 
 
+@app.get("/api/public/events/{competition_id}/qr")
+async def api_competition_qr(competition_id: int, request: Request = None, size: int = 8):
+    """R111 赛事专属入口二维码（PNG，可张贴）：默认指向赛事首页，size 参数可调（4~16）。"""
+    comp = _comp_or_404(competition_id)
+    try:
+        import segno
+    except ImportError:
+        raise HTTPException(status_code=503, detail="服务器未安装二维码生成库（segno）")
+    size = max(4, min(16, size))
+    # 优先用请求的 Host（公网域名），本地调试也正确
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "dancetkt.com"
+    scheme = "https" if (request.headers.get("x-forwarded-proto") == "https" or "dancetkt" in host) else "http"
+    url = "{0}://{1}/competitions/{2}".format(scheme, host, competition_id)
+    qr = segno.make(url, error="m")
+    buf = io.BytesIO()
+    qr.save(buf, kind="png", scale=size, border=2, dark="#1F2937", light=None)
+    return Response(buf.getvalue(), media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600",
+                             "Content-Disposition": 'inline; filename="comp-{0}-qr.png"'.format(competition_id)})
+
+
 @app.get("/api/public/events/{competition_id}/lookup")
-async def api_public_lookup(competition_id: int, num: str = ""):
-    """按背番号查询公示信息（姓名/单位/参赛项目/已发布成绩）。"""
+async def api_public_lookup(competition_id: int, num: str = "", name: str = ""):
+    """按背番号或姓名查询公示信息。姓名命中多条返回 candidates 列表让前端选择；
+    背番号直接命中。多舞伴/多项目：报名行按 项目+背号 取参赛组合（partner 随项目变化）。"""
     comp = _comp_or_404(competition_id)
     num = (num or "").strip()
-    if not num:
-        raise HTTPException(status_code=400, detail="请输入背番号")
+    name = (name or "").strip()
+    if not num and not name:
+        raise HTTPException(status_code=400, detail="请输入背番号或姓名")
     conn = db.get_db()
-    c = db.rowdict(conn.execute(
-        "SELECT number,name,partner,unit FROM competitors WHERE competition_id=? AND number=?",
-        (comp["id"], num)).fetchone())
-    if not c:
+    if not num and name:
+        # 姓名查找：先看选手名，再看搭档名（女生可能挂在搭档列）
+        cands = db.rows(conn.execute(
+            "SELECT DISTINCT number, name, partner, unit FROM competitors "
+            "WHERE competition_id=? AND (name=? OR partner=?) ORDER BY number",
+            (comp["id"], name, name)))
+        if not cands:
+            raise HTTPException(status_code=404, detail="未找到该姓名，请检查或改用背番号")
+        if len(cands) > 1:
+            return {"candidates": [{"number": c["number"],
+                                    "name": ((c["name"] or "") + ((" / " + c["partner"]) if c["partner"] else "")),
+                                    "unit": c["unit"] or ""} for c in cands]}
+        num = cands[0]["number"]
+
+    rows = db.rows(conn.execute(
+        "SELECT number, project_code, name, partner, unit FROM competitors "
+        "WHERE competition_id=? AND number=? ORDER BY project_code",
+        (comp["id"], num)))
+    if not rows:
         raise HTTPException(status_code=404, detail="未找到该背番号")
-    partner = (c["partner"] or "").strip()
-    display_name = ((c["name"] or "").strip() + (" / " + partner if partner else ""))
-    projects = sorted({r["project_code"] for r in db.rows(conn.execute(
-        "SELECT DISTINCT e.project_code AS project_code FROM event_competitors ec "
-        "JOIN events e ON e.id=ec.event_id WHERE e.competition_id=? AND ec.competitor_number=?",
-        (comp["id"], num)))})
-    results = []
-    for p in (_public_payload(comp) or {}).get("published_results", []):
-        for r in p["results"]:
-            if str(r["competitor_number"]) == num:
-                results.append({"code": p["code"], "name": p["name"], "round": p["round"],
-                                "rank": r["rank"], "total_score": r["total_score"]})
-    # R70 选手自助赛程：全部参赛场次按出场序，状态公开口径（未发布成绩只示状态不示名次）
+
     st_names = {"pending": "待开赛", "scoring": "评分中", "calculated": "成绩整理中", "published": "已发布"}
+    pcode_by_project = {r["project_code"]: r for r in rows}
+
+    # 选手全部场次（出场序）
     ev_rows = db.rows(conn.execute(
         "SELECT e.id, e.code, e.name, e.project_code, e.round, e.scoring_type, e.status, e.run_seq, "
         "(SELECT group_concat(name, ' / ') FROM (SELECT name FROM event_dances WHERE event_id=e.id ORDER BY ord)) AS dances "
         "FROM event_competitors ec JOIN events e ON e.id=ec.event_id "
         "WHERE e.competition_id=? AND ec.competitor_number=? "
         "ORDER BY (e.run_seq IS NULL), e.run_seq, e.code", (comp["id"], num)))
+
     schedule = []
     for ev in ev_rows:
-        # 晋级判定：本场为预赛轮且同项目存在下一轮、且选手在下一轮上场名单中
+        reg = pcode_by_project.get(ev["project_code"]) or {}
+        # 晋级判定：非最末轮已发布、选手在下一轮名单中
         adv = None
-        if ev["round"] == 1 and ev["status"] == "published":
-            nxt = db.rowdict(conn.execute(
-                "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=2",
-                (comp["id"], ev["project_code"])).fetchone())
-            if nxt:
-                in_next = conn.execute(
-                    "SELECT 1 FROM event_competitors WHERE event_id=? AND competitor_number=?",
-                    (nxt["id"], num)).fetchone()
-                adv = bool(in_next)
+        nxt = db.rowdict(conn.execute(
+            "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
+            (comp["id"], ev["project_code"], ev["round"] + 1)).fetchone())
+        if nxt and ev["status"] == "published":
+            in_next = conn.execute(
+                "SELECT 1 FROM event_competitors WHERE event_id=? AND competitor_number=?",
+                (nxt["id"], num)).fetchone()
+            adv = bool(in_next)
+        # 已发布名次
+        rank = None
+        total = None
+        if ev["status"] == "published":
+            res = load_results(ev["id"])
+            if res:
+                for r0 in res["overall_results"]:
+                    if str(r0["competitor_number"]) == num:
+                        rank = r0["rank"]
+                        total = r0.get("total_score")
+                        break
         schedule.append({"code": ev["code"], "name": ev["name"], "round": ev["round"],
                          "dance": ev["dances"], "scoring_type": ev["scoring_type"],
                          "status": ev["status"], "status_label": st_names.get(ev["status"], ev["status"]),
-                         "advancement": adv})
-    return {"number": c["number"], "name": display_name, "partner": partner, "unit": c["unit"],
-            "projects": projects, "published_results": results, "schedule": schedule,
+                         "advancement": adv, "rank": rank, "total_score": total,
+                         "partner": reg.get("partner") or ""})
+
+    projects = sorted({ev["project_code"] for ev in ev_rows})
+    # 展示名：跨项目聚合（多行取第一个非空名）
+    disp_name = ""
+    unit = ""
+    for r in rows:
+        if not disp_name and r["name"]:
+            disp_name = r["name"]
+        if not unit and r["unit"]:
+            unit = r["unit"]
+    return {"number": num, "name": disp_name, "unit": unit,
+            "projects": projects, "schedule": schedule,
             "note": "公示口径：仅姓名、单位、赛程状态与已发布成绩"}
 
 

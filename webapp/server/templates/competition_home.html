@@ -2,6 +2,13 @@
 {% block title %}{{ comp.name }} · 体育舞蹈工具箱{% endblock %}
 {% block nav %}<a href="/competitions">公开赛事</a><a href="/">首页</a>{% endblock %}
 {% block content %}
+<div class="card" id="qr-card" style="text-align:center;padding:16px">
+  <h2 style="margin-bottom:4px">扫码进入本赛事</h2>
+  <p class="muted" style="margin:0 0 10px">手机扫码直达——看赛程进度 / 查成绩 / 查选手</p>
+  <img src="{{ qr_url }}" alt="赛事入口二维码" style="width:180px;height:180px;border-radius:12px;border:1px solid var(--line,#e3dfd8)">
+  <p class="muted" style="margin:8px 0 0">将此卡打印张贴在场馆入口 / 检录处 / 观众区</p>
+  <p><a class="btn small secondary" href="{{ qr_url.replace('&size=6','&size=12') }}" download="comp-{{ comp.id }}-qr.png" target="_blank">下载高清二维码（张贴用）</a></p>
+</div>
 <section class="portal-hero" style="padding-bottom:12px">
   <h1>{{ comp.name }}</h1>
   <p>{{ comp.date or "日期待定" }} · {{ comp.location or "地点待定" }}</p>

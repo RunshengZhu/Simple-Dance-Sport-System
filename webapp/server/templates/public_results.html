@@ -1,19 +1,16 @@
 {% extends "base.html" %}
-{% block title %}成绩{% endblock %}
+{% block title %}成绩查询{% endblock %}
 {% block nav %}<a href="/public/team-standings?comp={{ comp.id }}">团体总分</a><a href="/public/schedule?comp={{ comp.id }}">赛程</a><a href="/screen">大屏</a>{% endblock %}
 {% block content %}
-<h1>{% if comp %}{{ comp.name }}{% endif %} · 成绩</h1>
+<h1>{% if comp %}{{ comp.name }}{% endif %} · 成绩查询</h1>
 <div class="card" id="lookup-card">
-  <h2>按背番号查询</h2>
+  <h2>选手查询</h2>
   <div class="lookup-row">
-    <input id="lookup-num" inputmode="numeric" placeholder="输入背番号，如 101">
+    <input id="lookup-input" placeholder="输入背番号（如 101）或姓名">
     <button class="btn" id="lookup-go" type="button">查询</button>
   </div>
-  <div id="lookup-result" class="muted">输入背番号查询选手公示信息（姓名/单位）与已发布成绩。</div>
+  <div id="lookup-result" class="muted">输入背番号或姓名，查参赛场次、状态与个人成绩。</div>
 </div>
-{% if payload %}
-<div class="anchor-bar">{% for p in payload %}<a href="#ev-{{ p.ev.code }}" class="anchor-chip">{{ p.ev.code }}</a>{% endfor %}</div>
-{% endif %}
 {% if standings and standings.standings %}
 <div class="card">
   <h2>团体总分榜（单位）</h2>
@@ -24,6 +21,9 @@
   {% endfor %}</table>
   <p class="muted">口径：名次赋分（第1~8名 9-7-6-5-4-3-2-1），仅计各项目最末轮；双人跨单位归主报单位。</p>
 </div>
+{% endif %}
+{% if payload %}
+<div class="anchor-bar">{% for p in payload %}<a href="#ev-{{ p.ev.code }}" class="anchor-chip">{{ p.ev.code }}</a>{% endfor %}</div>
 {% endif %}
 {% for p in payload %}
 <div class="card" id="ev-{{ p.ev.code }}">
@@ -36,38 +36,67 @@
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
 function doLookup() {
-  var num = document.getElementById('lookup-num').value.trim();
+  var val = document.getElementById('lookup-input').value.trim();
   var box = document.getElementById('lookup-result');
-  if (!num) { box.textContent = '请输入背番号'; return; }
-  fetch('/api/public/events/' + CID + '/lookup?num=' + encodeURIComponent(num))
+  if (!val) { box.textContent = '请输入背番号或姓名'; return; }
+  var isNum = /^\d+$/.test(val);
+  var url = '/api/public/events/' + CID + '/lookup?' + (isNum ? 'num=' : 'name=') + encodeURIComponent(val);
+  fetch(url)
     .then(function (r) { if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || '查询失败'); }); return r.json(); })
     .then(function (d) {
-      var html = '<div class="lk-head"><b>' + d.number + '</b> ' + d.name + ' <span class="muted">' + (d.unit || '') + '</span></div>';
-      if (d.projects.length) html += '<div class="muted">参赛项目：' + d.projects.join(' / ') + '</div>';
-      if (d.published_results.length) {
-        html += '<table><tr><th>场次</th><th>名次</th><th class="num">总分</th></tr>';
-        d.published_results.forEach(function (r) {
-          html += '<tr><td>' + r.name + '</td><td><b>' + r.rank + '</b></td><td class="num">' + r.total_score + '</td></tr>';
-        });
-        html += '</table>';
-      } else html += '<div class="muted">暂无已发布成绩（成绩发布后在此显示）。</div>';
-      if (d.schedule && d.schedule.length) {
-        html += '<h3 style="margin:.8em 0 .3em;font-size:.95em">我的赛程</h3>';
-        html += '<table><tr><th>场次</th><th>舞种</th><th>状态</th><th>晋级 / 名次</th></tr>';
-        d.schedule.forEach(function (r) {
-          var adv = r.advancement === true ? '<span class="ok">已晋级</span>'
-                  : r.advancement === false ? '未晋级' : '';
-          var rank = '';
-          d.published_results.forEach(function (x) { if (x.code === r.code) rank = '第 ' + x.rank + ' 名'; });
-          html += '<tr><td>' + r.code + ' ' + r.name + '</td><td>' + (r.dance || '—') + '</td><td>' + r.status_label + '</td><td>' + (adv || rank || '—') + '</td></tr>';
-        });
-        html += '</table>';
-      }
-      box.innerHTML = html;
+      if (d.candidates) { renderCandidates(d.candidates); return; }
+      renderResult(d);
     })
     .catch(function (e) { box.textContent = e.message; });
 }
+function renderCandidates(cands) {
+  var box = document.getElementById('lookup-result');
+  var html = '<div class="lk-cands"><p class="muted">找到 ' + cands.length + ' 位同名选手，请选择：</p>';
+  cands.forEach(function (c) {
+    html += '<button class="btn small secondary lk-cand" data-num="' + c.number + '" style="margin:4px 6px 4px 0">' +
+      c.number + ' ' + c.name + (c.unit ? '（' + c.unit + '）' : '') + '</button>';
+  });
+  html += '</div>';
+  box.innerHTML = html;
+  box.querySelectorAll('.lk-cand').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.getElementById('lookup-input').value = b.dataset.num;
+      doLookup();
+    });
+  });
+}
+function renderResult(d) {
+  var box = document.getElementById('lookup-result');
+  var html = '<div class="lk-profile">' +
+    '<span class="lk-num">' + d.number + '</span>' +
+    '<div class="lk-info"><b class="lk-name">' + d.name + '</b>' +
+    (d.unit ? '<span class="muted">' + d.unit + '</span>' : '') + '</div></div>';
+  if (d.projects && d.projects.length) {
+    html += '<div class="lk-projects muted">参赛 ' + d.projects.length + ' 项：' + d.projects.join('、') + '</div>';
+  }
+  if (d.schedule && d.schedule.length) {
+    html += '<div class="lk-events">';
+    d.schedule.forEach(function (r) {
+      var badge = '';
+      if (r.status === 'published') {
+        if (r.advancement === true) badge = '<span class="lk-badge lk-adv">已晋级</span>';
+        else if (r.advancement === false) badge = '<span class="lk-badge lk-out">未晋级</span>';
+        if (r.rank) badge += '<span class="lk-badge lk-rank">第 ' + r.rank + ' 名</span>';
+      } else {
+        badge = '<span class="lk-badge lk-st">' + r.status_label + '</span>';
+      }
+      html += '<div class="lk-event">' +
+        '<div class="lk-ev-head"><b>' + r.code + '</b> <span class="lk-ev-name">' + r.name + '</span></div>' +
+        '<div class="lk-ev-meta muted">' + (r.dance || '—') + (r.partner ? ' · 搭档 ' + r.partner : '') + '</div>' +
+        '<div class="lk-ev-badges">' + badge + '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<p class="muted" style="margin-top:8px">公示口径：仅姓名、单位、赛程状态与已发布成绩。</p>';
+  box.innerHTML = html;
+}
 document.getElementById('lookup-go').addEventListener('click', doLookup);
-document.getElementById('lookup-num').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLookup(); });
+document.getElementById('lookup-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLookup(); });
 /* R41：观众页不使用 SSE（长连接留给工作人员端），发布/变更由 8s 轮询刷新（上限 8s 延迟，观众场景足够） */
 {% endblock %}
