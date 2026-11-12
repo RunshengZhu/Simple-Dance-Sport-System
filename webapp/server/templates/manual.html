@@ -44,10 +44,14 @@
   <img src="/static/manual/r58/wiz2.png" alt="向导②导入选手" loading="lazy">
   <p><b>向导 ③ 导入裁判</b>——只需姓名（必填）+ 单位（可选），编号自动分配（J1…Jn）；建议 5 或 7 名（顺位法按多数票计算）。</p>
   <img src="/static/manual/r58/wiz3.png" alt="向导③导入裁判" loading="lazy">
-  <p><b>向导 ④ 生成赛程</b>——报项导入后系统按项目人数自动产生默认编排：
-    <b>≤8 人</b>单场决赛（顺位法）；<b>＞8 人</b>预赛（Mark 制、取前 8）+ 决赛（顺位法）。
-    本步可一键重建，随后到「赛程编排」逐场调整舞种与出场顺序。</p>
-  <img src="/static/manual/r58/wiz4.png" alt="向导④生成赛程" loading="lazy">
+  <p><b>向导 ④ 赛程编排</b>——到「赛程编排」两级导航的「项目管理」页：设置每场上限 / 决赛人数 /
+    晋级模式 / 分配策略 / 团体计分（标准、老带新半分、或不计入总分），「预览全部项目结构」确认后
+    「按配置生成全部项目赛程」。单项目可在覆盖表单独配置（团体计分列回显当前值）。
+    已有秩序册编排的，直接在「导入」页用<b>「场次总表导入」</b>整份替换（含每场选手名单，同项目同轮
+    多场自动 A/B/C 场标）。生成后在「赛程编排」页逐场调整舞种与出场顺序。</p>
+  <img src="/static/manual/r109/p-schedule-projects.png" alt="项目管理页" loading="lazy">
+  <p class="muted">① 统一参数（含团体计分默认值）　② 单项目覆盖表（团体计分列）　③ 预览 / 生成</p>
+  <img src="/static/manual/r109/a-schedule-import.png" alt="场次总表导入" loading="lazy">
   <p><b>向导 ⑤ 创建工作人员账号</b>——为检录台和主持台各建至少一个账号，创建后立即分发。</p>
   <img src="/static/manual/r58/wiz5.png" alt="向导⑤工作人员" loading="lazy">
   <p><b>向导 ⑥ 完成摘要</b>——核对选手/裁判/场次/账号总数；点「开场第一场」可直达控制台开赛，
@@ -60,8 +64,13 @@
     高级场景仍可用 CSV：<code>场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手</code>（预赛填晋级人数，决赛填 0）。</p>
 
   <h3>第 3 步 · 比赛日</h3>
-  <p>控制台「开启评分（名单默认全部上场，可取消个别）」→ 检录台点名 → 裁判评分 → 收齐自动算分 → 结果中心发布（可开「自动发布」）→ 主持台播报。
+  <p>比赛日的唯一主战场是「比赛控制 → 赛程执行总表」：全部场次按出场序一行一卡，
+    状态徽章 / 检录 / 评分进度 / 录取名次一目了然。每场：<b>开场</b> → 检录台点名（或行内代检录）→
+    裁判评分 → 收齐自动算分 → 行内<b>发布</b> → 主持台播报。预赛算完在行内确认晋级，名单自动蛇形回填下一轮。
     详细操作见下方各角色章节。</p>
+  <img src="/static/manual/r109/a-runboard.png" alt="赛程执行总表" loading="lazy">
+  <p class="muted">① 行卡状态与动作按钮（开场 / 检录 / 发布 / 撤回 / 播报 / 导出）　② 展开行：上场名单、
+    裁判矩阵、上场裁判指派　③ 一键发布全部 / 状态筛选 / 搜索</p>
 </div>
 
 <div class="card">
@@ -182,8 +191,9 @@
 <div class="step"><h3>第 3 步 · 按制式打分并提交</h3>
   <p><b>顺位法</b>——两种习惯任选：<b>顺序点选</b>按名次依次点选手；<b>直接指定</b>先点选手再点下方名次键盘。</p>
   <img src="/static/manual/r50/j-skating.png" alt="顺位法双模式（标注）" loading="lazy">
-  <p><b>Mark 制</b>——点击选手行给予 Mark（通常为晋级名额数），再点取消，页顶实时显示已选人数。</p>
-  <img src="/static/manual/r50/j4-mark-selected.png" alt="Mark 制评分" loading="lazy">
+  <p><b>Mark 制</b>——打开评分页<b>默认全选</b>已检录选手，快捷按钮「全选 / 清空 / 按名额选前 N」一键调整；
+    点击选手行可单独勾选或取消。提交键在勾选数不足晋级名额时<b>自动置灰</b>（旁注还差几人），补满即可提交。</p>
+  <img src="/static/manual/r109/j-mark-quick.png" alt="Mark 制快捷操作" loading="lazy">
   <p><b>评分制</b>——点输入框给 0~10 分。</p>
   <img src="/static/manual/r50/j-score.png" alt="评分制评分（标注）" loading="lazy">
   <p class="muted">提交后场次未关闭可修改重交；最后一名裁判提交完，名次自动产生（开「自动发布」则直接上大屏）。</p>
@@ -212,8 +222,10 @@
   数据安全：评分全程留痕、敏感操作审计、全量导出/原子恢复、每日自动备份（见 docs/DEPLOY.md）。</p>
 </div>
 
-<p class="muted" style="margin-top:2rem">使用说明 v5.0 · 2026-10-15 · 赛事评分系统 · 筹备向导为首推入口 ·
-评分基础与全角色动线 · 系统细节见 docs/DESIGN.md，部署见 docs/DEPLOY.md，演示见 docs/DEMO.md。</p>
+<p class="muted" style="margin-top:2rem">使用说明 v6.0 · 2026-11-12 · 赛事评分系统 ·
+两级导航（筹备工作台 / 比赛控制 / 展示与公开）· 赛程执行总表为一页式比赛控制台 ·
+支持场次总表导入、每场上场裁判指派、Mark 快捷全选与名额门禁、场次结果 PDF 公示导出 ·
+系统细节见 docs/DESIGN.md，部署见 docs/DEPLOY.md。</p>
 {% endblock %}
 {% block scripts %}
 {% endblock %}
