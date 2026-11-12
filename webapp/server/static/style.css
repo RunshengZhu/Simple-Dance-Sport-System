@@ -909,3 +909,15 @@ body.judge-sheet main, body.screen main { max-width: none; }
   .lookup-row input { flex: 1; min-width: 0; }
   .lk-event { padding: 10px; }
 }
+
+/* ===== R111c 首页成绩查询卡 + 赛程展开行 ===== */
+.lookup-hero { border-left: 4px solid var(--acc, #c0392b); }
+.lookup-hero .lk-title { font-size: 1.15rem; }
+.lookup-hero .lookup-row input { font-size: 1.1rem; padding: 12px; }
+tr.ev-row.clickable { cursor: pointer; }
+tr.ev-row.clickable:hover td { background: rgba(0,0,0,.035); }
+tr.ev-detail > td { background: rgba(0,0,0,.022); }
+.adv-line { margin: 4px 0 8px; font-size: 13px; }
+.adv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.adv-chip { display: inline-block; background: #2ecc711a; color: #1e8e4e; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; }
+.ev-detail table.mini { margin-top: 6px; }

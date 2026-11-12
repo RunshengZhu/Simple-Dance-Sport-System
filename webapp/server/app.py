@@ -679,6 +679,27 @@ async def competition_home(request: Request, competition_id: int):
         raise HTTPException(status_code=404, detail="赛事尚未开放（未激活或不存在）")
     payload = _public_payload(comp) or {"events": [], "published_results": [],
                                         "team_standings": {"standings": []}}
+    # R111c 赛程行点击展开：已发布场次内嵌成绩与晋级下一轮名单
+    events = []
+    for ev in payload["events"]:
+        ev = dict(ev)
+        if ev.get("published"):
+            nb = _display_names(conn, comp["id"], ev["project_code"])
+            res = load_results(ev["id"])
+            if res:
+                ev["results"] = [{"rank": r["rank"], "number": str(r["competitor_number"]),
+                                  "name": nb.get(str(r["competitor_number"]), ""),
+                                  "total": r.get("total_score")} for r in res["overall_results"]]
+            nxt = db.rowdict(conn.execute(
+                "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
+                (comp["id"], ev["project_code"], ev["round"] + 1)).fetchone())
+            if nxt:
+                ev["advanced"] = [{"number": r["competitor_number"], "name": nb.get(str(r["competitor_number"]), "")}
+                                  for r in db.rows(conn.execute(
+                                      "SELECT competitor_number FROM event_competitors WHERE event_id=? "
+                                      "ORDER BY CAST(competitor_number AS INTEGER)", (nxt["id"],)))]
+        events.append(ev)
+    payload["events"] = events
     ca = _compadmin(request)
     qr_url = "/api/public/events/{0}/qr?size=6".format(competition_id)
     return templates.TemplateResponse(request, "competition_home.html", {
@@ -4315,18 +4336,32 @@ async def api_public_lookup(competition_id: int, num: str = "", name: str = ""):
         raise HTTPException(status_code=400, detail="请输入背番号或姓名")
     conn = db.get_db()
     if not num and name:
-        # 姓名查找：先看选手名，再看搭档名（女生可能挂在搭档列）
-        cands = db.rows(conn.execute(
-            "SELECT DISTINCT number, name, partner, unit FROM competitors "
-            "WHERE competition_id=? AND (name=? OR partner=?) ORDER BY number",
+        # 姓名查找：选手名或搭档名（女生可能挂在搭档列）。同一背号多舞伴占多行——按背号聚合，不算同名
+        rows_n = db.rows(conn.execute(
+            "SELECT number, name, partner, unit FROM competitors "
+            "WHERE competition_id=? AND (name=? OR partner=?) ORDER BY CAST(number AS INTEGER), number",
             (comp["id"], name, name)))
-        if not cands:
+        by_num = {}
+        for r in rows_n:
+            d = by_num.setdefault(r["number"], {"number": r["number"], "name": "", "unit": "", "partners": []})
+            if not d["name"] and r["name"]:
+                d["name"] = r["name"]
+            if not d["unit"] and r["unit"]:
+                d["unit"] = r["unit"]
+            p = (r["partner"] or "").strip()
+            if p and p not in d["partners"]:
+                d["partners"].append(p)
+        if not by_num:
             raise HTTPException(status_code=404, detail="未找到该姓名，请检查或改用背番号")
-        if len(cands) > 1:
-            return {"candidates": [{"number": c["number"],
-                                    "name": ((c["name"] or "") + ((" / " + c["partner"]) if c["partner"] else "")),
-                                    "unit": c["unit"] or ""} for c in cands]}
-        num = cands[0]["number"]
+        if len(by_num) > 1:
+            cands = []
+            for d in by_num.values():
+                label = d["name"] or ""
+                if d["partners"]:
+                    label = (label + " / " if label else "") + "、".join(d["partners"])
+                cands.append({"number": d["number"], "name": label, "unit": d["unit"] or ""})
+            return {"candidates": cands}
+        num = next(iter(by_num))
 
     rows = db.rows(conn.execute(
         "SELECT number, project_code, name, partner, unit FROM competitors "

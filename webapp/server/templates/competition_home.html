@@ -1,18 +1,14 @@
 {% extends "base.html" %}
+{% block cid %}{{ comp.id if comp else 0 }}{% endblock %}
 {% block title %}{{ comp.name }} · 体育舞蹈工具箱{% endblock %}
 {% block nav %}<a href="/competitions">公开赛事</a><a href="/">首页</a>{% endblock %}
 {% block content %}
-<div class="card" id="qr-card" style="text-align:center;padding:16px">
-  <h2 style="margin-bottom:4px">扫码进入本赛事</h2>
-  <p class="muted" style="margin:0 0 10px">手机扫码直达——看赛程进度 / 查成绩 / 查选手</p>
-  <img src="{{ qr_url }}" alt="赛事入口二维码" style="width:180px;height:180px;border-radius:12px;border:1px solid var(--line,#e3dfd8)">
-  <p class="muted" style="margin:8px 0 0">将此卡打印张贴在场馆入口 / 检录处 / 观众区</p>
-  <p><a class="btn small secondary" href="/api/public/events/{{ comp.id }}/qr-a4" target="_blank">下载 A4 打印版二维码（PDF，含赛事信息）</a></p>
-</div>
 <section class="portal-hero" style="padding-bottom:12px">
   <h1>{{ comp.name }}</h1>
   <p>{{ comp.date or "日期待定" }} · {{ comp.location or "地点待定" }}</p>
 </section>
+
+{% include "_lookup_widget.html" %}
 
 <div class="card comp-login">
   <b>参赛与工作人员入口</b>
@@ -37,7 +33,7 @@
   <table>
     <tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
     {% for e in events %}
-    <tr>
+    <tr class="ev-row{% if e.results or e.advanced or e.status != 'pending' %} clickable{% endif %}">
       <td><b>{{ e.code }}</b></td>
       <td>{{ e.name }}</td>
       <td>{{ e.project_code }}</td>
@@ -49,6 +45,25 @@
         {% else %}<span class="tag ok">已发布</span>{% endif %}
       </td>
     </tr>
+    {% if e.results or e.advanced or e.status != 'pending' %}
+    <tr class="ev-detail" hidden><td colspan="5">
+      {% if e.status == 'scoring' %}<p class="muted" style="margin:4px 0">评分中——成绩确认后发布。</p>
+      {% elif e.status == 'calculated' %}<p class="muted" style="margin:4px 0">成绩整理中，即将发布。</p>{% endif %}
+      {% if e.advanced %}
+      <div class="adv-line"><b>晋级下一轮（{{ e.advanced|length }} 人）</b>
+        <span class="adv-chips">{% for a in e.advanced %}<span class="adv-chip">{{ a.number }} {{ a.name }}</span>{% endfor %}</span>
+      </div>
+      {% endif %}
+      {% if e.results %}
+      <table class="mini">
+        <tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th class="num">总分</th></tr>
+        {% for r in e.results %}
+        <tr><td><b>{{ r.rank }}</b></td><td>{{ r.number }}</td><td>{{ r.name or "—" }}</td><td class="num">{{ r.total }}</td></tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+    </td></tr>
+    {% endif %}
     {% endfor %}
   </table>
 </div>
@@ -86,8 +101,22 @@
   </table>
 </div>
 {% endif %}
+
+<div class="card" id="qr-card" style="text-align:center;padding:16px">
+  <h2 style="margin-bottom:4px">扫码进入本赛事</h2>
+  <p class="muted" style="margin:0 0 10px">手机扫码直达——看赛程进度 / 查成绩 / 查选手</p>
+  <img src="{{ qr_url }}" alt="赛事入口二维码" style="width:180px;height:180px;border-radius:12px;border:1px solid var(--line,#e3dfd8)">
+  <p class="muted" style="margin:8px 0 0">将此卡打印张贴在场馆入口 / 检录处 / 观众区</p>
+  <p><a class="btn small secondary" href="/api/public/events/{{ comp.id }}/qr-a4" target="_blank">下载 A4 打印版二维码（PDF，含赛事信息）</a></p>
+</div>
 {% endblock %}
 {% block scripts %}
+document.querySelectorAll('.ev-row.clickable').forEach(function (tr) {
+  tr.addEventListener('click', function () {
+    var d = tr.nextElementSibling;
+    if (d && d.classList.contains('ev-detail')) d.hidden = !d.hidden;
+  });
+});
 document.getElementById('copy-judge-link').onclick = function () {
   var url = location.origin + '/login?role=judge&judge=J1';
   (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () {
