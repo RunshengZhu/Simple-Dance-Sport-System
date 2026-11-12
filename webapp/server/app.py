@@ -1074,6 +1074,12 @@ async def results_page(request: Request, competition_id: int):
         "payload": payload, "adv_hints": adv_hints})
 
 
+@app.get("/judge-guide", response_class=HTMLResponse)
+async def judge_guide_page(request: Request):
+    """R113 裁判快速上手（免登录、打印友好）：到场扫码→快速进入→打分提交 三步 + 制式速览 + 常见问题。"""
+    return templates.TemplateResponse(request, "judge_guide.html", {})
+
+
 @app.get("/judge", response_class=HTMLResponse)
 async def judge_home(request: Request):
     s = require_judge(request)

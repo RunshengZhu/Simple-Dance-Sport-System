@@ -17,7 +17,38 @@
   {% else %}<span class="sn-btn off">下一场 →</span>{% endif %}
 </div>
 {% if judge_disabled %}<p class="err" style="padding:10px 12px;border-radius:10px">⛔ 您已被管理员禁用评分，只能查看，无法提交。</p>{% endif %}
-<h1>{{ dance }} <span class="muted">{{ ev.name }} / {{ ev.scoring_type }}</span></h1>
+<h1>{{ dance }} <span class="muted">{{ ev.name }} / {{ ev.scoring_type }}</span>
+  <button type="button" class="btn small secondary" id="guide-btn" style="margin-left:8px">? 评分说明</button></h1>
+<div id="guide-pop" class="guide-pop" hidden>
+  <div class="guide-pop-box">
+    <b>打分要点 · {{ ev.scoring_type }}</b>
+    {% if is_mark %}
+    <ul>
+      <li>点选手行<b>给 Mark</b>（再点取消）——表示你认为该选手应晋级</li>
+      <li>打开默认全空；「全选 / 清空」快捷按钮可整批调整</li>
+      <li>通常勾选人数 = 晋级名额（本场名额 {{ ev.advancement_count or "按现场通知" }}）</li>
+      <li>勾满名额后底部「提交 Mark 名单」才可用；灰 = 还差几人</li>
+    </ul>
+    {% elif is_skating %}
+    <ul>
+      <li>给本场<b>全部选手排名次</b>：1=最好，不并列、不打分</li>
+      <li><b>顺序点选</b>：按名次依次点选手；<b>直接指定</b>：先点选手再点下方名次键盘</li>
+      <li>点已排选手取消并自动补位；「重置」清空重来</li>
+      <li>全部已检录选手排完，底部「提交名次表」可用</li>
+    </ul>
+    {% else %}
+    <ul>
+      <li>每位选手给 <b>0~10 分</b>（一位小数），点输入框唤起数字键盘</li>
+      <li>全部选手打完分，底部「提交评分表」可用</li>
+    </ul>
+    {% endif %}
+    <ul>
+      <li>只看背号不见姓名，独立评判；🔒 = 未检录不可评</li>
+      <li>输入自动暂存，误刷新后恢复；提交后未关场可修改重交</li>
+    </ul>
+    <div style="text-align:right"><button type="button" class="btn small" id="guide-close">知道了</button></div>
+  </div>
+</div>
 <p id="roster-note" class="muted">{% if is_score %}上场 {{ n }} 支队伍{% else %}上场 {{ n }} 名选手{% endif %} · 盲评原则：评分页仅显示背番号{% if checked|length < n %} · 未检录 {{ n - checked|length }} 人置灰不可评{% endif %}</p>
 {% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
 
@@ -86,6 +117,15 @@
 {% endblock %}
 {% block scripts %}
 var CEID = {{ ev.id }}, DANCE = {{ dance|tojson }}, SKATING = {{ is_skating|tojson }}, SCORE = {{ is_score|tojson }}, N = {{ n }}, CHECKED = {{ checked|length }};
+/* R113 评分说明快捷弹层 */
+(function () {
+  var b = document.getElementById('guide-btn'), pop = document.getElementById('guide-pop');
+  if (b && pop) {
+    b.onclick = function () { pop.hidden = false; };
+    document.getElementById('guide-close').onclick = function () { pop.hidden = true; };
+    pop.addEventListener('click', function (e) { if (e.target === pop) pop.hidden = true; });
+  }
+})();
   function offToast() {
     var el = document.getElementById('msg');
     el.className = 'err';
