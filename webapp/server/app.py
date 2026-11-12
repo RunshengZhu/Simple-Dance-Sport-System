@@ -1505,6 +1505,22 @@ def _display_names(conn, competition_id: int, project_code=None):
         if r["number"] in out:
             continue   # 同号同项目多行（历史数据）取首行
         out[r["number"]] = disp
+    # R112h 最终回退：单人项目报名行可能统一挂在前缀项目下（P16 桑巴决赛的选手行在 P14/P06 等
+    # ——单人拆项时 competitors 无 P15/P16/P17 行），精确/前缀均查空时按背号全赛事聚合。
+    # 背号一人一号 → name 可信；partner 跨项目不可信（双人行的搭档不等于单人项目的搭档），
+    # 仅当该号所有行 partner 一致时才组合，否则只显示本人。
+    if not out:
+        by_num = {}
+        for r in db.rows(conn.execute(
+                "SELECT number, name, partner FROM competitors WHERE competition_id=?", (competition_id,))):
+            d0 = by_num.setdefault(str(r["number"]), {"names": set(), "partners": set()})
+            if (r["name"] or "").strip():
+                d0["names"].add(r["name"].strip())
+            if (r["partner"] or "").strip():
+                d0["partners"].add(r["partner"].strip())
+        for num0, d0 in by_num.items():
+            n0 = sorted(d0["names"])[0] if d0["names"] else ""
+            out[num0] = n0   # 只显本人：该号在此 project 无任何报名行，partner 跨项目不可信
     return out
 
 
