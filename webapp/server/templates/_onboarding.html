@@ -5,29 +5,29 @@
 (function () {
   var SLIDES = {
     judge: [
-      {img: "/static/manual/r113/dl-qr.png", t: "第 1 步 · 扫码直达", x: "管理员发你的专属二维码，扫码即进工作台，无需账号口令。扫一次存书签，之后随时打开。"},
-      {img: "/static/manual/r113/j-workbench-now.png", t: "第 2 步 · 一键进正在评的场次", x: "主持人开赛后，工作台顶部出现红色「● 正在评分 · 快速进入」——点按钮直达你还没打完的舞种。"},
-      {img: "/static/manual/r113/j-mark-blank.png", t: "第 3 步 · 打分与提交", x: "Mark 制：点行给 Mark，勾满晋级名额后底部常驻提交键可用。顺位法：按名次点选手。评分制：输 0~10 分。"},
-      {img: "/static/manual/r113/j-guide-pop.png", t: "随时 · ? 评分说明", x: "评分页右上角「? 评分说明」看当前制式要点。输入自动暂存，误刷新恢复；提交后未关场可改重交。"}
+      {img: "/static/manual/r113/onb/dl-qr.png", t: "① 扫码直达", x: "「工作人员与直达链接」页有你的专属二维码——扫码即进，无需口令。扫一次存书签。"},
+      {img: "/static/manual/r113/onb/j-workbench.png", t: "② 点横幅进正在评的场次", x: "主持人开赛后，点红色横幅按钮，直达你还没打完的舞种。"},
+      {img: "/static/manual/r113/onb/j-mark.png", t: "③ 点行打分", x: "Mark 制：点行给 Mark（再点取消）；「全选 / 清空」整批调整；默认全空。"},
+      {img: "/static/manual/r113/onb/j-submit.png", t: "④ 勾满名额即提交", x: "底部提交键常驻不消失；未勾满名额时置灰并提示还差几人。"},
+      {img: "/static/manual/r113/onb/j-guide.png", t: "不确定？点「? 评分说明」", x: "评分页右上角随时可看当前制式要点；误刷新自动恢复，提交后未关场可改重交。"}
     ],
     marshal: [
-      {img: "/static/manual/r113/m-staff-home.png", t: "第 1 步 · 认卡", x: "按场序列卡：红章 = 全场出场序，红框 = 正在评分；芯片显示背号 + 姓名。"},
-      {img: "/static/manual/r113/m-staff-home.png", t: "第 2 步 · 检录", x: "对照名单点芯片，变绿 = 到场（再点取消）；整队到齐点「全部检录」。未检录的背号在裁判评分页灰显 🔒。"},
-      {img: "/static/manual/r113/m-staff-done.png", t: "第 3 步 · 成绩出来后", x: "已完成场次点「查看成绩 ▾」原位展开——名次 / 姓名 / 晋级列一清二楚，可下载成绩单。"},
-      {img: "", t: "第 4 步 · 快速定位", x: "场次多时用「待检录 / 已完成」筛选 + 编号搜索，或「场次索引」跳转。显示「前置轮次未完成」＝等上一轮晋级回填。"}
+      {img: "/static/manual/r113/onb/m-check.png", t: "① 认卡", x: "红章 = 全场出场序；红框高亮 = 正在评分；芯片 = 背号 + 姓名。"},
+      {img: "/static/manual/r113/onb/m-chiprow.png", t: "② 点芯片检录", x: "点一下变绿 = 到场，再点取消；整队到齐点「全部检录」。"},
+      {img: "/static/manual/r113/onb/m-done.png", t: "③ 成绩出来后", x: "已完成场次「查看成绩 ▾」原位展开：名次 / 姓名 / 晋级列清楚，可下载成绩单。"},
+      {img: "", t: "④ 场次多时", x: "「待检录 / 已完成」筛选 + 编号搜索 + 「场次索引」跳转；「前置轮次未完成」＝等上一轮晋级回填。"}
     ],
     host: [
-      {img: "/static/manual/r113/m-staff-home.png", t: "第 1 步 · 开赛", x: "检录完成后，对「待开始」场次直接点「开赛」——无需找管理员，裁判工作台立即出现该场。"},
-      {img: "/static/manual/r113/m-staff-home.png", t: "第 2 步 · 盯进度", x: "红框高亮场次 = 正在评分；卡头显示检录 N / M 与晋级名额。"},
-      {img: "/static/manual/r113/m-staff-done.png", t: "第 3 步 · 播报", x: "已完成场次点「查看成绩 ▾」原位展开（含晋级 / 录取列），照单宣读后点「标记已播报」；需要纸质稿点「下载本场成绩单」。"}
+      {img: "/static/manual/r113/onb/m-check.png", t: "① 检录完成后点「开赛」", x: "对「待开始」场次直接点「开赛」——无需找管理员，裁判工作台立即出现该场。"},
+      {img: "/static/manual/r113/onb/m-done.png", t: "② 成绩出来后播报", x: "「查看成绩 ▾」原位展开（含晋级 / 录取列），照单宣读后点「标记已播报」；可下载成绩单。"}
     ],
     admin: [
-      {img: "/static/manual/r113/a-runboard.png", t: "生命周期 ① 开场", x: "赛程执行总表按场序一行一场。待开始行点「开场」——上场名单来自导入 / 上一轮晋级回填，默认全上。"},
-      {img: "/static/manual/r113/m-staff-home.png", t: "生命周期 ② 检录", x: "检录 / 主持台点名（芯片绿=到场）；总表展开行也可逐个代检录。未到场的选手评分页自动灰显。"},
-      {img: "/static/manual/r113/a-runboard.png", t: "生命周期 ③ 评分", x: "顶部「裁判启用」栏控制本场谁打分（默认全部启用）。正在评分的场次自动展开——裁判 × 舞种提交矩阵实时可见。"},
-      {img: "/static/manual/r113/a-runboard.png", t: "生命周期 ④ 算分", x: "最后一位裁判提交的瞬间自动算分（也可行内「手动计算」）。有异常点「退回评分」作废全部评分重来。"},
-      {img: "/static/manual/r113/a-runboard.png", t: "生命周期 ⑤ 发布", x: "「已计算」行点「发布」（或「一键发布全部」）——观众页 / 成绩查询即时可见；发错可「撤回」。"},
-      {img: "/static/manual/r113/a-advancement.png", t: "生命周期 ⑥ 晋级与播报", x: "非决赛轮行内「晋级确认」：按各场名额自动产生名单、蛇形分配预览，确认后回填下一轮；主持台播报收官。"}
+      {img: "/static/manual/r113/onb/rb-open.png", t: "① 开场", x: "待开始行点「开场」——上场名单来自导入 / 上一轮晋级回填，默认全上。"},
+      {img: "/static/manual/r113/onb/m-chiprow.png", t: "② 检录", x: "检录 / 主持台点名（绿=到场）；总表展开行也可代检录。未到场的选手评分页自动灰显。"},
+      {img: "/static/manual/r113/onb/rb-judgebar.png", t: "③ 评分（控制上场裁判）", x: "顶部「裁判启用」栏一键停用/恢复裁判，默认全部启用；正在评分的场次自动展开，裁判 × 舞种矩阵实时。"},
+      {img: "/static/manual/r113/onb/rb-scoring.png", t: "④ 算分", x: "最后一位裁判提交即自动算分；也可「手动计算」。有异常点「退回评分」作废重来。"},
+      {img: "/static/manual/r113/onb/rb-published.png", t: "⑤ 发布", x: "「发布」或「一键发布全部」——观众页 / 成绩查询即时可见；发错可「撤回」。"},
+      {img: "/static/manual/r113/onb/adv.png", t: "⑥ 晋级与播报", x: "非决赛轮「晋级确认」：按名额自动名单 + 蛇形分配预览，确认后回填下一轮；主持台播报收官。"}
     ]
   };
   var key = {{ onb_key | tojson }};
