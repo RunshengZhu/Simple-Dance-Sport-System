@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}裁判快速流程{% endblock %}
+{% block nav %}<a href="/manual">完整说明</a>{% endblock %}
+{% block content %}
+<h1>裁判快速流程 <span class="muted">照着做，三步开打</span></h1>
+<p class="muted">评分页右下角红色「?」随时可看同样的说明（滑动翻页）；本页可直接打印随身携带。</p>
+
+<div class="step">
+  <h3><span class="st-seq">1</span> 扫码打开你的评分入口</h3>
+  <img src="/static/manual/r113/onb/dl-qr.png" alt="每名裁判的专属二维码（工作人员与直达链接页点行展开）" loading="lazy">
+  <p class="muted">赛前管理员在「工作人员与直达链接」页发你<b>专属二维码</b>——手机扫码或点链接直接进入工作台，
+  <b>无需账号口令</b>。扫一次即可，建议把页面添加到手机主屏/书签。</p>
+</div>
+
+<div class="step">
+  <h3><span class="st-seq">2</span> 点红色横幅直达正在评的场次</h3>
+  <img src="/static/manual/r113/onb/j-workbench.png" alt="工作台：● 正在评分 · 快速进入横幅" loading="lazy">
+  <p class="muted">主持人开赛后，工作台顶部立即出现「<b>● 正在评分 · 快速进入</b>」——点按钮直达<b>你还没打完的那个舞种</b>。
+  评分页顶部还有「← 上一场 / 下一场 →」导航和「● 正在评分」按钮随时切换。</p>
+</div>
+
+<div class="step">
+  <h3><span class="st-seq">3</span> Mark 制（预赛）：点行给 Mark，勾满名额提交</h3>
+  <img src="/static/manual/r113/onb/j-mark.png" alt="Mark 评分页：全选/清空按钮 + 打分行" loading="lazy">
+  <p class="muted">① 点选手行给 Mark（再点取消）　② 「全选 / 清空」整批调整　③ 勾满晋级名额后，
+  底部常驻的「提交 Mark 名单」即可点（不足时置灰并提示还差几人）。</p>
+</div>
+
+<div class="step">
+  <h3><span class="st-seq">4</span> 顺位法（决赛）：点行排名次</h3>
+  <img src="/static/manual/r113/onb/j-skating.png" alt="顺位法：排名次 + 名次键盘" loading="lazy">
+  <p class="muted"><b>顺序点选</b>：按名次依次点选手（1=最好，不并列）；<b>直接指定</b>：先点选手再点下方名次键盘。
+  排完全部选手后提交。</p>
+</div>
+
+<div class="step">
+  <h3><span class="st-seq">5</span> 评分制（集体舞）：打 0~10 分</h3>
+  <img src="/static/manual/r113/onb/j-score.png" alt="评分制输入框" loading="lazy">
+  <p class="muted">点输入框给 0~10 分（一位小数），全部选手打完即可提交。</p>
+</div>
+
+<div class="card">
+  <h2>遇到这些情况</h2>
+  <table>
+    <tr><th>背号灰显 🔒</th><td>该选手未检录，等检录台确认后自动恢复（页面实时同步）</td></tr>
+    <tr><th>工作台没有场次</th><td>还没「开赛」——主持人/管理员开赛后立即出现</td></tr>
+    <tr><th>提示已被禁用评分</th><td>管理员暂时停用了你（总表「裁判启用」栏），本场只读</td></tr>
+    <tr><th>提交键灰色</th><td>还没打完：Mark 未勾满名额 / 顺位法有人没排名 / 评分制有人没打分</td></tr>
+    <tr><th>误刷新 / 断网</th><td>已答内容自动暂存，重新打开即恢复；提交成功才清空</td></tr>
+  </table>
+  <p class="muted">相关页面：<a href="/staff-guide?role=marshal">检录快速流程</a> ·
+  <a href="/staff-guide?role=host">主持快速流程</a> · <a href="/manual">完整手册</a></p>
+</div>
+
+<p class="muted" style="margin-top:1.5rem">裁判快速流程 v2（截图版）· 2026-11-13 · 体育舞蹈评分系统</p>
+{% endblock %}
+{% block scripts %}
+{% endblock %}

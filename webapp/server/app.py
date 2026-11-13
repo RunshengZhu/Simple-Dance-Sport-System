@@ -1083,6 +1083,12 @@ async def staff_guide_page(request: Request):
     return templates.TemplateResponse(request, "staff_guide.html", {"guide_role": role})
 
 
+@app.get("/judge-guide", response_class=HTMLResponse)
+async def judge_guide_page(request: Request):
+    """R121 裁判快速流程（截图版，可打印）：与评分页右下角悬浮「?」同一套内容。"""
+    return templates.TemplateResponse(request, "judge_guide.html", {})
+
+
 @app.get("/judge", response_class=HTMLResponse)
 async def judge_home(request: Request):
     s = require_judge(request)
