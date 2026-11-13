@@ -1083,12 +1083,6 @@ async def staff_guide_page(request: Request):
     return templates.TemplateResponse(request, "staff_guide.html", {"guide_role": role})
 
 
-@app.get("/judge-guide", response_class=HTMLResponse)
-async def judge_guide_page(request: Request):
-    """R113 裁判快速上手（免登录、打印友好）：到场扫码→快速进入→打分提交 三步 + 制式速览 + 常见问题。"""
-    return templates.TemplateResponse(request, "judge_guide.html", {})
-
-
 @app.get("/judge", response_class=HTMLResponse)
 async def judge_home(request: Request):
     s = require_judge(request)
