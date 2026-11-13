@@ -3416,9 +3416,13 @@ async def api_proposal(project_code: str, round_no: int, request: Request = None
 async def api_confirm(project_code: str, round_no: int, request: Request = None):
     require_admin(request)
     body = await request.json()
-    advancing = body.get("advancing") or []
-    if not advancing:
-        raise HTTPException(status_code=400, detail="晋级名单为空")
+    # R126 追加模式优先：单场确认走 assign（不清空其他场已确认名单），无 advancing 也不报错
+    if body.get("assign") and body.get("append"):
+        pass
+    else:
+        advancing = body.get("advancing") or []
+        if not advancing:
+            raise HTTPException(status_code=400, detail="晋级名单为空")
     # R97 显式赛事优先：晋级页传 competition_id（页面 CID）——多赛事并存时若仍按会话回落，
     # 会话绑在别赛会查到空的下一轮（容量 0 误导报错）甚至静默回填他赛名单（总管回落最新激活赛）。
     bind_cid = body.get("competition_id")
@@ -3446,6 +3450,25 @@ async def api_confirm(project_code: str, round_no: int, request: Request = None)
         raise HTTPException(status_code=400,
                             detail="赛事 {0} 中项目 {1} 第 {2} 轮之后没有下一轮场次，无法回填（请核对赛事与项目，或在赛程编排生成后续轮次）".format(
                                 comp["id"], project_code, round_no + 1))
+    # R126 追加模式：单场确认——按各场次表格勾选分别回填（INSERT OR IGNORE，不清空其他场已确认名单）
+    assign = body.get("assign")
+    if assign and isinstance(assign, dict):
+        filled = {}
+        for code, nums in assign.items():
+            ev_n = db.rowdict(conn.execute(
+                "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=? AND code=?",
+                (comp["id"], project_code, round_no + 1, code)).fetchone())
+            if not ev_n:
+                continue
+            ins = []
+            for n in nums:
+                conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)",
+                             (ev_n["id"], str(n)))
+                ins.append(str(n))
+            filled[code] = ins
+        conn.commit()
+        sse.bus.publish(comp["id"], "schedule_changed", {"filled": filled, "append": True})
+        return {"ok": True, "filled": filled, "append": True}
     filled = confirm_advancement(comp["id"], project_code, round_no, advancing)
     sse.bus.publish(comp["id"], "schedule_changed", {"filled": filled})
     return {"ok": True, "filled": filled}
@@ -3546,6 +3569,27 @@ async def advancement_page(request: Request, competition_id: int):
         plan = advancement_plan(competition_id, project, rnd)
     except Exception:
         plan = {"merged": [], "per_event": [], "next_events": [], "allocation": {}, "overflow": 0}
+    # R126 单场确认视图：URL 带 &event=场次id（总表行内链接）→ 只显示该场成绩，
+    # 分配/提交均为「本场晋级者追加蛇形填入下一轮」（不清空其他场已确认的回填）
+    ev_filter = request.query_params.get("event")
+    if ev_filter:
+        try:
+            ev_filter = int(ev_filter)
+        except (TypeError, ValueError):
+            ev_filter = None
+    plan["solo"] = None
+    if ev_filter:
+        from core import snake_distribution
+        solo = next((e for e in plan["per_event"] if e["id"] == ev_filter), None)
+        if solo and plan["next_events"]:
+            groups = snake_distribution(solo["advancing"], len(plan["next_events"]))
+            alloc = {e["code"]: groups.get(i, []) for i, e in enumerate(plan["next_events"])}
+            for e in plan["next_events"]:
+                e["current"] = [r["competitor_number"] for r in conn.execute(
+                    "SELECT competitor_number FROM event_competitors WHERE event_id=? "
+                    "ORDER BY CAST(competitor_number AS INTEGER)", (e["id"],))]
+            plan["solo"] = {"event": solo, "allocation": alloc,
+                            "next_events": plan["next_events"]}
     next_exists = bool(conn.execute(
         "SELECT 1 FROM events WHERE competition_id=? AND project_code=? AND round=? LIMIT 1",
         (competition_id, project, rnd + 1)).fetchone())

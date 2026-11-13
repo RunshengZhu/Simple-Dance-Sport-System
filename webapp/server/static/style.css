@@ -1088,3 +1088,6 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .adv-next-table { margin: 6px 0; }
 .adv-next-table td, .adv-next-table th { padding: 5px 8px; font-size: .92rem; }
 .adv-tbl-actions { margin: 8px 0 0; }
+
+.adv-cur-line { font-size: .92rem; margin: 6px 0; background: rgba(128,128,128,.06);
+  border-radius: 8px; padding: 8px 10px; }

@@ -80,7 +80,7 @@ function render() {
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'unpublish\')">撤回</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'announce\')">' + (e.announced ? '取消播报' : '播报') + '</button>';
     if (e.advancement_count > 0 && e.has_next && (e.status === 'calculated' || e.status === 'published'))
-      actions += '<a class="btn small" href="/events/' + CID + '/advancement?project=' + encodeURIComponent(e.project) + '&round=' + e.round + '">晋级确认</a>';
+      actions += '<a class="btn small" href="/events/' + CID + '/advancement?project=' + encodeURIComponent(e.project) + '&round=' + e.round + '&event=' + e.id + '">晋级确认</a>';
     var top3 = e.top3.map(function (t) {
       return '<span class="rb-top">第' + t.rank + ' ' + esc(t.number) + '</span>';
     }).join(' ');

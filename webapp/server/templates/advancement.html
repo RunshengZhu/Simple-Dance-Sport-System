@@ -26,6 +26,30 @@
   <span class="muted">同分并列按规则全部晋级；下一轮上场人数相应增加，决赛录取仍按各场次顺位名额截断。</span></div>
 {% endif %}
 
+{% if plan.solo %}
+<h2>本场成绩（晋级情况） <span class="muted">{{ plan.solo.event.code }} · 晋级 {{ plan.solo.event.advancing|length }} / 名额 {{ plan.solo.event.adv or "—" }}</span></h2>
+<div class="adv-tables-wrap">
+  <div class="card adv-next-tbl">
+    <div class="adv-next-head">
+      <b class="adv-next-code">{{ plan.solo.event.code }}</b>
+      <span class="tag {{ 'ok' if plan.solo.event.tie_note else 'gray' }}">{{ plan.solo.event.advancing|length }}/{{ plan.solo.event.adv or "—" }} 晋级</span>
+    </div>
+    <table class="adv-next-table">
+      <tr><th>名次</th><th>背号</th><th>选手 / 队伍</th><th class="num">总分</th><th>晋级</th></tr>
+      {% for r in plan.solo.event.results %}
+      <tr>
+        <td><b>{{ r.rank }}</b></td>
+        <td><b>{{ r.num }}</b></td>
+        <td>{{ names.get(r.num, "") or "—" }}</td>
+        <td class="num">{{ r.total }}</td>
+        <td>{% if r.adv %}<b class="ok-text">✓ 晋级</b>{% else %}<span class="muted">未晋级</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if plan.solo.event.tie_note %}<p class="muted" style="font-size:.85rem;margin:4px 0 0">{{ plan.solo.event.tie_note }}</p>{% endif %}
+  </div>
+</div>
+{% else %}
 <h2>本场成绩（晋级情况） <span class="muted">各场并列；晋级判定按名额自动产生</span></h2>
 <div class="adv-tables-wrap">
   {% for e in plan.per_event %}
@@ -50,8 +74,53 @@
   </div>
   {% endfor %}
 </div>
+{% endif %}
 
-{% if plan.allocation %}
+{% if plan.solo %}
+<div class="adv-tables-wrap">
+  {% for e in plan.solo.next_events %}
+  {% set lst = plan.solo.allocation.get(e.code, []) %}
+  {% set cur = e.current or [] %}
+  {% set news = [] %}
+  {% for n in lst if n not in cur %}{% set _ = news.append(n) %}{% endfor %}
+  <div class="adv-next-tbl">
+    <div class="adv-next-head">
+      <b class="adv-next-code">{{ e.code }}</b>
+      <span class="muted">{{ e.name }}</span>
+      <span class="tag {{ 'ok' if (cur|length + news|length) <= e.adv or not e.adv else 'warn' }}">
+        回填后 {{ cur|length + news|length }} 人 · 名额 {{ e.adv or "—" }}{{ "（超额" ~ (cur|length + news|length - e.adv) ~ "）" if e.adv and cur|length + news|length > e.adv }}</span>
+    </div>
+    {% if cur %}
+    <p class="adv-cur-line"><b>已填入（{{ cur|length }} 人，含此前场次确认）：</b><span class="muted">{{ cur|join("、") }}</span></p>
+    {% endif %}
+    {% if news %}
+    <table class="adv-next-table">
+      <tr><th></th><th>顺序</th><th>背号</th><th>本场名次</th></tr>
+      {% set seq = namespace(i = 0) %}
+      {% for m in plan.solo.event.results if m.num in news %}
+      {% set seq.i = seq.i + 1 %}
+      <tr>
+        <td><input type="checkbox" class="adv-check solo-check" data-code="{{ e.code }}" data-num="{{ m.num }}" checked></td>
+        <td><b>{{ seq.i }}</b></td>
+        <td><b>{{ m.num }}</b></td>
+        <td>第 {{ m.rank }} 名</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted" style="margin:6px 0">本场晋级者均已在此前的确认中填入该场——无需再操作。</p>
+    {% endif %}
+    <p class="adv-tbl-actions">
+      <a class="btn small secondary" href="/events/{{ comp.id }}/runboard#ev-{{ e.id }}" target="_blank">在总表中打开 →</a>
+    </p>
+  </div>
+  {% endfor %}
+</div>
+<div class="card">
+  <p><button class="btn" id="confirm-btn">确认晋级（追加回填下一轮）</button> <span id="msg"></span></p>
+  <p class="muted">说明：勾选的本场晋级者将按蛇形追加填入下一轮各场（不清空其他场次已确认的名单）。</p>
+</div>
+{% else %}
 <div class="adv-tables-wrap">
   {% for e in plan.next_events %}
   {% set lst = plan.allocation.get(e.code, []) %}
@@ -84,19 +153,39 @@
   {% endfor %}
 </div>
 <p class="muted">勾选 = 该选手晋级并蛇形回填到对应场次；同票并列组建议整组同进退。并列超额会使部分场次人数多于其名额——不影响晋级效力；决赛轮录取按顺位名额截断。</p>
-{% endif %}
-
-
 <div class="card">
   <p><button class="btn" id="confirm-btn">确认晋级并蛇形回填下一轮</button> <span id="msg"></span></p>
-  <p class="muted">说明：按上方各场次表格的勾选名单回填；确认后下一轮上场名单被覆盖（未勾选者不晋级）。</p>
+  <p class="muted">说明：名单将按名次蛇形分配到下一轮各场次；确认后下一轮上场名单被覆盖。</p>
 </div>
+{% endif %}
+
 
 {% endif %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id }}, PROJECT = {{ project|tojson }}, ROUND = {{ round }};
 document.getElementById('confirm-btn')?.addEventListener('click', async function () {
+  var soloChecks = document.querySelectorAll('.adv-check.solo-check');
+  if (soloChecks.length) {
+    // R126 单场确认：assign {场次code: [勾选背号]} 追加回填
+    var assign = {};
+    soloChecks.forEach(function (el) {
+      if (!el.checked) return;
+      (assign[el.dataset.code] = assign[el.dataset.code] || []).push(el.dataset.num);
+    });
+    var total = Object.values(assign).reduce(function (a, b) { return a + b.length; }, 0);
+    if (!total) { document.getElementById('msg').textContent = '请至少勾选一名晋级选手'; return; }
+    if (!confirm('确认晋级 ' + total + ' 组（对）并追加回填下一轮？')) return;
+    try {
+      var r = await api('POST', '/api/projects/' + PROJECT + '/rounds/' + ROUND + '/advancement-confirm',
+        {assign: assign, append: true, competition_id: CID});
+      document.getElementById('msg').className = 'ok-text';
+      var parts = [];
+      for (var code in r.filled) parts.push(code + '（+' + r.filled[code].length + ' 人）');
+      document.getElementById('msg').textContent = '已追加回填——' + parts.join('；') + '；刷新总表可见下一轮名单。';
+    } catch (e) { document.getElementById('msg').className = 'err'; document.getElementById('msg').textContent = e.message; }
+    return;
+  }
   var names = [];
   document.querySelectorAll('.adv-check:checked').forEach(function (el) { names.push(el.dataset.num); });
   if (!names.length) { document.getElementById('msg').textContent = '请先在各场次表格中勾选晋级名单'; return; }
