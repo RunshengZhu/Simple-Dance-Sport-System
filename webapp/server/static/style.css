@@ -1091,3 +1091,5 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 
 .adv-cur-line { font-size: .92rem; margin: 6px 0; background: rgba(128,128,128,.06);
   border-radius: 8px; padding: 8px 10px; }
+
+.rb-jcode { font-size: 10px; opacity: .75; margin-left: 2px; font-weight: 500; }

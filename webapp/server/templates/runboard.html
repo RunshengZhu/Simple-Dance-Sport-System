@@ -190,11 +190,12 @@ function renderJudgeBar() {
   box.innerHTML = '';
   DATA.judges_all.forEach(function (j) {
     var on = dis.indexOf(j) < 0;
+    var nm = (DATA.judges_names && DATA.judges_names[j]) || j;
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'chip ' + (on ? 'on' : 'off');
-    b.textContent = j + (on ? ' ✓' : ' ✕');
-    b.title = on ? '点击禁用' : '点击启用';
+    b.innerHTML = esc(nm) + ' <small class="rb-jcode">' + esc(j) + '</small>' + (on ? ' ✓' : ' ✕');
+    b.title = (on ? '点击禁用 ' : '点击启用 ') + nm + '（' + j + '）';
     b.onclick = function () { toggleJudgeEnabled(j, !on); };
     box.appendChild(b);
   });

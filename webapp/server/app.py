@@ -4018,7 +4018,10 @@ async def api_runboard(competition_id: int, request: Request = None):
             "submitted_pairs": pairs, "total_pairs": total_pairs,
             "top3": top3, "matrix": mat,
         })
+    judges_names = {r["code"]: r["name"] for r in db.rows(conn.execute(
+        "SELECT code, name FROM judges WHERE competition_id=?", (competition_id,)))}
     return {"events": out, "judges_total": judges_n, "judges_all": judges_of(competition_id),
+            "judges_names": judges_names,
             "judges_disabled": _disabled_judges(competition_id)}
 
 
