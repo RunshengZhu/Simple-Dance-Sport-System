@@ -384,8 +384,11 @@ connectSSE('/api/events/' + CID + '/stream', {
   checkin_changed: refreshOffState
 }, refreshOffState, 6000);
 
-/* ---- R46b 打分本地暂存：输入即存 sessionStorage，重开/误关页后自动恢复；提交成功清除 ---- */
+/* ---- R46b 打分本地暂存：输入即存 sessionStorage，重开/误关页后自动恢复；提交成功清除 ----
+   R122c 试用赛：禁用暂存（刷新即重置为空场，练习不受草稿影响） */
+var TRIAL = {{ trial|tojson }};
 (function () {
+  if (TRIAL) return;
   var KEY = 'sheet:' + CEID + ':' + encodeURIComponent(DANCE);
   function allRows() {
     return document.querySelectorAll('.rank-row, .mark-row, .score-row');

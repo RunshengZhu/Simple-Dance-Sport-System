@@ -142,6 +142,8 @@ def init_db():
     comp_cols = {r[1] for r in conn.execute("PRAGMA table_info(competitions)")}
     if "judges_disabled" not in comp_cols:
         conn.execute("ALTER TABLE competitions ADD COLUMN judges_disabled TEXT DEFAULT ''")   # R112：禁用裁判名单（逗号分隔；空=全部启用）
+    if "is_trial" not in comp_cols:
+        conn.execute("ALTER TABLE competitions ADD COLUMN is_trial INTEGER DEFAULT 0")   # R122c：试用赛（练习专用，公开侧隐藏，评分页刷新即重置）
     user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "pw_plain" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN pw_plain TEXT DEFAULT ''")   # R76c：口令留档（设置/重置时同步记录，供口令表导出；与直达链接同库同等保护）

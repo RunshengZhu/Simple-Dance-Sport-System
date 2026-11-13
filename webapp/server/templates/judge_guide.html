@@ -22,6 +22,20 @@
 <p class="note" style="border-color:var(--acc,#c0392b)"><b>先试一下：</b>本页下方有<b>可直接点按的评分界面演练</b>（Mark 场 + 决赛顺位场各一），
 无需登录、不会真实提交，刷新页面即重置。</p>
 
+<div class="card" style="border-color:var(--gold);text-align:center">
+  <b>试用评分赛（扫码进入，与真实评分完全一致）</b>
+  <div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin-top:10px">
+    {% if trial_qr %}<img src="{{ trial_qr }}" alt="试用评分赛二维码" width="150" height="150" style="border:1px solid var(--line,#ddd);border-radius:10px;background:#fff;padding:4px">{% endif %}
+    <div style="max-width:380px;text-align:left;font-size:.95rem">
+      <p style="margin:4px 0">扫码进入「<b>⭐ 评分试用赛</b>」裁判视角——含两个练习场次：
+      <b>Mark 制练习场</b>（8 人，名额 4）与<b>顺位法练习场（决赛）</b>（6 人）。</p>
+      <p style="margin:4px 0;color:var(--muted,#6b7280)">试用赛完全隔离，<b>不影响任何实际赛事</b>；
+      每次刷新评分页即清空重打，可反复练习。工作台右下角「?」随时看快速说明。</p>
+      <p style="margin:4px 0"><a class="btn" href="/trial/judge">不用扫码，直接进入试用 →</a></p>
+    </div>
+  </div>
+</div>
+
 <div class="step">
   <h3><span class="st-seq">3</span> Mark 制（预赛）：点行给 Mark，勾满名额提交</h3>
   <img src="/static/manual/r113/onb/j-mark.png" alt="Mark 评分页：全选/清空按钮 + 打分行" loading="lazy">

@@ -537,7 +537,8 @@ def _check_direct(conn, competition_id, role, username, token) -> bool:
 
 def _active_competition():
     """兜底：最新激活赛事（仅管理端兜底用；公开页请走 _viewer_competition）。"""
-    return db.rowdict(db.get_db().execute("SELECT * FROM competitions WHERE active=1 ORDER BY id DESC").fetchone())
+    return db.rowdict(db.get_db().execute(
+        "SELECT * FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0) ORDER BY id DESC").fetchone())
 
 
 def _viewer_competition(request: Request):
@@ -552,7 +553,7 @@ def _viewer_competition(request: Request):
         return db.rowdict(db.get_db().execute(
             "SELECT * FROM competitions WHERE id=? AND active=1", (qid,)).fetchone())
     actives = db.rows(db.get_db().execute(
-        "SELECT * FROM competitions WHERE active=1 ORDER BY id DESC"))
+        "SELECT * FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0) ORDER BY id DESC"))
     if len(actives) == 1:
         return actives[0]
     return None
@@ -658,7 +659,7 @@ async def competitions_page(request: Request):
     """公开赛事列表：卡片展示全部激活中的赛事。"""
     conn = db.get_db()
     comps = db.rows(conn.execute(
-        "SELECT id, name, date, location FROM competitions WHERE active=1 ORDER BY id DESC"))
+        "SELECT id, name, date, location FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0) ORDER BY id DESC"))
     cards = []
     for c in comps:
         evs = db.rows(conn.execute(
@@ -1085,8 +1086,62 @@ async def staff_guide_page(request: Request):
 
 @app.get("/judge-guide", response_class=HTMLResponse)
 async def judge_guide_page(request: Request):
-    """R121 裁判快速流程（截图版，可打印）：与评分页右下角悬浮「?」同一套内容。"""
-    return templates.TemplateResponse(request, "judge_guide.html", {})
+    """R121 裁判快速流程（截图版，可打印）：与评分页右下角悬浮「?」同一套内容。
+    R122c：附带「评分试用赛」二维码（扫码进入与真实评分完全一致的练习场，刷新即重置）。"""
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "dancetkt.com"
+    scheme = "https" if (request.headers.get("x-forwarded-proto") == "https" or "dancetkt" in host) else "http"
+    trial_url = "{0}://{1}/trial/judge".format(scheme, host)
+    trial_qr = ""
+    try:
+        import segno, io, base64
+        buf = io.BytesIO()
+        segno.make(trial_url, error="m").save(buf, kind="png", scale=6, border=2)
+        trial_qr = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except ImportError:
+        pass
+    return templates.TemplateResponse(request, "judge_guide.html", {"trial_qr": trial_qr})
+
+
+def ensure_trial_competition(conn):
+    """R122c 试用评分赛（幂等）：Mark 场 + 顺位决赛场各一，隔离赛事（is_trial=1、公开侧隐藏）。
+    单裁判 J1 视角；两场恒为评分中，评分页刷新即重置。"""
+    row = db.rowdict(conn.execute("SELECT * FROM competitions WHERE is_trial=1 LIMIT 1").fetchone())
+    if row:
+        return row
+    cur = conn.execute(
+        "INSERT INTO competitions(name, date, location, active, is_trial) VALUES('⭐ 评分试用赛（练习专用）', '', '', 1, 1)")
+    cid = cur.lastrowid
+    conn.execute("INSERT INTO judges(competition_id, code, name) VALUES(?, 'J1', '试用裁判')", (cid,))
+    mark_id = conn.execute(
+        "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, status, run_seq) "
+        "VALUES(?, 'TRIAL-M', 'Mark 制练习场（预赛）', 'TRIAL', 1, 'Mark制', 4, 'scoring', 1)", (cid,)).lastrowid
+    skate_id = conn.execute(
+        "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, status, run_seq) "
+        "VALUES(?, 'TRIAL-S', '顺位法练习场（决赛）', 'TRIAL', 1, '顺位法', 0, 'scoring', 2)", (cid,)).lastrowid
+    for eid, prefix, count in ((mark_id, "T", 8), (skate_id, "S", 6)):
+        for i in range(1, count + 1):
+            num = prefix + ("0" + str(i) if i < 10 else str(i))
+            conn.execute("INSERT INTO competitors(competition_id, number, project_code, name, unit) VALUES(?,?,?,?,?)",
+                         (cid, num, "TRIAL", "演练选手" + num, ""))
+            conn.execute("INSERT INTO event_competitors(event_id, competitor_number, checked_in) VALUES(?,?,1)", (eid, num))
+        conn.execute("INSERT INTO event_dances(event_id, ord, name) VALUES(?, 1, '华尔兹')", (eid,))
+    conn.commit()
+    return db.rowdict(conn.execute("SELECT * FROM competitions WHERE id=?", (cid,)).fetchone())
+
+
+@app.get("/trial/judge", response_class=HTMLResponse)
+async def trial_judge(request: Request):
+    """R122c 试用评分入口：免口令进入「评分试用赛」J1 裁判视角。
+    与真实评分完全一致的页面；试用赛完全隔离，评分页刷新即重置，不影响任何实际赛事。"""
+    conn = db.get_db()
+    comp = ensure_trial_competition(conn)
+    token = secrets.token_hex(16)
+    conn.execute("INSERT INTO sessions(token, role, judge_code, comp_id) VALUES(?, 'judge', 'J1', ?)",
+                 (token, comp["id"]))
+    conn.commit()
+    resp = RedirectResponse("/judge", status_code=302)
+    resp.set_cookie("session", token, httponly=True, samesite="lax")
+    return resp
 
 
 @app.get("/judge", response_class=HTMLResponse)
@@ -1147,6 +1202,14 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
     # R112f 正在评分场次直达（非本场时导航栏显示）
     scoring_ev = next((e for e in all_evs if e["status"] == "scoring" and e["id"] != ceid), None)
     scoring_nav = _nav(scoring_ev) if scoring_ev else None
+    if comp.get("is_trial"):
+        # R122c 试用赛：刷新评分页即重置（清空本场全部评分与结果，状态恒为评分中）
+        # 必须在回显读取之前执行——裁判拿到的永远是空表
+        c0 = db.get_db()
+        c0.execute("DELETE FROM score_records WHERE event_id=?", (ceid,))
+        c0.execute("DELETE FROM results WHERE event_id=?", (ceid,))
+        c0.execute("UPDATE events SET status='scoring', published=0 WHERE id=?", (ceid,))
+        c0.commit()
     roster_list = roster(ev["id"])
     rows = {}
     for num in roster_list:
@@ -1166,6 +1229,7 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         "prev_ev": prev_ev, "next_ev": next_ev,
         "seq_idx": seq_idx, "seq_total": seq_total,
         "judge_disabled": judge_disabled, "scoring_nav": scoring_nav,
+        "trial": bool(comp.get("is_trial")),
     })
 
 
@@ -2195,7 +2259,7 @@ async def api_template(kind: str):
 def _require_active_event(ceid):
     ev = _event_or_404(ceid)
     comp = _comp_or_404(ev["competition_id"])
-    if not comp["active"]:
+    if not comp["active"] and not comp.get("is_trial"):
         raise HTTPException(status_code=400, detail="赛事未激活，无法操作场次")
     return ev, comp
 
@@ -2874,6 +2938,8 @@ def _judge_assigned_guard(ev, judge_code):
 
 
 def _auto_calculate_if_ready(ev, comp):
+    if comp.get("is_trial"):
+        return False   # R122c 试用赛：不自动算分（裁判反复练习，评分页刷新即重置）
     if ev["status"] != "scoring":
         return False
     ev = _event_or_404(ev["id"])
@@ -3004,8 +3070,12 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
             if not (0 <= fv <= 10) or round(fv, 1) != fv:
                 raise HTTPException(status_code=400, detail="评分须为 0~10 且最多一位小数")
     elif skating:
-        if set(values.keys()) != checked:
-            raise HTTPException(status_code=400, detail="必须为全部已检录选手提交名次")
+        # R120 缺评容忍：允许部分名次提交（未评选手按缺评计——不计该裁判票）
+        if not values:
+            raise HTTPException(status_code=400, detail="至少需提交一名选手的名次")
+        unknown = set(values.keys()) - checked
+        if unknown:
+            raise HTTPException(status_code=400, detail="背号不在已检录名单中: " + ",".join(sorted(unknown)[:5]))
         placements = []
         for num, v in values.items():
             try:
@@ -3015,8 +3085,8 @@ async def api_submit_sheet(ceid: int, dance: str, request: Request = None):
             if not (1 <= p <= len(checked)):
                 raise HTTPException(status_code=400, detail="名次超出范围 1~N")
             placements.append(p)
-        if len(set(placements)) != len(checked):
-            raise HTTPException(status_code=400, detail="名次必须为 1~N 且互不重复")
+        if len(set(placements)) != len(placements):
+            raise HTTPException(status_code=400, detail="同一裁判的名次不得重复")
     elif kind == "mark":
         # Mark制（滑冰制预赛）：裁判**只对选中的选手**给 mark（core 语义：mark is True 计票，
         # 未选中选手无记录、票数 0）。提交即整体替换该裁判该舞种的全部标记。
