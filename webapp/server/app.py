@@ -1074,6 +1074,15 @@ async def results_page(request: Request, competition_id: int):
         "payload": payload, "adv_hints": adv_hints})
 
 
+@app.get("/staff-guide", response_class=HTMLResponse)
+async def staff_guide_page(request: Request):
+    """R114 检录/主持快速流程（免登录、打印友好、截图步骤式）。role=marshal|host 控制重点章节。"""
+    role = (request.query_params.get("role") or "marshal").lower()
+    if role not in ("marshal", "host"):
+        role = "marshal"
+    return templates.TemplateResponse(request, "staff_guide.html", {"guide_role": role})
+
+
 @app.get("/judge-guide", response_class=HTMLResponse)
 async def judge_guide_page(request: Request):
     """R113 裁判快速上手（免登录、打印友好）：到场扫码→快速进入→打分提交 三步 + 制式速览 + 常见问题。"""

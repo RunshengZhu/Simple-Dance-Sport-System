@@ -2,54 +2,49 @@
 {% block title %}裁判快速上手{% endblock %}
 {% block nav %}<a href="/manual">完整说明</a>{% endblock %}
 {% block content %}
-<h1>裁判快速上手 <span class="muted">到场 3 步开始打分</span></h1>
-<p class="muted">本页可直接打印随身携带；完整说明见 <a href="/manual">使用手册</a>。评分全程只看背号不见姓名，请独立评判。</p>
+<h1>裁判快速上手 <span class="muted">照着做，三步开打</span></h1>
+<p class="muted">本页可直接打印随身携带；评分页右上角有随时可看的「? 评分说明」。</p>
 
-<div class="card">
-  <h2>第 1 步 · 打开你的评分入口</h2>
-  <p>赛前领取<b>专属二维码或直达链接</b>（每名裁判不同，形如 <code>/login?role=judge&amp;judge=J1</code>）。
-  手机扫码或点链接即自动进入本赛事工作台——<b>无需账号口令</b>。建议扫码后把页面<b>添加到手机主屏/书签</b>，整场比赛随时打开。</p>
+<div class="step">
+  <h3><span class="st-seq">1</span> 扫码打开你的评分入口</h3>
+  <img src="/static/manual/r113/dl-qr.png" alt="每名裁判的专属二维码（工作人员与直达链接页点行展开）" loading="lazy">
+  <p class="muted">赛前管理员在「工作人员与直达链接」页发你<b>专属二维码</b>——手机扫码或点链接直接进入工作台，
+  无需账号口令。扫一次即可，之后从书签/主屏图标随时打开。</p>
+</div>
+
+<div class="step">
+  <h3><span class="st-seq">2</span> 点红色横幅直达正在评的场次</h3>
+  <img src="/static/manual/r113/j-workbench-now.png" alt="工作台：● 正在评分 · 快速进入" loading="lazy">
+  <p class="muted">主持人开赛后，工作台顶部立即出现「<b>● 正在评分 · 快速进入</b>」——点按钮直达<b>你还没打完的那个舞种</b>。
+  也可以在下方场次列表点舞种进入。评分页顶部还有「← 上一场 / 下一场 →」和「● 正在评分」随时切换。</p>
+</div>
+
+<div class="step">
+  <h3><span class="st-seq">3</span> Mark 制打分：点行给 Mark，勾满名额提交</h3>
+  <img src="/static/manual/r113/j-mark-blank.png" alt="Mark 评分页：默认全空、快捷按钮、底部常驻提交" loading="lazy">
+  <p class="muted">① 点选手行给 Mark（再点取消）　② 「全选 / 清空」整批调整　③ 勾满晋级名额后，
+  底部常驻的「提交 Mark 名单」即可点（不足时置灰并提示还差几人）。</p>
+</div>
+
+<div class="step">
+  <h3><span class="st-seq">4</span> 不确定时点「? 评分说明」</h3>
+  <img src="/static/manual/r113/j-guide-pop.png" alt="评分说明弹层" loading="lazy">
+  <p class="muted">弹层按当前制式给打分要点；顺位法页（决赛）是点行排名次，评分制（集体舞）是输 0~10 分，入口相同。</p>
 </div>
 
 <div class="card">
-  <h2>第 2 步 · 一键进入正在评分的场次</h2>
-  <p>工作台顶部有红色「<b>● 正在评分 · 快速进入</b>」横幅——主持人开赛后这里会立即出现当前场次的按钮，
-  <b>点按钮直达该场你还没打完的舞种</b>，不用自己找。也可以在下方场次列表里点舞种进入。</p>
-  <p class="muted">评分页顶部有「← 上一场 / 下一场 →」导航和「● 正在评分」按钮，随时切换场次。</p>
-</div>
-
-<div class="card">
-  <h2>第 3 步 · 按制式打分并提交</h2>
+  <h2>遇到这些情况</h2>
   <table>
-    <tr><th>制式</th><th>怎么打</th><th>提交条件</th></tr>
-    <tr><td><b>Mark 制</b><br><span class="muted">预赛晋级票</span></td>
-        <td>点选手行给 Mark（再点取消）。打开默认<b>全空</b>，可用「全选 / 清空」快捷按钮；通常勾选人数 = 晋级名额</td>
-        <td>勾选数达到晋级名额后提交键才可用（不足时置灰并提示还差几人）</td></tr>
-    <tr><td><b>顺位法</b><br><span class="muted">决赛排名</span></td>
-        <td>给本场全部选手排名次（1=最好，不并列）。两种方式：<b>顺序点选</b>按名次依次点选手；<b>直接指定</b>先点选手再点下方名次键盘。点已排选手取消并自动补位</td>
-        <td>全部已检录选手都排出名次</td></tr>
-    <tr><td><b>评分制</b><br><span class="muted">集体舞</span></td>
-        <td>每位选手给 0~10 分（一位小数），点输入框唤起数字键盘</td>
-        <td>全部选手都有分数</td></tr>
-  </table>
-  <p class="muted">底部提交按钮<b>常驻不随滚动消失</b>。提交后如场次未关闭可修改重交；最后一名裁判提交完，名次自动产生。
-  评分过程中页面自动暂存——锁屏 / 误刷新 / 断网后重新打开会恢复，提交成功才清空。</p>
-</div>
-
-<div class="card">
-  <h2>常见问题</h2>
-  <table>
-    <tr><th>情况</th><th>说明</th></tr>
-    <tr><td>背号灰显 🔒</td><td>该选手<b>未检录</b>，不可评分；等检录台确认后自动恢复（页面实时同步）</td></tr>
-    <tr><td>工作台没有场次</td><td>场次尚未「开赛」——主持人/管理员开赛后立即出现，稍等刷新即可</td></tr>
-    <tr><td>提示「已被禁用评分」</td><td>管理员在总表「裁判启用」栏把你暂时停用了；本场只读，联系管理员恢复</td></tr>
-    <tr><td>提交键灰色</td><td>Mark 制未勾满晋级名额 / 顺位法还有人没排名 / 评分制有人没打分——补齐即可提交</td></tr>
-    <tr><td>「还差 N 人满足名额」</td><td>Mark 制的提交门禁提示：继续勾选到名额数即可</td></tr>
-    <tr><td>打分页右上「? 评分说明」</td><td>随时点开查看当前制式的打分要点</td></tr>
+    <tr><th>背号灰显 🔒</th><td>该选手未检录，等检录台确认后自动恢复（页面实时同步）</td></tr>
+    <tr><th>工作台没有场次</th><td>还没「开赛」——主持人/管理员开赛后立即出现</td></tr>
+    <tr><th>提示已被禁用评分</th><td>管理员暂时停用了你（总表「裁判启用」栏），本场只读</td></tr>
+    <tr><th>提交键灰色</th><td>还没打完：Mark 未勾满名额 / 顺位法有人没排名 / 评分制有人没打分</td></tr>
+    <tr><th>误刷新 / 断网</th><td>已答内容自动暂存，重新打开即恢复；提交成功才清空</td></tr>
   </table>
 </div>
 
-<p class="muted" style="margin-top:1.5rem">裁判快速上手 v1 · 2026-11-13 · 体育舞蹈评分系统 · 完整手册 /manual</p>
+<p class="muted" style="margin-top:1.5rem">裁判快速上手 v2（截图版）· 2026-11-13 · 完整手册 /manual ·
+培训幻灯片 /files/training/training-slides.pdf</p>
 {% endblock %}
 {% block scripts %}
 {% endblock %}
