@@ -19,6 +19,9 @@
   评分页顶部还有「← 上一场 / 下一场 →」导航和「● 正在评分」按钮随时切换。</p>
 </div>
 
+<p class="note" style="border-color:var(--acc,#c0392b)"><b>先试一下：</b>本页下方有<b>可直接点按的评分界面演练</b>（Mark 场 + 决赛顺位场各一），
+无需登录、不会真实提交，刷新页面即重置。</p>
+
 <div class="step">
   <h3><span class="st-seq">3</span> Mark 制（预赛）：点行给 Mark，勾满名额提交</h3>
   <img src="/static/manual/r113/onb/j-mark.png" alt="Mark 评分页：全选/清空按钮 + 打分行" loading="lazy">
@@ -39,6 +42,48 @@
   <p class="muted">点输入框给 0~10 分（一位小数），全部选手打完即可提交。</p>
 </div>
 
+<h2 id="trial">评分界面演练 <span class="muted">可点按 · 不真实提交 · 刷新即重置</span></h2>
+<div class="card">
+  <div class="trial-tabs">
+    <button type="button" class="trial-tab active" data-t="mark">Mark 制 · 预赛（名额 4）</button>
+    <button type="button" class="trial-tab" data-t="skating">顺位法 · 决赛</button>
+  </div>
+
+  <div id="trial-mark">
+    <p class="muted" style="margin:6px 0">演练场：8 名选手（T01~T08）、5 名裁判已交、晋级名额 4。点击选手行给 Mark（再点取消）；「全选 / 清空」整批调整；勾满 4 个后提交键可用。</p>
+    <div class="trial-tools">
+      <button type="button" class="tbtn" onclick="tMarkAll(1)">全选</button>
+      <button type="button" class="tbtn" onclick="tMarkAll(0)">清空</button>
+      <span class="tmuted">已选 <b id="tmark-count">0</b> / 名额 4</span>
+    </div>
+    <div class="trial-list" id="tmark-list"></div>
+    <div class="trial-submit">
+      <span id="tmark-msg" class="tmuted"></span>
+      <button type="button" class="tbtn-primary" id="tmark-submit" disabled>提交 Mark 名单（试用）</button>
+    </div>
+  </div>
+
+  <div id="trial-skating" hidden>
+    <p class="muted" style="margin:6px 0">演练场：6 名选手（S01~S06）。<b>顺序点选</b>：按名次依次点选手；<b>直接指定</b>：先点选手再点下方名次键盘。点已排选手取消并自动补位。</p>
+    <div class="trial-tools">
+      <button type="button" class="tbtn active" data-mode="seq">① 顺序点选</button>
+      <button type="button" class="tbtn" data-mode="direct">② 直接指定</button>
+      <button type="button" class="tbtn ghost" onclick="tSkateReset()">重置</button>
+      <span class="tmuted">已排 <b id="tskate-count">0</b> / 6</span>
+    </div>
+    <div class="trial-list" id="tskate-list"></div>
+    <div class="trial-keypad" id="tskate-keypad" style="display:none">
+      <div class="tmuted" style="margin-bottom:6px">为 <b id="tkp-num">--</b> 指定名次 <span class="tmuted">灰色名次已被占用；点自己的名次键 = 取消</span></div>
+      <div class="trial-kp-keys" id="tkp-keys"></div>
+    </div>
+    <div class="trial-submit">
+      <span id="tskate-msg" class="tmuted"></span>
+      <button type="button" class="tbtn-primary" id="tskate-submit" disabled>提交名次表（试用）</button>
+    </div>
+  </div>
+  <p class="muted" style="margin:10px 0 0">↑ 以上均为演练界面——<b>不会向系统提交任何数据</b>；刷新页面即恢复初始状态。真实场次以工作台入口进入的评分页为准，操作方式与此完全相同。</p>
+</div>
+
 <div class="card">
   <h2>遇到这些情况</h2>
   <table>
@@ -54,5 +99,188 @@
 
 <p class="muted" style="margin-top:1.5rem">裁判快速流程 v2（截图版）· 2026-11-13 · 体育舞蹈评分系统</p>
 {% endblock %}
+{% block styles %}
+<style>
+.trial-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.trial-tab { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line, #ddd); background: #fff; font-weight: 700; }
+.trial-tab.active { background: var(--acc, #c0392b); border-color: var(--acc, #c0392b); color: #fff; }
+.trial-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.tbtn { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line, #ddd); background: #fff; font-weight: 700; }
+.tbtn.active { background: var(--acc, #c0392b); border-color: var(--acc, #c0392b); color: #fff; }
+.tbtn.ghost { color: var(--acc, #c0392b); border-color: var(--acc, #c0392b); }
+.tbtn-primary { padding: 12px 22px; border-radius: 10px; border: none; background: var(--acc, #c0392b); color: #fff; font-size: 1.05rem; font-weight: 800; }
+.tbtn-primary:disabled { opacity: .45; cursor: not-allowed; }
+.tmuted { color: var(--muted, #6b7280); font-size: .92rem; }
+.tok { color: #1e8e4e; font-weight: 700; }
+.trial-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.trial-row { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid var(--line, #ddd);
+  border-radius: 10px; padding: 12px 14px; cursor: pointer; user-select: none; }
+.trial-row.checked { border-color: var(--acc, #c0392b); background: #fdf3f1; }
+.trial-box { width: 22px; height: 22px; border: 2px solid var(--line, #ccc); border-radius: 6px; background: #fff; }
+.trial-row.checked .trial-box { background: var(--acc, #c0392b); border-color: var(--acc, #c0392b); }
+.trial-row.checked .trial-box::after { content: "✓"; color: #fff; font-weight: 900; display: block; text-align: center; line-height: 18px; }
+.trial-num { font-size: 1.1rem; font-weight: 800; min-width: 44px; }
+.trial-hint { margin-left: auto; color: var(--muted, #6b7280); font-size: .85rem; }
+.trial-badge { width: 26px; height: 26px; border: 2px dashed var(--line, #bbb); border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center; font-weight: 900; }
+.trial-row.assigned .trial-badge { border: 2px solid var(--acc, #c0392b); color: var(--acc, #c0392b); }
+.trial-row.selected { outline: 2px solid var(--acc, #c0392b); outline-offset: -1px; }
+.trial-keypad { background: #fff; border: 1px solid var(--line, #ddd); border-radius: 10px; padding: 10px; margin: 6px 0; }
+.trial-kp-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; }
+.trial-key { min-height: 42px; border: 1px solid var(--line, #ccc); border-radius: 8px; background: #fff; font-size: 1.1rem; font-weight: 800; }
+.trial-key.taken { background: #eee; color: #aaa; }
+.trial-key.own { background: var(--acc, #c0392b); color: #fff; border-color: var(--acc, #c0392b); }
+.trial-submit { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+</style>
+{% endblock %}
 {% block scripts %}
+/* ===== R122 评分界面演练（纯前端，不提交任何数据）===== */
+(function () {
+  var MARK_ADV = 4, SKATE_N = 6;
+  var tPlayers = [];
+  for (var i = 1; i <= 8; i++) tPlayers.push("T" + (i < 10 ? "0" + i : i));
+  var sPlayers = [];
+  for (var k = 1; k <= SKATE_N; k++) sPlayers.push("S" + (k < 10 ? "0" + k : k));
+
+  /* ---- tabs ---- */
+  document.querySelectorAll(".trial-tab").forEach(function (t) {
+    t.addEventListener("click", function () {
+      document.querySelectorAll(".trial-tab").forEach(function (x) { x.classList.remove("active"); });
+      t.classList.add("active");
+      document.getElementById("trial-mark").hidden = t.dataset.t !== "mark";
+      document.getElementById("trial-skating").hidden = t.dataset.t !== "skating";
+    });
+  });
+
+  /* ---- Mark 演练 ---- */
+  var mList = document.getElementById("tmark-list");
+  tPlayers.forEach(function (n) {
+    var row = document.createElement("div");
+    row.className = "trial-row";
+    row.dataset.n = n;
+    row.innerHTML = '<span class="trial-box"></span><span class="trial-num">' + n + '</span><span class="trial-hint">点击给 Mark</span>';
+    row.addEventListener("click", function () {
+      row.classList.toggle("checked");
+      tMarkRender();
+    });
+    mList.appendChild(row);
+  });
+  window.tMarkAll = function (on) {
+    mList.querySelectorAll(".trial-row").forEach(function (r) {
+      r.classList.toggle("checked", !!on);
+    });
+    tMarkRender();
+  };
+  function tMarkRender() {
+    var done = mList.querySelectorAll(".trial-row.checked").length;
+    document.getElementById("tmark-count").textContent = done;
+    mList.querySelectorAll(".trial-row").forEach(function (r) {
+      r.querySelector(".trial-hint").textContent = r.classList.contains("checked") ? "已给 Mark · 点击取消" : "点击给 Mark";
+    });
+    var sub = document.getElementById("tmark-submit");
+    var lack = MARK_ADV - done;
+    sub.disabled = lack > 0;
+    document.getElementById("tmark-msg").textContent = lack > 0 ? "还差 " + lack + " 人满足名额" : "";
+  }
+  document.getElementById("tmark-submit").addEventListener("click", function () {
+    var m = document.getElementById("tmark-msg");
+    m.className = "tok";
+    m.textContent = "✓ 已模拟提交——试用模式，未向系统写入任何数据。刷新页面可重新练习。";
+  });
+  tMarkRender();
+
+  /* ---- 顺位演练 ---- */
+  var sList = document.getElementById("tskate-list");
+  var mode = "seq", selected = null;
+  sPlayers.forEach(function (n) {
+    var row = document.createElement("div");
+    row.className = "trial-row";
+    row.dataset.n = n;
+    row.innerHTML = '<span class="trial-badge"></span><span class="trial-num">' + n + '</span><span class="trial-hint">点击排名</span>';
+    row.addEventListener("click", function () { mode === "seq" ? sTapSeq(row) : sTapDirect(row); });
+    sList.appendChild(row);
+  });
+  function sRows() { return Array.prototype.slice.call(sList.querySelectorAll(".trial-row")); }
+  function sVal(row) { return row.dataset.v || ""; }
+  function sSetV(row, v) { row.dataset.v = v; }
+  function sRender() {
+    var done = 0;
+    sRows().forEach(function (row) {
+      var v = sVal(row);
+      row.querySelector(".trial-badge").textContent = v;
+      row.classList.toggle("assigned", !!v);
+      row.querySelector(".trial-hint").textContent =
+        mode === "seq" ? (v ? "点击取消" : "点击排名") : (v ? "当前第 " + v + " 名" : (selected === row.dataset.n ? "在下方点名次" : "点击选中"));
+      if (v) done++;
+    });
+    document.getElementById("tskate-count").textContent = done;
+    var sub = document.getElementById("tskate-submit");
+    sub.disabled = done < SKATE_N;
+    var kp = document.getElementById("tskate-keypad");
+    kp.style.display = (mode === "direct" && selected) ? "block" : "none";
+    if (selected) {
+      document.getElementById("tkp-num").textContent = selected;
+      document.querySelectorAll("#tkp-keys .trial-key").forEach(function (key) {
+        var owner = null;
+        sRows().forEach(function (row) { if (sVal(row) === key.dataset.r) owner = row.dataset.n; });
+        key.classList.toggle("taken", !!owner && owner !== selected);
+        key.classList.toggle("own", owner === selected);
+      });
+    }
+    var msg = document.getElementById("tskate-msg");
+    if (done < SKATE_N) msg.textContent = ""; 
+  }
+  function sTapSeq(row) {
+    var ord = sRows().filter(function (r) { return sVal(r) !== ""; })
+      .sort(function (a, b) { return parseInt(sVal(a), 10) - parseInt(sVal(b), 10); })
+      .map(function (r) { return r.dataset.n; });
+    var i = ord.indexOf(row.dataset.n);
+    if (i >= 0) ord.splice(i, 1); else ord.push(row.dataset.n);
+    sRows().forEach(function (r) {
+      var k = ord.indexOf(r.dataset.n);
+      sSetV(r, k >= 0 ? String(k + 1) : "");
+    });
+    sRender();
+  }
+  function sTapDirect(row) {
+    selected = (selected === row.dataset.n) ? null : row.dataset.n;
+    sRender();
+  }
+  document.querySelectorAll(".trial-tab[data-mode]").forEach(function () {});
+  document.querySelectorAll(".trial-tools .tbtn[data-mode]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      mode = btn.dataset.mode; selected = null;
+      document.querySelectorAll(".trial-tools .tbtn[data-mode]").forEach(function (x) { x.classList.toggle("active", x === btn); });
+      sRender();
+    });
+  });
+  window.tSkateReset = function () {
+    sRows().forEach(function (r) { sSetV(r, ""); });
+    selected = null;
+    sRender();
+  };
+  var kpKeys = document.getElementById("tkp-keys");
+  for (var r = 1; r <= SKATE_N; r++) {
+    (function (rr) {
+      var key = document.createElement("button");
+      key.type = "button"; key.className = "trial-key"; key.dataset.r = String(rr); key.textContent = String(rr);
+      key.addEventListener("click", function () {
+        if (!selected) return;
+        var row = sList.querySelector('.trial-row[data-n="' + selected + '"]');
+        if (sVal(row) === String(rr)) sSetV(row, "");
+        else sSetV(row, String(rr));
+        var next = sRows().filter(function (x) { return sVal(x) === ""; })[0];
+        selected = next ? next.dataset.n : selected;
+        sRender();
+      });
+      kpKeys.appendChild(key);
+    })(r);
+  }
+  document.getElementById("tskate-submit").addEventListener("click", function () {
+    var m = document.getElementById("tskate-msg");
+    m.className = "tok";
+    m.textContent = "✓ 已模拟提交——试用模式，未向系统写入任何数据。刷新页面可重新练习。";
+  });
+  sRender();
+})();
 {% endblock %}
