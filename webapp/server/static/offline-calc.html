@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>离线计分器 · 体育舞蹈工具箱</title>
+<style>
+  :root { --line:#d8d4cc; --ink:#1f2937; --muted:#6b7280; --acc:#c0392b; --tint:#f7f1ef; }
+  * { box-sizing: border-box; }
+  body { font-family: "PingFang SC","Microsoft YaHei",system-ui,sans-serif; color:var(--ink); margin:0; background:#faf9f6; }
+  main { max-width: 960px; margin: 0 auto; padding: 18px 14px 60px; }
+  h1 { font-size: 1.5rem; margin: .2em 0 .2em; }
+  h2 { font-size: 1.15rem; margin: 1.2em 0 .5em; border-left: 4px solid var(--acc); padding-left: 8px; }
+  .note { background: var(--tint); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: .92rem; color: var(--muted); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px; margin:14px 0; }
+  label { font-weight: 700; font-size: .95rem; display:block; margin: 10px 0 4px; }
+  input[type=number], input[type=text] { padding: 8px 10px; border:1px solid var(--line); border-radius:8px; font-size:1rem; width:100%; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:160px; }
+  button { padding:10px 18px; font-size:1rem; font-weight:700; border:none; border-radius:8px; background:var(--acc); color:#fff; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--acc); border:1px solid var(--acc); }
+  .radio-row label { display:inline-flex; align-items:center; gap:6px; margin-right:18px; font-weight:600; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; background:#fff; }
+  th, td { border:1px solid var(--line); padding:6px 8px; text-align:center; font-size:.95rem; }
+  th { background:#f0ede6; }
+  td input[type=number] { width:64px; text-align:center; padding:6px 4px; }
+  .mark-cell { min-width:64px; }
+  .err { color: var(--acc); font-weight:700; margin:8px 0; }
+  table.result td.ok { color:#1e8e4e; font-weight:800; }
+  table.result tr.adv-line td { background:#f2faf5; }
+  table.result tr.adv-off td { color:#9aa0a6; }
+  .print-hide { }
+  @media print {
+    .print-hide, .note, button, .step-setup { display:none !important; }
+    body { background:#fff; }
+    main { max-width:none; padding:0; }
+    h2 { border:none; padding:0; }
+    table.result { page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<main>
+<h1>离线计分器</h1>
+<div class="note">
+  <b>应急工具</b>：赛事系统通信故障时，临时替代系统完成 Mark 制 / 顺位法计分。<b>纯本机运行，不联网、不传输任何数据</b>。
+  建议赛前在工具箱首页点「下载保存」，断网后直接双击打开本页即可使用。计算规则与线上系统一致（顺位法=滑冰系统多数决；Mark 制=票数排序、同票并列同名次、并列组按名额线同进退）。
+  单舞种口径：多项舞综合请分表计算。
+</div>
+
+<div class="card step-setup">
+  <h2>第 1 步 · 设置</h2>
+  <div class="radio-row">
+    <label><input type="radio" name="kind" value="skating" checked> 顺位法（决赛：每裁判给全部选手排名次）</label>
+    <label><input type="radio" name="kind" value="mark"> Mark 制（预赛：每裁判勾选应晋级的选手）</label>
+  </div>
+  <div class="row">
+    <div><label>裁判数</label><input type="number" id="nj" min="1" max="20" value="7"></div>
+    <div><label>晋级 / 录取名额（留空则不判晋级）</label><input type="number" id="adv" min="1"></div>
+    <div style="flex:2"><label>选手背号（逗号或空格分隔）</label><input type="text" id="nums" placeholder="如：201, 202, 203, 204"></div>
+  </div>
+  <p><button onclick="buildInput()">生成输入表</button></p>
+  <div id="err1" class="err"></div>
+</div>
+
+<div id="input-zone"></div>
+
+<div id="result-zone"></div>
+
+<p class="note print-hide" style="margin-top:18px">本页为体育舞蹈工具箱「赛事评分系统」的应急配套工具 · dancetkt.com · 计算规则与线上系统一致</p>
+</main>
+
+<script>
+/*CALC_CORE_START*/
+function majorityCounts(players, scores, position) {
+  const out = {};
+  players.forEach(function (p) {
+    let c = 0;
+    for (const j in scores) if (scores[j][p] <= position) c++;
+    out[p] = c;
+  });
+  return out;
+}
+function totalSum(players, scores) {
+  const out = {};
+  players.forEach(function (p) {
+    let s = 0;
+    for (const j in scores) s += scores[j][p];
+    out[p] = s;
+  });
+  return out;
+}
+function positionSum(players, scores, position) {
+  const out = {};
+  players.forEach(function (p) {
+    let s = 0;
+    for (const j in scores) if (scores[j][p] <= position) s += scores[j][p];
+    out[p] = s;
+  });
+  return out;
+}
+function determineRank(remaining, scores, threshold, numPlayers, position) {
+  const mc = majorityCounts(remaining, scores, position);
+  const cands = remaining.filter(function (p) { return mc[p] >= threshold; });
+  if (cands.length === 1) return cands[0];
+  if (cands.length === 0) {
+    if (position < numPlayers) return determineRank(remaining, scores, threshold, numPlayers, position + 1);
+    const ts = totalSum(remaining, scores);
+    let best = remaining[0];
+    remaining.forEach(function (p) { if (ts[p] < ts[best]) best = p; });
+    return best;
+  }
+  return compareSums(cands, scores, threshold, numPlayers, position);
+}
+function compareSums(cands, scores, threshold, numPlayers, position) {
+  const mc = majorityCounts(cands, scores, position);
+  const maxM = Math.max.apply(null, cands.map(function (p) { return mc[p]; }));
+  let best = cands.filter(function (p) { return mc[p] === maxM; });
+  if (best.length === 1) return best[0];
+  const ts = totalSum(best, scores);
+  const minT = Math.min.apply(null, best.map(function (p) { return ts[p]; }));
+  best = best.filter(function (p) { return ts[p] === minT; });
+  if (best.length === 1) return best[0];
+  const ps = positionSum(best, scores, position);
+  const minP = Math.min.apply(null, best.map(function (p) { return ps[p]; }));
+  best = best.filter(function (p) { return ps[p] === minP; });
+  if (best.length === 1) return best[0];
+  if (position < numPlayers) return determineRank(best, scores, threshold, numPlayers, position + 1);
+  return best.reduce(function (a, b) { return ts[a] <= ts[b] ? a : b; });
+}
+function skatingRank(players, scores) {
+  const numJ = Object.keys(scores).length;
+  const threshold = Math.floor(numJ / 2) + 1;
+  const numP = players.length;
+  const remaining = players.slice();
+  const ranks = {};
+  let cur = 1;
+  while (remaining.length) {
+    const w = determineRank(remaining, scores, threshold, numP, 1);
+    ranks[w] = cur;
+    remaining.splice(remaining.indexOf(w), 1);
+    cur++;
+  }
+  return ranks;
+}
+function markRanks(players, votes) {
+  const sorted = players.slice().sort(function (a, b) {
+    return votes[b] - votes[a] || players.indexOf(a) - players.indexOf(b);
+  });
+  const ranks = {};
+  let rank = 1, i = 0;
+  while (i < sorted.length) {
+    const v = votes[sorted[i]];
+    let j = i;
+    while (j < sorted.length && votes[sorted[j]] === v) j++;
+    for (let k = i; k < j; k++) ranks[sorted[k]] = rank;
+    rank += j - i;
+    i = j;
+  }
+  return ranks;
+}
+function advancementOf(players, ranks, adv) {
+  const out = {};
+  players.forEach(function (p) { out[p] = false; });
+  if (!adv) return out;
+  const uniq = [];
+  players.forEach(function (p) { if (uniq.indexOf(ranks[p]) < 0) uniq.push(ranks[p]); });
+  uniq.sort(function (a, b) { return a - b; });
+  let sofar = 0;
+  uniq.forEach(function (rk) {
+    const group = players.filter(function (p) { return ranks[p] === rk; });
+    if (sofar < adv) group.forEach(function (p) { out[p] = true; });
+    sofar += group.length;
+  });
+  return out;
+}
+/*CALC_CORE_END*/
+
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+  return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]; }); }
+
+function getKind() { return document.querySelector('input[name=kind]:checked').value; }
+
+function buildInput() {
+  const err = document.getElementById("err1");
+  err.textContent = "";
+  const nj = parseInt(document.getElementById("nj").value, 10);
+  const numsRaw = document.getElementById("nums").value.trim().replace(/，/g, ",");
+  const nums = numsRaw.split(/[\s,]+/).filter(Boolean);
+  if (!(nj >= 1 && nj <= 20)) { err.textContent = "裁判数须为 1~20"; return; }
+  if (nums.length < 2) { err.textContent = "请至少输入 2 个选手背号"; return; }
+  if (new Set(nums).size !== nums.length) { err.textContent = "背号有重复"; return; }
+
+  const kind = getKind();
+  let html = '<div class="card"><h2>第 2 步 · 依次录入裁判打分</h2>';
+  html += '<p class="note">' + (kind === "skating"
+    ? "顺位法：每名裁判给<b>全部</b>选手排名次（1=最好，同一裁判名次不可重复）。填满后点「计算」。"
+    : "Mark 制：每名裁判勾选认为应晋级的选手（通常勾选人数 = 晋级名额）。勾完点「计算」。") + '</p>';
+  html += '<div style="overflow-x:auto"><table><tr><th>背号</th>';
+  for (let j = 1; j <= nj; j++) html += "<th>J" + j + "</th>";
+  html += "</tr>";
+  for (const n of nums) {
+    html += "<tr><td><b>" + esc(n) + "</b></td>";
+    for (let j = 1; j <= nj; j++) {
+      if (kind === "skating") {
+        html += '<td><input type="number" class="cell" data-j="' + j + '" data-n="' + esc(n) + '" min="1" max="' + nums.length + '"></td>';
+      } else {
+        html += '<td class="mark-cell"><input type="checkbox" class="cell" data-j="' + j + '" data-n="' + esc(n) + '"></td>';
+      }
+    }
+    html += "</tr>";
+  }
+  html += "</table></div>";
+  html += '<p><button onclick="calculate()">计算</button> <button class="ghost" onclick="buildInput()">重置输入</button> <span id="err2" class="err"></span></p></div>';
+  document.getElementById("input-zone").innerHTML = html;
+  document.getElementById("result-zone").innerHTML = "";
+  document.getElementById("input-zone").scrollIntoView({ behavior: "smooth" });
+}
+
+function collectMatrix(nj, nums) {
+  const cells = document.querySelectorAll("#input-zone .cell");
+  const marks = {}, ranks = {};
+  nums.forEach(function (n) { marks[n] = {}; ranks[n] = {}; });
+  let bad = false;
+  cells.forEach(function (c) {
+    const j = "J" + c.dataset.j, n = c.dataset.n;
+    if (c.type === "checkbox") marks[n][j] = !!c.checked;
+    else {
+      const v = parseInt(c.value, 10);
+      if (!(v >= 1)) bad = true;
+      ranks[n][j] = v;
+    }
+  });
+  return { marks: marks, ranks: ranks, bad: bad };
+}
+
+function calculate() {
+  const kind = getKind();
+  const nj = parseInt(document.getElementById("nj").value, 10);
+  const adv = parseInt(document.getElementById("adv").value, 10) || 0;
+  const nums = document.getElementById("nums").value.trim().replace(/，/g, ",").split(/[\s,]+/).filter(Boolean);
+  const data = collectMatrix(nj, nums);
+  const err2 = document.getElementById("err2");
+  if (data.bad) { err2.textContent = "顺位法每个裁判的名次都必须填满（1~" + nums.length + "）"; return; }
+
+  const judges = [];
+  for (let j = 1; j <= nj; j++) judges.push("J" + j);
+  let ranks, votes = null, scores = null, detailRows = "";
+
+  if (kind === "skating") {
+    scores = {};
+    judges.forEach(function (j) { scores[j] = {}; });
+    nums.forEach(function (n) { judges.forEach(function (j) { scores[j][n] = data.ranks[n][j]; }); });
+    ranks = skatingRank(nums, scores);
+  } else {
+    votes = {};
+    nums.forEach(function (n) { votes[n] = judges.filter(function (j) { return data.marks[n][j]; }).length; });
+    ranks = markRanks(nums, votes);
+  }
+  const advMap = advancementOf(nums, ranks, adv);
+
+  // 结果表
+  const sorted = nums.slice().sort(function (a, b) { return ranks[a] - ranks[b] || nums.indexOf(a) - nums.indexOf(b); });
+  let html = '<div class="card"><h2>结果</h2><div style="overflow-x:auto"><table class="result"><tr><th>名次</th><th>背号</th>';
+  judges.forEach(function (j) { html += "<th>" + j + "</th>"; });
+  if (kind === "skating") {
+    for (let i = 1; i <= nums.length; i++) html += "<th>≤" + i + "票</th>";
+    html += "<th>名次和</th>";
+  } else {
+    html += "<th>票数</th>";
+  }
+  if (adv) html += "<th>" + (kind === "skating" ? "录取" : "晋级") + "</th>";
+  html += "</tr>";
+
+  const mc = scores ? majorityCounts(nums, scores, 1) : null;
+  const mcAll = [];
+  if (scores) for (let i = 1; i <= nums.length; i++) mcAll.push(majorityCounts(nums, scores, i));
+  const ts = scores ? totalSum(nums, scores) : null;
+
+  for (const n of sorted) {
+    const isAdv = advMap[n];
+    html += '<tr class="' + (adv ? (isAdv ? "adv-line" : "adv-off") : "") + '">';
+    html += "<td><b>" + ranks[n] + "</b></td><td><b>" + esc(n) + "</b></td>";
+    judges.forEach(function (j) {
+      if (kind === "skating") html += "<td>" + scores[j][n] + "</td>";
+      else html += "<td>" + (data.marks[n][j] ? "√" : "") + "</td>";
+    });
+    if (kind === "skating") {
+      for (let i = 0; i < nums.length; i++) html += "<td>" + mcAll[i][n] + "</td>";
+      html += "<td>" + ts[n] + "</td>";
+    } else {
+      html += "<td><b>" + votes[n] + "</b></td>";
+    }
+    if (adv) html += '<td class="' + (isAdv ? "ok" : "") + '">' + (isAdv ? "√" : "") + "</td>";
+    html += "</tr>";
+  }
+  html += "</table></div>";
+  if (adv) html += '<p class="note">晋级 / 录取口径：名次 ≤ 名额 ' + adv + '；同票并列同名次、并列组同进退（允许名额线超额），与线上系统一致。</p>';
+  html += '<p><button class="ghost print-hide" onclick="window.print()">打印结果表</button> <button class="ghost print-hide" onclick="calculate()">重算</button></p></div>';
+  document.getElementById("result-zone").innerHTML = html;
+  document.getElementById("result-zone").scrollIntoView({ behavior: "smooth" });
+}
+</script>
+</body>
+</html>
