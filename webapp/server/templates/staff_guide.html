@@ -8,7 +8,11 @@
 
 <div class="step">
   <h3><span class="st-seq">1</span> 打开工作台</h3>
+  {% if guide_role == 'marshal' %}
   <img src="/static/manual/r113/staff-marshal-home.png" alt="检录台：场次卡 + 检录芯片（含姓名）" loading="lazy">
+  {% else %}
+  <img src="/static/manual/r113/staff-host-home.png" alt="主持台：场次卡 + 开赛按钮" loading="lazy">
+  {% endif %}
   <p class="muted">用管理员发的账号口令登录本赛事（直达链接也可）。按场序列出场次卡：
   「待开始」等开赛、「评分中」红框高亮、「已发布」可看成绩。</p>
 </div>
@@ -16,6 +20,7 @@
 {% if guide_role == 'marshal' %}
 <div class="step">
   <h3><span class="st-seq">2</span> 检录：点芯片，绿=到场</h3>
+  <img src="/static/manual/r113/onb/m-chiprow.png" alt="检录芯片：背号 + 姓名，点击变绿" loading="lazy">
   <p class="muted">对照上场名单点芯片（背号 + 姓名），变绿即到场，再点取消；整队到齐点「全部检录」。
   卡头实时显示「检录 N / M」。未检录的背号在裁判评分页灰显 🔒——检录完裁判立即可评。</p>
 </div>
@@ -37,6 +42,7 @@
 
 <div class="step">
   <h3><span class="st-seq">4</span> 场次多时快速定位</h3>
+  <img src="/static/manual/r113/onb/m-filter.png" alt="筛选：全部 / 待检录 / 已完成" loading="lazy">
   <p class="muted">用顶部「待检录 / 已完成」筛选 + 编号搜索；点「场次索引」按分组跳转；
   卡片左上的<b>红色场序章</b>就是全场统一的出场序号。</p>
 </div>
