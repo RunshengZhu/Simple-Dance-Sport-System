@@ -43,20 +43,28 @@
 </div>
 
 {% if plan.allocation %}
-<div class="card">
-  <h2>下一轮蛇形分配预览（确认后按此回填）</h2>
-  <table>
-    <tr><th>下一轮场次</th><th class="num">该场晋级名额</th><th>分配名单（蛇形）</th></tr>
-    {% for e in plan.next_events %}
-    <tr>
-      <td><b>{{ e.code }}</b></td>
-      <td class="num">{{ e.adv or "—" }}</td>
-      <td>{{ plan.allocation.get(e.code, [])|length }} 对：{{ plan.allocation.get(e.code, [])|join("、") or "—" }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  <p class="muted">并列超额会使部分下一轮场次人数多于其名额——不影响晋级效力；决赛轮录取按顺位名额截断。</p>
+<h2>下一轮场次分配 <span class="muted">每场一张卡——确认后按蛇形名单回填；点「在总表中打开」直达该场</span></h2>
+<div class="adv-next-grid">
+  {% for e in plan.next_events %}
+  {% set lst = plan.allocation.get(e.code, []) %}
+  <div class="card adv-next-card">
+    <div class="adv-next-head">
+      <b class="adv-next-code">{{ e.code }}</b>
+      <span class="tag {{ 'ok' if lst|length <= e.adv or not e.adv else 'warn' }}">
+        填入 {{ lst|length }} 人 · 名额 {{ e.adv or "—" }}{{ "（超额" ~ (lst|length - e.adv) ~ "）" if e.adv and lst|length > e.adv }}</span>
+    </div>
+    <div class="adv-next-chips">
+      {% for m in plan.merged if m.competitor_number in lst %}
+      <span class="adv-next-chip"><b>{{ m.competitor_number }}</b> <small>第{{ m.rank }}名</small></span>
+      {% endfor %}
+    </div>
+    <p class="adv-next-actions">
+      <a class="btn small secondary" href="/events/{{ comp.id }}/runboard#ev-{{ e.id }}" target="_blank">在总表中打开 →</a>
+    </p>
+  </div>
+  {% endfor %}
 </div>
+<p class="muted">并列超额会使部分下一轮场次人数多于其名额——不影响晋级效力；决赛轮录取按顺位名额截断。</p>
 {% endif %}
 
 <div class="card">

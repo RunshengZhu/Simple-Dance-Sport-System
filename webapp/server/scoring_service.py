@@ -273,8 +273,8 @@ def advancement_plan(competition_id, project_code, round_no):
             num = str(r["competitor_number"])
             key = (float(r["rank"]), 0.0, num.zfill(8)) if skating else (0.0, -float(r.get("total_score") or 0), num.zfill(8))
             if num not in best or key < best[num][0]:
-                best[num] = (key, float(r.get("total_score") or 0), ev["code"])
-    merged = [{"competitor_number": n, "total_score": v[1], "from_code": v[2]}
+                best[num] = (key, float(r.get("total_score") or 0), ev["code"], int(r["rank"]))
+    merged = [{"competitor_number": n, "total_score": v[1], "from_code": v[2], "rank": v[3]}
               for n, v in sorted(best.items(), key=lambda kv: kv[1][0])]
     next_events = db.rows(conn.execute(
         "SELECT * FROM events WHERE competition_id=? AND project_code=? AND round=? ORDER BY code",

@@ -139,6 +139,16 @@ function render() {
     var el = document.getElementById('rb-detail-' + e.id);
     if (el) el.style.display = (e.status === 'scoring') ? '' : 'none';
   });
+  // R123 晋级确认页锚点跳转：#ev-{ceid} → 滚动定位 + 高亮闪烁
+  if (location.hash && location.hash.indexOf('#ev-') === 0) {
+    var ceid = location.hash.slice(4);
+    var row = document.querySelector('.rb-row[data-ceid="' + ceid + '"]');
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('rb-flash');
+      setTimeout(function () { row.classList.remove('rb-flash'); }, 4000);
+    }
+  }
 }
 
 function toggleDetail(id) {
