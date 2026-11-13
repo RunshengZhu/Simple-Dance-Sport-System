@@ -43,47 +43,46 @@
 </div>
 
 {% if plan.allocation %}
-<h2>下一轮场次分配 <span class="muted">每场一张卡——确认后按蛇形名单回填；点「在总表中打开」直达该场</span></h2>
-<div class="adv-next-grid">
+<div class="adv-tables-wrap">
   {% for e in plan.next_events %}
   {% set lst = plan.allocation.get(e.code, []) %}
-  <div class="card adv-next-card">
+  <div class="adv-next-tbl">
     <div class="adv-next-head">
       <b class="adv-next-code">{{ e.code }}</b>
+      <span class="muted">{{ e.name }}</span>
       <span class="tag {{ 'ok' if lst|length <= e.adv or not e.adv else 'warn' }}">
-        填入 {{ lst|length }} 人 · 名额 {{ e.adv or "—" }}{{ "（超额" ~ (lst|length - e.adv) ~ "）" if e.adv and lst|length > e.adv }}</span>
+        填入 {{ lst|length }} · 名额 {{ e.adv or "—" }}{{ "（超额" ~ (lst|length - e.adv) ~ "）" if e.adv and lst|length > e.adv }}</span>
     </div>
-    <div class="adv-next-chips">
+    <table class="adv-next-table">
+      <tr><th></th><th>顺序</th><th>背号</th><th>名次</th><th class="num">总分</th><th>来源</th></tr>
+      {% set seq = namespace(i = 0) %}
       {% for m in plan.merged if m.competitor_number in lst %}
-      <span class="adv-next-chip"><b>{{ m.competitor_number }}</b> <small>第{{ m.rank }}名</small></span>
+      {% set seq.i = seq.i + 1 %}
+      <tr>
+        <td><input type="checkbox" class="adv-check" data-num="{{ m.competitor_number }}" checked></td>
+        <td><b>{{ seq.i }}</b></td>
+        <td><b>{{ m.competitor_number }}</b></td>
+        <td>第 {{ m.rank }} 名</td>
+        <td class="num">{{ m.total_score }}</td>
+        <td class="muted">{{ m.from_code }}</td>
+      </tr>
       {% endfor %}
-    </div>
-    <p class="adv-next-actions">
+    </table>
+    <p class="adv-tbl-actions">
       <a class="btn small secondary" href="/events/{{ comp.id }}/runboard#ev-{{ e.id }}" target="_blank">在总表中打开 →</a>
     </p>
   </div>
   {% endfor %}
 </div>
-<p class="muted">并列超额会使部分下一轮场次人数多于其名额——不影响晋级效力；决赛轮录取按顺位名额截断。</p>
+<p class="muted">勾选 = 该选手晋级并蛇形回填到对应场次；同票并列组建议整组同进退。并列超额会使部分场次人数多于其名额——不影响晋级效力；决赛轮录取按顺位名额截断。</p>
 {% endif %}
 
+
 <div class="card">
-  <h2>合并预案（按名次/总分排序，勾选即晋级名单）</h2>
-  <table>
-    <tr><th></th><th>顺序</th><th>背番号</th><th class="num">总分</th><th>来源场次</th></tr>
-    {% for p in plan.merged %}
-    <tr>
-      <td><input type="checkbox" class="adv-check" data-num="{{ p.competitor_number }}" checked></td>
-      <td>{{ loop.index }}</td><td>{{ p.competitor_number }}</td><td class="num">{{ p.total_score }}</td>
-      <td class="muted">{{ p.from_code }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  <p><button class="btn" id="confirm-btn">确认并蛇形回填下一轮</button> <span id="msg"></span></p>
-  <p class="muted">说明：名单按名次蛇形分配到下一轮各场次；确认后下一轮上场名单被覆盖。</p>
+  <p><button class="btn" id="confirm-btn">确认晋级并蛇形回填下一轮</button> <span id="msg"></span></p>
+  <p class="muted">说明：按上方各场次表格的勾选名单回填；确认后下一轮上场名单被覆盖（未勾选者不晋级）。</p>
 </div>
-{% else %}
-<div class="card"><p class="muted">该项目该轮暂无可用的计算结果（需至少一场已计算/已发布）。</p></div>
+
 {% endif %}
 {% endblock %}
 {% block scripts %}
@@ -91,7 +90,7 @@ var CID = {{ comp.id }}, PROJECT = {{ project|tojson }}, ROUND = {{ round }};
 document.getElementById('confirm-btn')?.addEventListener('click', async function () {
   var names = [];
   document.querySelectorAll('.adv-check:checked').forEach(function (el) { names.push(el.dataset.num); });
-  if (!names.length) { document.getElementById('msg').textContent = '请先勾选晋级名单'; return; }
+  if (!names.length) { document.getElementById('msg').textContent = '请先在各场次表格中勾选晋级名单'; return; }
   if (!confirm('确认晋级 ' + names.length + ' 组（对）并回填下一轮？')) return;
   try {
     var r = await api('POST', '/api/projects/' + PROJECT + '/rounds/' + ROUND + '/advancement-confirm', {advancing: names, competition_id: CID});

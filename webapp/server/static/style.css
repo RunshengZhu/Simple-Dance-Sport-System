@@ -1077,3 +1077,14 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
   0%, 100% { box-shadow: 0 0 0 0 rgba(192,57,43,0); }
   50% { box-shadow: 0 0 0 4px rgba(192,57,43,.45); }
 }
+
+/* ===== R124b 晋级确认：下一轮场次横向并列表格（代替合并预案卡）===== */
+.adv-tables-wrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 14px; align-items: start; }
+.adv-next-tbl { background: var(--card, #fff); border: 1px solid var(--line, #ddd);
+  border-radius: 12px; padding: 12px; border-left: 4px solid var(--acc, #c0392b); }
+.adv-next-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.adv-next-code { font-size: 1.05rem; }
+.adv-next-table { margin: 6px 0; }
+.adv-next-table td, .adv-next-table th { padding: 5px 8px; font-size: .92rem; }
+.adv-tbl-actions { margin: 8px 0 0; }
