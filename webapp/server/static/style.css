@@ -922,6 +922,21 @@ tr.ev-detail > td { background: rgba(0,0,0,.022); }
 .adv-chip { display: inline-block; background: #2ecc711a; color: #1e8e4e; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; }
 .ev-detail table.mini { margin-top: 6px; }
 
+/* ===== R114b 移动端常驻 UI 稳定化 ===== */
+/* 评分页顶栏唯一化：site header 不再 sticky（避免与 sheet-nav 双 sticky 争位/遮挡） */
+body.judge-sheet header { position: static; backdrop-filter: none; }
+/* 常驻栏强制独立合成层：iOS Safari 滚动/弹性回弹时不再重绘消失 */
+.judge-sheet .sheet-nav { transform: translateZ(0); }
+.judge-sheet .submit-bar { transform: translateZ(0); }
+.judge-sheet .submit-bar { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.judge-sheet { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+/* 移动端禁用毛玻璃（iOS Safari 滚动时 backdrop-filter 层重建导致 sticky 元素消失的知名 bug），
+   用不透明背景替代，视觉几乎无差 */
+@media (max-width: 640px) {
+  header, .comp-bar { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--header-bg); }
+  .comp-bar { background: var(--bg, #f5f3ef); }
+}
+
 /* ===== R112 裁判页：顶部常驻上/下场导航 + 底部提交栏常驻 ===== */
 .judge-sheet .sheet-nav {
   position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 8px;
