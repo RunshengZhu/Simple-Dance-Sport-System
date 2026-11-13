@@ -3552,6 +3552,7 @@ async def advancement_page(request: Request, competition_id: int):
     return templates.TemplateResponse(request, "advancement.html", {
         "request": request, "comp": comp, "projects": projects, "project": project,
         "rounds": rounds, "round": rnd, "plan": plan,
+        "names": _display_names(conn, competition_id, project),
         "adv": conn.execute("SELECT COALESCE(SUM(advancement_count),0) a FROM events WHERE competition_id=? AND project_code=? AND round=?",
                             (competition_id, project, rnd)).fetchone()["a"],
         "next_exists": next_exists,

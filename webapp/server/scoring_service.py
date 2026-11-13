@@ -258,8 +258,9 @@ def advancement_plan(competition_id, project_code, round_no):
             continue
         skating = scoring_type_of(ev) == ScoringType.SKATING
         adv_n = ev["advancement_count"] or 0
-        rows = [dict(r) for r in data["overall_results"] if r.get("advancement_status")]
-        rows.sort(key=lambda r: (float(r["rank"]), str(r["competitor_number"]).zfill(8)))
+        rows_all = sorted([dict(r) for r in data["overall_results"]],
+                          key=lambda r: (float(r["rank"]), str(r["competitor_number"]).zfill(8)))
+        rows = [r for r in rows_all if r.get("advancement_status")]
         nums = [str(r["competitor_number"]) for r in rows]
         # 并列超额：第 adv_n 名并列人数
         tie_note = ""
@@ -268,7 +269,10 @@ def advancement_plan(competition_id, project_code, round_no):
             tie_note = "第 {0} 名并列 {1} 人，本场实际晋级 {2} 对（超额 {3}）".format(
                 adv_n, len(tied), len(nums), len(nums) - adv_n)
         per_event.append({"id": ev["id"], "code": ev["code"], "name": ev["name"],
-                          "adv": adv_n, "advancing": nums, "tie_note": tie_note})
+                          "adv": adv_n, "advancing": nums, "tie_note": tie_note,
+                          "results": [{"rank": r["rank"], "num": str(r["competitor_number"]),
+                                       "total": r.get("total_score"),
+                                       "adv": bool(r.get("advancement_status"))} for r in rows_all]})
         for r in rows:
             num = str(r["competitor_number"])
             key = (float(r["rank"]), 0.0, num.zfill(8)) if skating else (0.0, -float(r.get("total_score") or 0), num.zfill(8))

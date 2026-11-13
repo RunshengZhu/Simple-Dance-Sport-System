@@ -26,20 +26,29 @@
   <span class="muted">同分并列按规则全部晋级；下一轮上场人数相应增加，决赛录取仍按各场次顺位名额截断。</span></div>
 {% endif %}
 
-<div class="card">
-  <h2>各场次晋级明细（按各场晋级名额自动产生）</h2>
-  <table>
-    <tr><th>场次</th><th class="num">名额</th><th class="num">实际晋级</th><th>晋级名单</th><th>并列说明</th></tr>
-    {% for e in plan.per_event %}
-    <tr>
-      <td><b>{{ e.code }}</b></td>
-      <td class="num">{{ e.adv or "—" }}</td>
-      <td class="num">{{ e.advancing|length }}</td>
-      <td>{{ e.advancing|join("、") or "—" }}</td>
-      <td class="muted">{{ e.tie_note }}</td>
-    </tr>
-    {% endfor %}
-  </table>
+<h2>本场成绩（晋级情况） <span class="muted">各场并列；晋级判定按名额自动产生</span></h2>
+<div class="adv-tables-wrap">
+  {% for e in plan.per_event %}
+  <div class="card adv-next-tbl">
+    <div class="adv-next-head">
+      <b class="adv-next-code">{{ e.code }}</b>
+      <span class="tag {{ 'ok' if e.tie_note else 'gray' }}">{{ e.advancing|length }}/{{ e.adv or "—" }} 晋级</span>
+    </div>
+    <table class="adv-next-table">
+      <tr><th>名次</th><th>背号</th><th>选手 / 队伍</th><th class="num">总分</th><th>晋级</th></tr>
+      {% for r in e.results %}
+      <tr>
+        <td><b>{{ r.rank }}</b></td>
+        <td><b>{{ r.num }}</b></td>
+        <td>{{ names.get(r.num, "") or "—" }}</td>
+        <td class="num">{{ r.total }}</td>
+        <td>{% if r.adv %}<b class="ok-text">✓ 晋级</b>{% else %}<span class="muted">未晋级</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if e.tie_note %}<p class="muted" style="font-size:.85rem;margin:4px 0 0">{{ e.tie_note }}</p>{% endif %}
+  </div>
+  {% endfor %}
 </div>
 
 {% if plan.allocation %}
