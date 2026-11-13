@@ -33,6 +33,7 @@
   </p>
 </div>
 {% endfor %}
+{% set onb_key = "judge" %}{% include "_onboarding.html" %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};

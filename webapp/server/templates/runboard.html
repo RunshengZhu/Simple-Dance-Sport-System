@@ -27,6 +27,7 @@
   <span class="muted" style="margin-left:8px">点击启用/禁用（禁用裁判不可评分，收齐判定按启用裁判）</span>
 </div>
 <div id="board"><div class="card muted">加载中…</div></div>
+{% set onb_key = "admin" %}{% include "_onboarding.html" %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id }};

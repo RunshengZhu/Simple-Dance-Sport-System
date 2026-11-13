@@ -96,6 +96,7 @@
 </div>
 
 {% if ev.status != 'pending' %}{{ roster_card() }}{% endif %}
+{% set onb_key = "admin" %}{% include "_onboarding.html" %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id }}, CEID = {{ ev.id }};

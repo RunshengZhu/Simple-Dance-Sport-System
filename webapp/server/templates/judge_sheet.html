@@ -114,6 +114,7 @@
 </div>
 <p class="muted">提交后如场次未关闭可再次修改提交。</p>
 </div>
+{% set onb_key = "judge" %}{% include "_onboarding.html" %}
 {% endblock %}
 {% block scripts %}
 var CEID = {{ ev.id }}, DANCE = {{ dance|tojson }}, SKATING = {{ is_skating|tojson }}, SCORE = {{ is_score|tojson }}, N = {{ n }}, CHECKED = {{ checked|length }};

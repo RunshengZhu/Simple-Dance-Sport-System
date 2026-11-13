@@ -82,6 +82,7 @@
 {% endfor %}
 {% if not items %}<div class="card"><p class="muted">暂无场次。</p></div>{% endif %}
 <p class="muted" id="staff-empty" style="display:none">该筛选条件下没有场次。</p>
+{% set onb_key = role %}{% include "_onboarding.html" %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
