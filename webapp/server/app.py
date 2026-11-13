@@ -3436,7 +3436,9 @@ async def api_confirm(project_code: str, round_no: int, request: Request = None)
     if ca and comp["id"] != ca["comp_id"]:
         raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
     conn = db.get_db()
-    # R91 容量校验：确认数不得超过下一轮总容量（场数 × 每场上限）
+    # R123：移除 R91 容量硬校验——同分并列超额（实际晋级 > 本轮名额合计）时，
+    # 确认人数合法地超过「场数 × 编排每场上限」；蛇形分配自动分到各场，
+    # 超出的单场人数不影响该轮自身的晋级名额判定。编排 cap 仅是生成时的建议值。
     next_round = db.rows(conn.execute(
         "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
         (comp["id"], project_code, round_no + 1)))
@@ -3444,17 +3446,6 @@ async def api_confirm(project_code: str, round_no: int, request: Request = None)
         raise HTTPException(status_code=400,
                             detail="赛事 {0} 中项目 {1} 第 {2} 轮之后没有下一轮场次，无法回填（请核对赛事与项目，或在赛程编排生成后续轮次）".format(
                                 comp["id"], project_code, round_no + 1))
-    sgc = db.rowdict(conn.execute(
-        "SELECT cap FROM schedule_gen_config WHERE competition_id=? AND project_code=?",
-        (comp["id"], project_code)).fetchone()) or db.rowdict(conn.execute(
-        "SELECT cap FROM schedule_gen_config WHERE competition_id=? AND project_code=''",
-        (comp["id"],)).fetchone())
-    cap_n = sgc["cap"] if sgc else 12
-    capacity = len(next_round) * cap_n
-    if len(advancing) > capacity:
-        raise HTTPException(status_code=400,
-                            detail="确认人数 {0} 超过下一轮容量 {1}（{2} 场 × 每场 {3}）".format(
-                                len(advancing), capacity, len(next_round), cap_n))
     filled = confirm_advancement(comp["id"], project_code, round_no, advancing)
     sse.bus.publish(comp["id"], "schedule_changed", {"filled": filled})
     return {"ok": True, "filled": filled}
