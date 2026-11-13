@@ -1511,22 +1511,19 @@ def _display_names(conn, competition_id: int, project_code=None):
         if r["number"] in out:
             continue   # 同号同项目多行（历史数据）取首行
         out[r["number"]] = disp
-    # R112h 最终回退：单人项目报名行可能统一挂在前缀项目下（P16 桑巴决赛的选手行在 P14/P06 等
-    # ——单人拆项时 competitors 无 P15/P16/P17 行），精确/前缀均查空时按背号全赛事聚合。
-    # 背号一人一号 → name 可信；partner 跨项目不可信（双人行的搭档不等于单人项目的搭档），
-    # 仅当该号所有行 partner 一致时才组合，否则只显示本人。
-    if not out:
-        by_num = {}
+    # R112h/R113b 最终回退（增量补齐）：单人拆项时部分选手在此 project 无报名行（如 1406 只有
+    # P06 双人行但参加 P14-P17 单人场）——精确/前缀命中的行集之外，用全赛事姓名按号补齐
+    # （背号一人一号 name 可信；partner 跨项目不可信，只显本人）。
+    if project_code is not None:
+        name_by_num = {}
         for r in db.rows(conn.execute(
-                "SELECT number, name, partner FROM competitors WHERE competition_id=?", (competition_id,))):
-            d0 = by_num.setdefault(str(r["number"]), {"names": set(), "partners": set()})
-            if (r["name"] or "").strip():
-                d0["names"].add(r["name"].strip())
-            if (r["partner"] or "").strip():
-                d0["partners"].add(r["partner"].strip())
-        for num0, d0 in by_num.items():
-            n0 = sorted(d0["names"])[0] if d0["names"] else ""
-            out[num0] = n0   # 只显本人：该号在此 project 无任何报名行，partner 跨项目不可信
+                "SELECT number, name FROM competitors WHERE competition_id=? AND name!=''", (competition_id,))):
+            n0 = (r["name"] or "").strip()
+            if n0 and r["number"] not in name_by_num:
+                name_by_num[r["number"]] = n0
+        for num0, n0 in name_by_num.items():
+            if num0 not in out:
+                out[num0] = n0
     return out
 
 
@@ -4647,7 +4644,9 @@ async def api_public_lookup(competition_id: int, num: str = "", name: str = "", 
                          "dance": ev["dances"], "scoring_type": ev["scoring_type"],
                          "status": ev["status"], "status_label": st_names.get(ev["status"], ev["status"]),
                          "advancement": adv, "rank": rank, "total_score": total,
-                         "partner": partner_disp})
+                         # R113b 单人拆项场次（场次名含「单人」）无搭档概念，唯一搭档回退
+                         # 会把双人项目的搭档误带进来 → 强制空
+                         "partner": "" if "单人" in (ev["name"] or "") else partner_disp})
 
     projects = sorted({ev["project_code"] for ev in ev_rows})
     # 展示名：跨项目聚合（多行取第一个非空名）
