@@ -294,23 +294,34 @@ if (SKATING) {
       row.querySelector('.mark-hint').textContent = cb.checked ? '已给 Mark · 点击取消' : '点击给 Mark';
     });
     var cnt = document.getElementById('mark-count');
-    if (cnt) cnt.textContent = document.querySelectorAll('input.val:checked').length;
-    var done = document.querySelectorAll('input.val:checked').length;
+    if (cnt) cnt.textContent = document.querySelectorAll('.mark-row:not(.off) input.val:checked').length;
+    var done = document.querySelectorAll('.mark-row:not(.off) input.val:checked').length;   // R132 只计已检录行的勾选（草稿恢复的旧勾选不计）
     document.getElementById('progress').textContent = '已选 ' + done + ' / ' + CHECKED;
     var msgEl = document.getElementById('msg');   // R60：拦截提示随进度刷新/清除
     if (msgEl && msgEl.className === 'err') {
       if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
       else msgEl.textContent = '还有 ' + (CHECKED - done) + ' 支队伍未给 Mark';
     }
-    // R108c：Mark 预赛需勾满晋级名额才可提交（不足=提交键置灰）
+    // R108c/R130d/R132：Mark 需勾满 min(晋级名额, 已检录数) 才可提交——检录不足名额时按实际人数晋级；
+    // 草稿恢复/检录变化导致的未检录行勾选一律清零（计数只算已检录行）
     var ADV = {{ ev.advancement_count or 0 }};
     var sub = document.getElementById('submit');
+    document.querySelectorAll('.mark-row.off input.val:checked').forEach(function (cb) {
+      cb.checked = false;   // 未检录行不允许保留勾选（草稿恢复残留）
+    });
     if (sub && ADV > 0) {
-      var lack = ADV - done;
+      var need = Math.min(ADV, CHECKED);
+      var lack = need - done;
       sub.disabled = lack > 0;
-      sub.title = lack > 0 ? '还需勾选 ' + lack + ' 名（晋级名额 ' + ADV + '）' : '';
-      var note = document.getElementById('adv-note');
-      if (note) note.textContent = lack > 0 ? '（还差 ' + lack + ' 人满足名额 ' + ADV + '）' : '（名额 ' + ADV + ' 已满足）';
+      if (CHECKED < ADV) {
+        sub.title = lack > 0 ? '检录 ' + CHECKED + ' 人不足名额 ' + ADV + '，勾满全部检录选手即可提交' : '';
+        var note0 = document.getElementById('adv-note');
+        if (note0) note0.textContent = '（检录 ' + CHECKED + ' 人不足名额 ' + ADV + '——全部检录选手均晋级，勾满 ' + need + ' 人即可提交）';
+      } else {
+        sub.title = lack > 0 ? '还需勾选 ' + lack + ' 名（晋级名额 ' + ADV + '）' : '';
+        var note = document.getElementById('adv-note');
+        if (note) note.textContent = lack > 0 ? '（还差 ' + lack + ' 人满足名额 ' + ADV + '）' : '（名额 ' + ADV + ' 已满足）';
+      }
     }
   }
   var ADV_READY = document.querySelectorAll('.mark-row input.val:checked').length > 0;   // 已有回显则不默认全选
@@ -389,6 +400,10 @@ function refreshOffState() {
       ' · 盲评原则：评分页仅显示背番号' +
       (N - d.checked_n > 0 ? ' · 未检录 ' + (N - d.checked_n) + ' 人置灰不可评' : '');
     CHECKED = d.checked_n;
+    /* R132：检录变化后重渲门禁/进度（renderMark/renderSkating/renderScore 由各分支定义） */
+    if (typeof renderMark === 'function') renderMark();
+    else if (typeof renderSkating === 'function') renderSkating();
+    else if (typeof renderScore === 'function') renderScore();
   }).catch(function () {});
 }
 connectSSE('/api/events/' + CID + '/stream', {
