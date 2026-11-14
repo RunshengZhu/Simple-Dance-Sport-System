@@ -1149,20 +1149,27 @@ async def judge_home(request: Request):
     s = require_judge(request)
     comp = _current_competition(request)
     assignments = []
+    schedule = []   # R131：完整赛程（全部场次，可评的带舞种入口）
     if comp:
+        disabled = _disabled_judges(comp["id"])
+        j_disabled = s["judge_code"] in disabled
         evs = db.rows(db.get_db().execute(
-            "SELECT * FROM events WHERE competition_id=? AND status='scoring' "
+            "SELECT * FROM events WHERE competition_id=? "
             "ORDER BY COALESCE(run_seq, 9999), code", (comp["id"],)))
         for ev in evs:
             ev["dances"] = dances_of(ev["id"])
-            st_list = _judge_sheet_status(ev["id"], s["judge_code"])
-            ev["my_done"] = st_list
-            # R112f 快速进入：直达第一个未提交的舞种（全提交则回第一舞种查看）
-            ev["first_undone"] = next((d["dance"] for d in st_list if not d["submitted"]),
-                                      st_list[0]["dance"] if st_list else None)
-            assignments.append(ev)
+            ev["run_seq"] = ev["run_seq"] if "run_seq" in ev.keys() else None
+            if ev["status"] == "scoring" and not j_disabled and ev["dances"]:
+                st_list = _judge_sheet_status(ev["id"], s["judge_code"])
+                ev["my_done"] = st_list
+                # R112f 快速进入：直达第一个未提交的舞种（全提交则回第一舞种查看）
+                ev["first_undone"] = next((d["dance"] for d in st_list if not d["submitted"]),
+                                          st_list[0]["dance"] if st_list else None)
+                assignments.append(ev)
+            schedule.append(ev)
     return templates.TemplateResponse(request, "judge_home.html", {
-        "comp": comp, "judge_code": s["judge_code"], "assignments": assignments})
+        "comp": comp, "judge_code": s["judge_code"], "assignments": assignments,
+        "schedule": schedule, "j_disabled": j_disabled})
 
 
 def _judge_sheet_status(event_id, judge_code):

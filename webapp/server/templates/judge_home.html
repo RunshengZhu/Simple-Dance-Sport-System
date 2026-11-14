@@ -20,17 +20,31 @@
   </div>
 </div>
 {% endif %}
-{% for a in assignments %}
-<div class="card">
+<h2>完整赛程 <span class="muted">评分中的场次可点击进入打分</span></h2>
+{% for a in schedule %}
+<div class="card {% if a.status == 'scoring' %}jh-scoreable{% endif %}">
   <h2><span class="st-seq">{{ a.run_seq or "—" }}</span>{{ a.name }}
-    <span class="tag acc">评分中</span>
+    {% if a.status == 'scoring' %}<span class="tag acc">● 评分中</span>
+    {% elif a.status == 'published' %}<span class="tag ok">已发布</span>
+    {% elif a.status == 'calculated' %}<span class="tag acc">已计算</span>
+    {% else %}<span class="tag gray">待开始</span>{% endif %}
     <span class="muted">第{{ a.round }}轮 · <span class="ev-code">{{ a.code }}</span></span></h2>
+  {% if a.status == 'scoring' and a.dances and not j_disabled %}
   <p>舞种：
   {% for d in a.dances %}
     <a class="btn" href="/judge/competition-events/{{ a.id }}/dances/{{ d }}">{{ d }}
       {% for st in a.my_done %}{% if st.dance == d and st.submitted %}✓{% endif %}{% endfor %}</a>
   {% endfor %}
   </p>
+  {% elif a.status == 'scoring' and j_disabled %}
+  <p class="muted">⛔ 您已被管理员停用本场评分。</p>
+  {% elif a.status == 'pending' %}
+  <p class="muted">待开赛——主持人/管理员开赛后可打分。</p>
+  {% elif a.status == 'calculated' %}
+  <p class="muted">成绩整理中。</p>
+  {% elif a.status == 'published' %}
+  <p class="muted">成绩已公示。</p>
+  {% endif %}
 </div>
 {% endfor %}
 {% set onb_key = "judge" %}{% include "_onboarding.html" %}
