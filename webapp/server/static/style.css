@@ -1097,10 +1097,18 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 /* ===== R129 评分页舞种切换导航（多舞种漏评防线）===== */
 .dance-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 10px; }
 .dn-label { color: var(--muted, #777); font-size: 13px; font-weight: 700; }
-.dn-chip { display: inline-flex; align-items: center; gap: 4px; padding: 7px 14px; border-radius: 8px;
-  font-weight: 700; font-size: 14px; text-decoration: none;
-  background: var(--card, #fff); border: 1px solid var(--line, #ddd); color: var(--ink, #222); }
-.dn-chip.cur { background: var(--acc, #c0392b); border-color: var(--acc, #c0392b); color: #fff; }
-.dn-chip.done { border-color: #2ecc71; color: #1e8e4e; }
-.dn-chip.todo { border-color: var(--acc, #c0392b); color: var(--acc, #c0392b);
-  background: var(--acc-tint, #f7f1ef); font-weight: 800; }
+.judge-sheet .dance-nav .dn-chip {
+  display: inline-flex !important; align-items: center; gap: 4px; padding: 8px 16px;
+  border-radius: 8px; font-weight: 700; font-size: 14px; text-decoration: none;
+  background: #ffffff; border: 2px solid #cccccc; color: #1f2937;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08); -webkit-appearance: none; appearance: none;
+}
+.judge-sheet .dance-nav .dn-chip.cur {
+  background: #c0392b; border: 2px solid #c0392b; color: #ffffff;
+}
+.judge-sheet .dance-nav .dn-chip.done {
+  background: #ffffff; border: 2px solid #2ecc71; color: #1e8e4e;
+}
+.judge-sheet .dance-nav .dn-chip.todo {
+  background: #fdf3f1; border: 2px solid #c0392b; color: #c0392b; font-weight: 800;
+}

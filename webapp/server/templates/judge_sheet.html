@@ -21,9 +21,9 @@
   <span class="dn-label">本场舞种：</span>
   {% for d in dance_nav %}
   {% if d.cur %}
-  <span class="dn-chip cur">{{ d.name }}{% if d.submitted %} ✓{% endif %}</span>
+  <span class="dn-chip cur" id="dn-cur">{{ d.name }}{% if d.submitted %} ✓ 已提交{% else %} · 打分中{% endif %}</span>
   {% else %}
-  <a class="dn-chip {{ 'done' if d.submitted else 'todo' }}" href="/judge/competition-events/{{ ev.id }}/dances/{{ d.name }}">{{ d.name }} {% if d.submitted %}✓ 已评{% else %}● 待评{% endif %}</a>
+  <a class="dn-chip {{ 'done' if d.submitted else 'todo' }}" href="/judge/competition-events/{{ ev.id }}/dances/{{ d.name }}">{{ d.name }} {% if d.submitted %}✓ 已提交{% else %}● 待提交{% endif %}</a>
   {% endif %}
   {% endfor %}
 </div>
@@ -121,7 +121,7 @@
 
 <div class="submit-bar">
   <span id="progress" class="muted"></span>
-  <button class="btn big" id="submit" onclick="submitSheet()" {% if judge_disabled %}disabled title="已被管理员禁用评分"{% endif %}>提交{% if is_skating %}名次表{% elif is_score %}评分表{% else %}Mark 名单{% endif %}</button>
+  <button class="btn big" id="submit" onclick="submitSheet()" {% if judge_disabled %}disabled title="已被管理员禁用评分"{% endif %}>提交「{{ dance }}」{% if is_skating %}名次表{% elif is_score %}评分表{% else %}Mark{% endif %}（当前舞种）</button>
   <span id="msg"></span>
 </div>
 <p class="muted">提交后如场次未关闭可再次修改提交。</p>
@@ -356,7 +356,9 @@ async function submitSheet() {
   try {
     var r = await api('PUT', '/api/judge/competition-events/' + CEID + '/dances/' + encodeURIComponent(DANCE) + '/sheet', {values: collect()});
     el.className = 'ok';
-    el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判');
+    el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判') + '——仅当前舞种「' + DANCE + '」，请切换舞种继续';
+    var dnCur = document.getElementById('dn-cur');
+    if (dnCur) dnCur.innerHTML = DANCE + ' ✓ 已提交';
     try { sessionStorage.removeItem('sheet:' + CEID + ':' + encodeURIComponent(DANCE)); } catch (err) {}
   } catch (e) { el.className = 'err'; el.textContent = e.message; }
 }
