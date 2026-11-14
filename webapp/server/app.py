@@ -1168,13 +1168,22 @@ async def judge_home(request: Request):
 def _judge_sheet_status(event_id, judge_code):
     conn = db.get_db()
     dances = dances_of(event_id)
-    roster_list = roster(event_id)
+    ev = db.rowdict(conn.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone())
+    kind = scoring_kind(ev)
+    # R130 submitted 与收齐判定同语义：
+    # - Mark 制：有任意提交即完成（裁判只勾名额数，未勾选手 0 票是合法状态）
+    # - 顺位/评分制：全部已检录选手都有记录（缺一不可，PUT 校验保证）
+    checked_n = len(checked_roster(event_id))
     done = []
     for d in dances:
         n = conn.execute(
             "SELECT COUNT(*) c FROM score_records WHERE event_id=? AND dance_name=? AND judge_code=?",
             (event_id, d, judge_code)).fetchone()["c"]
-        done.append({"dance": d, "submitted": n >= len(roster_list) and len(roster_list) > 0})
+        if kind == "mark":
+            submitted = n >= 1
+        else:
+            submitted = checked_n > 0 and n >= checked_n
+        done.append({"dance": d, "submitted": submitted})
     return done
 
 
