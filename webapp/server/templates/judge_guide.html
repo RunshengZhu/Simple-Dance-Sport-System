@@ -19,8 +19,9 @@
   评分页顶部还有「← 上一场 / 下一场 →」导航和「● 正在评分」按钮随时切换。</p>
 </div>
 
-<p class="note" style="border-color:var(--acc,#c0392b)"><b>先试一下：</b>本页下方有<b>可直接点按的评分界面演练</b>（Mark 场 + 决赛顺位场各一），
-无需登录、不会真实提交，刷新页面即重置。</p>
+<p class="note" style="border-color:var(--acc,#c0392b)"><b>先试一下：</b>本页下方有<b>可直接点按的评分界面演练</b>
+  （Mark 场 + 决赛顺位场 + <b>多舞种两项舞场</b>各一）。无需登录、不会真实提交，刷新页面即重置。
+  <b>关键规则：多舞种场次（两项/三项舞）的每个舞种都需要单独提交一次</b>——评完一个舞种后请用舞种切换按钮进入下一个舞种继续，重复提交可覆盖。</p>
 
 <div class="card" style="border-color:var(--gold);text-align:center">
   <b>试用评分赛（扫码进入，与真实评分完全一致）</b>
@@ -61,6 +62,7 @@
   <div class="trial-tabs">
     <button type="button" class="trial-tab active" data-t="mark">Mark 制 · 预赛（名额 4）</button>
     <button type="button" class="trial-tab" data-t="skating">顺位法 · 决赛</button>
+    <button type="button" class="trial-tab" data-t="multi">多舞种 · 两项舞（每舞种单独提交）</button>
   </div>
 
   <div id="trial-mark">
@@ -93,6 +95,21 @@
     <div class="trial-submit">
       <span id="tskate-msg" class="tmuted"></span>
       <button type="button" class="tbtn-primary" id="tskate-submit" disabled>提交名次表（试用）</button>
+    </div>
+  </div>
+
+  <div id="trial-multi" hidden>
+    <p class="muted" style="margin:6px 0"><b>两项舞场次（平四 + 伦巴）：</b>每个舞种都是<b>独立的一页评分</b>——
+    每个舞种都需要<b>单独提交一次</b>（重复提交可覆盖）。用下方舞种切换按钮模拟切换，两个舞种都提交后才算完成本场。</p>
+    <div class="trial-tools">
+      <button type="button" class="tbtn active" data-md="平四">平四 <span id="tm-st-平四" class="tm-st"></span></button>
+      <button type="button" class="tbtn" data-md="伦巴">伦巴 <span id="tm-st-伦巴" class="tm-st"></span></button>
+      <button type="button" class="tbtn ghost" onclick="tMultiReset()">全部重置</button>
+    </div>
+    <div class="trial-list" id="tmulti-list"></div>
+    <div class="trial-submit">
+      <span id="tmulti-msg" class="tmuted"></span>
+      <button type="button" class="tbtn-primary" id="tmulti-submit" disabled>提交「平四」Mark（当前舞种）</button>
     </div>
   </div>
   <p class="muted" style="margin:10px 0 0">↑ 以上均为演练界面——<b>不会向系统提交任何数据</b>；刷新页面即恢复初始状态。真实场次以工作台入口进入的评分页为准，操作方式与此完全相同。</p>
@@ -163,6 +180,8 @@
       t.classList.add("active");
       document.getElementById("trial-mark").hidden = t.dataset.t !== "mark";
       document.getElementById("trial-skating").hidden = t.dataset.t !== "skating";
+      document.getElementById("trial-multi").hidden = t.dataset.t !== "multi";
+      document.getElementById("trial-multi").hidden = t.dataset.t !== "multi";
     });
   });
 
@@ -291,10 +310,129 @@
     })(r);
   }
   document.getElementById("tskate-submit").addEventListener("click", function () {
-    var m = document.getElementById("tskate-msg");
+    var m = document.getElementById('tskate-msg');
     m.className = "tok";
     m.textContent = "✓ 已模拟提交——试用模式，未向系统写入任何数据。刷新页面可重新练习。";
   });
   sRender();
+
+  /* ---- 多舞种演练：每舞种独立提交，重复提交覆盖 ---- */
+  var mState = {"平四": {}, "伦巴": {}};
+  var mSubmitted = {"平四": false, "伦巴": false};
+  var mCur = "平四";
+  var mList2 = document.getElementById("tmulti-list");
+  var mPlayers = ["T01", "T02", "T03", "T04"];   // R129c：自有数组（不依赖 skating 块变量——var 提升致 undefined）
+  mPlayers.forEach(function (n) {
+    var row = document.createElement("div");
+    row.className = "trial-row";
+    row.dataset.n = n;
+    row.innerHTML = '<span class="trial-box"></span><span class="trial-num">' + n + '</span><span class="trial-hint">点击给 Mark</span>';
+    row.addEventListener("click", function () {
+      mState[mCur][n] = !mState[mCur][n];
+      tMultiRender();
+    });
+    mList2.appendChild(row);
+  });
+  function tMultiRender() {
+    mList2.querySelectorAll(".trial-row").forEach(function (row) {
+      var n = row.dataset.n;
+      var on = !!mState[mCur][n];
+      row.classList.toggle("checked", on);
+      row.querySelector(".trial-hint").textContent = on ? "已给 Mark · 点击取消" : "点击给 Mark";
+    });
+    document.querySelectorAll(".trial-tools .tbtn[data-md]").forEach(function (btn) {
+      var d = btn.dataset.md;
+      btn.classList.toggle("active", d === mCur);
+      var stEl = document.getElementById("tm-st-" + d);
+      if (stEl) stEl.textContent = mSubmitted[d] ? "✓ 已提交" : "";
+    });
+    var cnt = mPlayers.filter(function (n) { return mState[mCur][n]; }).length;
+    var sub = document.getElementById("tmulti-submit");
+    sub.textContent = '提交「' + mCur + '」Mark（当前舞种）';
+    sub.disabled = cnt < 2;
+    var msg = document.getElementById("tmulti-msg");
+    if (mSubmitted[mCur]) {
+      msg.className = "tok";
+      msg.textContent = "「" + mCur + "」已提交" + (mSubmitted["平四"] && mSubmitted["伦巴"] ? "——两个舞种都已完成 ✓" : "——请切换舞种继续");
+    } else { msg.className = "tmuted"; msg.textContent = ""; }
+  }
+  document.querySelectorAll(".trial-tools .tbtn[data-md]").forEach(function (btn) {
+    btn.addEventListener("click", function () { mCur = btn.dataset.md; tMultiRender(); });
+  });
+  document.getElementById("tmulti-submit").addEventListener("click", function () {
+    mSubmitted[mCur] = true;
+    tMultiRender();
+  });
+  window.tMultiReset = function () {
+    mState = {"平四": {}, "伦巴": {}};
+    mSubmitted = {"平四": false, "伦巴": false};
+    tMultiRender();
+  };
+
+  /* ---- 多舞种演练：每舞种独立提交，重复提交覆盖 ---- */
+  var mState = {"平四": {}, "伦巴": {}};
+  var mSubmitted = {"平四": false, "伦巴": false};
+  var mCur = "平四";
+  var mList2 = document.getElementById("tmulti-list");
+  var mPlayers = ["T01", "T02", "T03", "T04"];
+  mPlayers.forEach(function (n) {
+    var row = document.createElement("div");
+    row.className = "trial-row";
+    row.dataset.n = n;
+    row.innerHTML = '<span class="trial-box"></span><span class="trial-num">' + n + '</span><span class="trial-hint">点击给 Mark</span>';
+    row.addEventListener("click", function () {
+      mState[mCur][n] = !mState[mCur][n];
+      tMultiRender();
+    });
+    mList2.appendChild(row);
+  });
+  function tMultiRender() {
+    mList2.querySelectorAll(".trial-row").forEach(function (row) {
+      var n = row.dataset.n;
+      var on = !!mState[mCur][n];
+      row.classList.toggle("checked", on);
+      row.querySelector(".trial-hint").textContent = on ? "已给 Mark · 点击取消" : "点击给 Mark";
+    });
+    document.querySelectorAll(".trial-tools .tbtn[data-md]").forEach(function (b) {
+      var d = b.dataset.md;
+      b.classList.toggle("active", d === mCur);
+      document.getElementById("tm-st-" + d).textContent = mSubmitted[d] ? "✓ 已提交" : "";
+    });
+    var cnt = mPlayers.filter(function (n) { return mState[mCur][n]; }).length;
+    var sub = document.getElementById("tmulti-submit");
+    sub.textContent = '提交「' + mCur + '」Mark（当前舞种）';
+    sub.disabled = cnt < 2;
+    var msg = document.getElementById("tmulti-msg");
+    if (mSubmitted[mCur]) {
+      msg.className = "tok";
+      msg.textContent = "「" + mCur + "」已提交" + (mSubmitted["平四"] && mSubmitted["伦巴"] ? "——两个舞种都已完成 ✓" : "——请切换舞种继续");
+    } else {
+      msg.className = "tmuted";
+      msg.textContent = "";
+    }
+  }
+  document.querySelectorAll(".trial-tools .tbtn[data-md]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      mCur = b.dataset.md;
+      tMultiRender();
+    });
+  });
+  document.getElementById("tmulti-submit").addEventListener("click", function () {
+    mSubmitted[mCur] = true;
+    tMultiRender();
+  });
+  window.tMultiReset = function () {
+    mState = {"平四": {}, "伦巴": {}};
+    mSubmitted = {"平四": false, "伦巴": false};
+    tMultiRender();
+  };
+  /* tab 切换含 multi */
+  var origTabHandler = null;
+  document.querySelectorAll(".trial-tab").forEach(function (t) {
+    t.addEventListener("click", function () {
+      document.getElementById("trial-multi").hidden = t.dataset.t !== "multi";
+      if (t.dataset.t === "multi") tMultiRender();
+    });
+  });
 })();
 {% endblock %}
