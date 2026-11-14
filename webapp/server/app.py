@@ -1197,6 +1197,10 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         return {"id": e["id"], "code": e["code"], "status": e["status"],
                 "href": "/judge/competition-events/{0}/dances/{1}".format(e["id"], ds[0]) if ds and e["status"] == "scoring" else "",
                 "active": bool(ds) and e["status"] == "scoring"}
+    # R129 舞种切换导航：本场全部舞种 + 每舞种提交状态（多舞种漏评防线）
+    ev_dances = dances_of(ceid)
+    my_status = {d["dance"]: d["submitted"] for d in _judge_sheet_status(ceid, s["judge_code"])}
+    dance_nav = [{"name": d, "submitted": my_status.get(d, False), "cur": d == dance} for d in ev_dances]
     prev_ev = _nav(all_evs[idx - 1]) if idx and idx > 0 else None
     next_ev = _nav(all_evs[idx + 1]) if idx is not None and idx + 1 < len(all_evs) else None
     # R112f 正在评分场次直达（非本场时导航栏显示）
@@ -1229,7 +1233,7 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         "prev_ev": prev_ev, "next_ev": next_ev,
         "seq_idx": seq_idx, "seq_total": seq_total,
         "judge_disabled": judge_disabled, "scoring_nav": scoring_nav,
-        "trial": bool(comp.get("is_trial")),
+        "trial": bool(comp.get("is_trial")), "dance_nav": dance_nav,
     })
 
 

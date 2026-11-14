@@ -16,6 +16,18 @@
   {% else %}<span class="sn-btn off" title="该场次不在评分中">{{ next_ev.code }} →</span>{% endif %}
   {% else %}<span class="sn-btn off">下一场 →</span>{% endif %}
 </div>
+{% if dance_nav and dance_nav|length > 1 %}
+<div class="dance-nav">
+  <span class="dn-label">本场舞种：</span>
+  {% for d in dance_nav %}
+  {% if d.cur %}
+  <span class="dn-chip cur">{{ d.name }}{% if d.submitted %} ✓{% endif %}</span>
+  {% else %}
+  <a class="dn-chip {{ 'done' if d.submitted else 'todo' }}" href="/judge/competition-events/{{ ev.id }}/dances/{{ d.name }}">{{ d.name }} {% if d.submitted %}✓ 已评{% else %}● 待评{% endif %}</a>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
 {% if judge_disabled %}<p class="err" style="padding:10px 12px;border-radius:10px">⛔ 您已被管理员禁用评分，只能查看，无法提交。</p>{% endif %}
 <h1>{{ dance }} <span class="muted">{{ ev.name }} / {{ ev.scoring_type }}</span>
   <button type="button" class="btn small secondary" id="guide-btn" style="margin-left:8px">? 评分说明</button></h1>

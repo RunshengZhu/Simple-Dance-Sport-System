@@ -1093,3 +1093,14 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
   border-radius: 8px; padding: 8px 10px; }
 
 .rb-jcode { font-size: 10px; opacity: .75; margin-left: 2px; font-weight: 500; }
+
+/* ===== R129 评分页舞种切换导航（多舞种漏评防线）===== */
+.dance-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 10px; }
+.dn-label { color: var(--muted, #777); font-size: 13px; font-weight: 700; }
+.dn-chip { display: inline-flex; align-items: center; gap: 4px; padding: 7px 14px; border-radius: 8px;
+  font-weight: 700; font-size: 14px; text-decoration: none;
+  background: var(--card, #fff); border: 1px solid var(--line, #ddd); color: var(--ink, #222); }
+.dn-chip.cur { background: var(--acc, #c0392b); border-color: var(--acc, #c0392b); color: #fff; }
+.dn-chip.done { border-color: #2ecc71; color: #1e8e4e; }
+.dn-chip.todo { border-color: var(--acc, #c0392b); color: var(--acc, #c0392b);
+  background: var(--acc-tint, #f7f1ef); font-weight: 800; }
