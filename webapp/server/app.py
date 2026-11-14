@@ -1730,15 +1730,18 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
     is_final = "决赛" in ev_name
     kind = type if type != "auto" else ("mark" if ("Mark制" in (ev["scoring_type"] or "") and not is_final) else "rank")
 
+    disp_names = _display_names(conn, ev["competition_id"], ev["project_code"])
+
     def comp_info(num):
+        # R130c：姓名统一走 _display_names（双人=「张三 / 李四」；单人拆项回退只显本人）；单位单独查
         r = conn.execute(
-            "SELECT name, unit FROM competitors WHERE competition_id=? AND number=? AND project_code=?",
+            "SELECT unit FROM competitors WHERE competition_id=? AND number=? AND project_code=?",
             (ev["competition_id"], str(num), ev["project_code"])).fetchone()
         if not r:
             r = conn.execute(
-                "SELECT name, unit FROM competitors WHERE competition_id=? AND number=?",
+                "SELECT unit FROM competitors WHERE competition_id=? AND number=?",
                 (ev["competition_id"], str(num))).fetchone()
-        return ((r["name"] or "") if r else "", (r["unit"] or "") if r else "")
+        return (disp_names.get(str(num), ""), (r["unit"] or "") if r else "")
 
     story = []
     if kind == "mark":
@@ -1760,14 +1763,15 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
                 continue
             story.append(Paragraph("舞种: " + d, ParagraphStyle("H", fontName=fname, fontSize=13, spaceAfter=6)))
             overall_by_num = {str(r0["competitor_number"]): r0 for r0 in res.get("overall_results", [])}
-            rows = [["排名", "背番号"] + judges + ["小计", "晋级"]]
+            rows = [["排名", "背番号", "选手"] + judges + ["小计", "晋级"]]
             for num in sorted(drec.keys(), key=num_key):
                 rank = ""
                 for r0 in res["dance_results"].get(d, []):
                     if str(r0["competitor_number"]) == num:
                         rank = r0["rank"]
                         break
-                row = [str(rank), str(num)]
+                nm, _un = comp_info(num)
+                row = [str(rank), str(num), nm or "选手" + str(num)]
                 ticks = 0
                 for j in judges:
                     rec = drec.get(num, {}).get(j)
@@ -1781,7 +1785,7 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
                 row.append("√" if (ov and (ov.get("advancement_status") or (
                     adv_n and is_final and int(ov["rank"]) <= adv_n))) else "")
                 rows.append(row)
-            table = Table(rows, colWidths=[40, 55] + [38] * len(judges) + [45, 42])
+            table = Table(rows, colWidths=[40, 55] + [38] * len(judges) + [45, 42, 130])
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -1805,11 +1809,13 @@ async def api_export_event_pdf(ceid: int, request: Request = None, type: str = "
         for r0 in sorted(res["overall_results"], key=lambda x: x["rank"]):
             num = str(r0["competitor_number"])
             nm, un = comp_info(num)
+            if not nm:
+                nm = "选手" + num
             if adv_n > 0:
                 adv_txt = "√" if int(r0["rank"]) <= adv_n else ""
             else:
                 adv_txt = "√" if r0.get("advancement_status") else ""
-            rows.append([str(r0["rank"]), num, nm or ("选手" + num), un, adv_txt])
+            rows.append([str(r0["rank"]), num, nm, un, adv_txt])
         table = Table(rows, colWidths=[50, 70, 150, 150, 95])
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
