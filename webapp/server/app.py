@@ -1290,8 +1290,19 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
 
 
 # ------------------------------------------------------------------ R135 调试评分（管理员代打，仅试用/调试赛）
-def _debug_target_ok(comp):
-    return bool(comp.get("is_trial") or comp.get("is_debug"))
+def _debug_target_ok(comp, request=None):
+    """R135 调试能力口径：试用赛/调试专用赛一律可用；赛事管理员对自己的绑定赛事也可调试
+    （调试能力随赛事管理员角色开放，所有调试写操作均有 audit 留痕）。"""
+    if comp.get("is_trial") or comp.get("is_debug"):
+        return True
+    if request is not None:
+        ca = _compadmin(request)
+        if ca and ca["comp_id"] == comp["id"]:
+            return True
+        s = _session(request)
+        if s and s.get("role") == "admin" and not s.get("user_id"):
+            return True   # 总管理员：任意赛事均可调试
+    return False
 
 
 @app.post("/api/events/{competition_id}/debug-generate")
@@ -1300,8 +1311,8 @@ async def api_debug_generate(competition_id: int, request: Request = None):
     生成后按收齐逻辑自动计算（不自动发布）。"""
     s = require_admin(request)
     comp = _comp_or_404(competition_id)
-    if not _debug_target_ok(comp):
-        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛（正式赛事禁止生成假评分）")
+    if not _debug_target_ok(comp, request):
+        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛/赛事管理员本赛操作")
     body = await request.json()
     ceid = int(body.get("ceid") or 0)
     ev = _event_or_404(ceid)
@@ -1355,8 +1366,8 @@ async def debug_judge_page(competition_id: int, ceid: int, judge: str, dance: st
     """调试浮层：以指定裁判身份渲染与裁判页完全一致的评分 UI（提交走 debug-sheet）。"""
     require_admin(request)
     comp = _comp_or_404(competition_id)
-    if not _debug_target_ok(comp):
-        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛")
+    if not _debug_target_ok(comp, request):
+        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛/赛事管理员本赛操作")
     ev = _event_or_404(ceid)
     if ev["competition_id"] != competition_id:
         raise HTTPException(status_code=400, detail="场次不属于该赛事")
@@ -1389,8 +1400,8 @@ async def api_debug_sheet(competition_id: int, request: Request = None):
     """调试代打提交：以指定裁判身份写入评分（校验与裁判提交一致），写后按收齐自动计算。"""
     s = require_admin(request)
     comp = _comp_or_404(competition_id)
-    if not _debug_target_ok(comp):
-        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛")
+    if not _debug_target_ok(comp, request):
+        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛/赛事管理员本赛操作")
     body = await request.json()
     ceid = int(body.get("ceid") or 0)
     judge = str(body.get("judge") or "").strip()
