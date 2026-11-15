@@ -17,11 +17,11 @@
 </div>
 {% endif %}
 {% if payload %}
-<div class="anchor-bar">{% for p in payload %}<a href="#ev-{{ p.ev.code }}" class="anchor-chip">{{ p.ev.code }}</a>{% endfor %}</div>
+<div class="anchor-bar">{% for p in payload %}<a href="#ev-{{ p.ev.code }}" class="anchor-chip">第{{ p.ev.run_seq or "—" }}场 {{ p.ev.name }}</a>{% endfor %}</div>
 {% endif %}
 {% for p in payload %}
 <div class="card" id="ev-{{ p.ev.code }}">
-  <h2>{{ p.ev.name }}（{{ p.ev.project_code }} 第{{ p.ev.round }}轮）</h2>
+  <h2>第{{ p.ev.run_seq or "—" }}场 · {{ p.ev.name }}<span class="muted">（第{{ p.ev.round }}轮）</span></h2>
   {% with rows = p.results["overall_results"], names = p.names, is_final = p.is_final, adv = p.adv %}{% include "_announce_table.html" %}{% endwith %}
 </div>
 {% endfor %}

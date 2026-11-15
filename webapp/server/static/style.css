@@ -1112,3 +1112,99 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .judge-sheet .dance-nav .dn-chip.todo {
   background: #fdf3f1; border: 2px solid #c0392b; color: #c0392b; font-weight: 800;
 }
+
+/* ================= R135 裁判页矩阵式布局 + 槽位顺位 UI ================= */
+.judge-sheet .quota-badge {
+  display: inline-block; margin-left: 10px; padding: 6px 14px; border-radius: 999px;
+  font-size: .95rem; font-weight: 700; vertical-align: middle; white-space: nowrap;
+}
+.judge-sheet .quota-badge b { font-size: 1.25rem; }
+.judge-sheet .q-mark { background: var(--acc-tint); color: var(--acc-ink); border: 1px solid var(--acc-line); }
+.judge-sheet .q-skate { background: #fff7e6; color: #8a5a00; border: 1px solid #f0d9a8; }
+.judge-sheet .q-score { background: var(--acc-tint); color: var(--acc-ink); border: 1px solid var(--acc-line); }
+
+/* Mark 矩阵：一行多背号，自动换行，免下拉 */
+.judge-sheet .mark-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px; margin: .6rem 0; max-width: none;
+}
+.judge-sheet .mark-cell {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 12px 6px; gap: 6px; border: 1.5px solid var(--line-strong); border-radius: 12px;
+  min-height: 72px; cursor: pointer; user-select: none; -webkit-user-select: none; background: var(--card);
+}
+.judge-sheet .mark-cell .row-num { font-size: 1.5rem; font-weight: 800; min-width: 0; letter-spacing: 1px; }
+.judge-sheet .mark-cell .mark-box { width: 22px; height: 22px; min-width: 22px; }
+.judge-sheet .mark-cell.checked { border-color: var(--acc); background: var(--acc-tint); }
+.judge-sheet .mark-cell.checked .mark-box { background: var(--acc); border-color: var(--acc); }
+.judge-sheet .mark-cell.checked .mark-box::after { content: "✓"; }
+.judge-sheet .mark-cell input[type=checkbox] { position: absolute; opacity: 0; pointer-events: none; }
+.judge-sheet .mark-cell.off { opacity: .55; cursor: not-allowed; }
+
+/* 评分制矩阵 */
+.judge-sheet .score-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px; margin: .6rem 0; max-width: none;
+}
+.judge-sheet .score-cell {
+  display: flex; flex-direction: column; gap: 6px; align-items: center;
+  padding: 10px; border: 1.5px solid var(--line-strong); border-radius: 12px; background: var(--card);
+}
+.judge-sheet .score-cell input[type=number] { width: 100%; font-size: 1.15rem; padding: 8px; text-align: center; }
+
+/* 顺位制：左矩阵 + 右槽位 */
+.judge-sheet .skate-wrap { display: flex; gap: 14px; align-items: flex-start; margin: .6rem 0; }
+.judge-sheet .rank-grid {
+  flex: 1 1 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px; max-width: none;
+}
+.judge-sheet .rank-cell {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 10px 6px; gap: 6px; border: 1.5px solid var(--line-strong); border-radius: 12px;
+  min-height: 66px; cursor: grab; user-select: none; -webkit-user-select: none; background: var(--card);
+  touch-action: none;
+}
+.judge-sheet .rank-cell .row-num { font-size: 1.5rem; font-weight: 800; min-width: 0; }
+.judge-sheet .rank-cell.assigned { border-color: var(--acc); background: var(--acc-tint); }
+.judge-sheet .rank-cell.assigned .rank-badge { border: none; background: var(--acc); color: #fff; }
+.judge-sheet .rank-cell.off { opacity: .55; cursor: not-allowed; }
+.judge-sheet .rank-badge {
+  width: 26px; height: 26px; line-height: 26px; border-radius: 50%;
+  border: 1.5px dashed var(--line-strong); text-align: center; font-weight: 800; font-size: .95rem;
+}
+.judge-sheet .rank-slots {
+  flex: 0 0 168px; display: flex; flex-direction: column; gap: 6px;
+  position: sticky; top: 8px;
+}
+.judge-sheet .slot {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border: 1.5px dashed var(--line-strong); border-radius: 12px; background: var(--card);
+  min-height: 46px; cursor: pointer;
+}
+.judge-sheet .slot .slot-rank {
+  width: 30px; height: 30px; line-height: 30px; border-radius: 50%; text-align: center;
+  background: var(--acc-soft); color: var(--acc-ink); font-weight: 800; flex: 0 0 30px;
+}
+.judge-sheet .slot .slot-num { font-size: 1.35rem; font-weight: 800; letter-spacing: 1px; }
+.judge-sheet .slot.filled { border-style: solid; border-color: var(--acc); background: var(--acc-tint); }
+.judge-sheet .slot.hover { border-color: var(--acc); background: var(--acc-tint); box-shadow: 0 0 0 3px var(--acc-soft); }
+.judge-sheet .drag-ghost {
+  position: fixed; z-index: 90; pointer-events: none;
+  padding: 6px 14px; border-radius: 10px; background: var(--acc); color: #fff;
+  font-weight: 800; font-size: 1.2rem; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+}
+@media (max-width: 640px) {
+  .judge-sheet .skate-wrap { flex-direction: column-reverse; }
+  .judge-sheet .rank-slots { flex: 1 1 auto; width: 100%; position: static; display: grid; grid-template-columns: 1fr 1fr; }
+}
+
+/* 总表：裁判启用栏常驻 + 编号降级 + 调试 */
+#judge-bar { position: sticky; top: 6px; z-index: 40; box-shadow: 0 4px 14px rgba(0,0,0,.10); }
+.ev-code-mini { font-size: .68rem; color: var(--hint2); margin-left: 6px; letter-spacing: .3px; }
+.rb-seq { font-weight: 800; color: var(--acc-ink); background: var(--acc-tint); border-radius: 8px; padding: 3px 8px; white-space: nowrap; }
+.btn.small.warn { background: #fff3d6; border-color: #f0d9a8; color: #8a5a00; }
+#dbg-toggle.active-dbg { background: var(--acc); border-color: var(--acc); color: #fff; }
+@media (max-width: 640px) {
+  .judge-sheet .rank-grid, .judge-sheet .mark-grid, .judge-sheet .score-grid { width: 100%; }
+  .judge-sheet .rank-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important; }
+}

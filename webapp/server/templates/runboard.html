@@ -17,8 +17,9 @@
       <option value="calculated">已计算</option>
       <option value="published">已发布</option>
     </select>
-    <input id="rb-search" placeholder="搜编号/名称" class="rb-filter">
+    <input id="rb-search" placeholder="搜场序/名称" class="rb-filter">
     <button class="btn" id="rb-publish-all">一键发布全部</button>
+    <button class="btn small" id="dbg-toggle" title="调试工具：一键生成裁判评分 / 代打浮层">🐞 调试</button>
   </span>
 </div>
 <div class="card" id="judge-bar" style="display:none">
@@ -27,11 +28,53 @@
   <span class="muted" style="margin-left:8px">点击启用/禁用（禁用裁判不可评分，收齐判定按启用裁判）</span>
 </div>
 <div id="board"><div class="card muted">加载中…</div></div>
+<div id="dbg-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:80;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeDebugJudge()">
+  <div style="background:var(--card,#fff);border-radius:14px;max-width:760px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line,#ddd)">
+      <b id="dbg-title">调试代打</b>
+      <button class="btn small secondary" onclick="closeDebugJudge()">关闭</button>
+    </div>
+    <iframe id="dbg-frame" src="about:blank" style="flex:1;border:0;width:100%;min-height:60vh"></iframe>
+  </div>
+</div>
 {% set onb_key = "admin" %}{% include "_onboarding.html" %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id }};
 var DATA = null;
+var DEBUG = localStorage.getItem('rb-debug') === '1';
+
+/* R135 调试开关：右上角切换；开启后每场出现「⚡生成评分」，评分矩阵可点开代打浮层 */
+(function () {
+  var btn = document.getElementById('dbg-toggle');
+  function paint() {
+    btn.classList.toggle('active-dbg', DEBUG);
+    btn.textContent = DEBUG ? '🐞 调试：开' : '🐞 调试';
+  }
+  btn.onclick = function () {
+    DEBUG = !DEBUG;
+    localStorage.setItem('rb-debug', DEBUG ? '1' : '0');
+    paint(); render();
+  };
+  paint();
+})();
+
+async function debugGenerate(id) {
+  if (!confirm('生成该场全部启用裁判的全部舞种评分？（未检录将自动全检录，生成后自动计算）')) return;
+  try { await api('POST', '/api/events/' + CID + '/debug-generate', {ceid: id}); toast('已生成评分并计算', 'ok'); await load(); }
+  catch (e) { toast(e.message, 'err'); }
+}
+function openDebugJudge(id, judge, dance) {
+  var ov = document.getElementById('dbg-overlay');
+  document.getElementById('dbg-frame').src = '/events/' + CID + '/debug-judge/' + id + '/' + encodeURIComponent(judge) + '/' + encodeURIComponent(dance);
+  document.getElementById('dbg-title').textContent = '调试代打 · ' + judge + ' · ' + dance;
+  ov.style.display = 'flex';
+}
+function closeDebugJudge() {
+  document.getElementById('dbg-overlay').style.display = 'none';
+  document.getElementById('dbg-frame').src = 'about:blank';
+  load();
+}
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
   return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
@@ -65,7 +108,10 @@ function render() {
     var checkedN = e.checked.length, rosterN = e.roster.length;
     var actions = '';
     if (e.status === 'pending' && rosterN) actions += '<button class="btn small" onclick="act(' + e.id + ',\'open\')">开场</button>';
-    if (e.status === 'scoring') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'checkin\')">一键全部检录</button>';
+    if (e.status === 'scoring') {
+      actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'checkin\')">一键全部检录</button>';
+      actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'uncheckin-all\')">清空检录</button>';
+    }
     if (e.status === 'scoring') {
       actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'calc\')">手动计算</button>';
       actions += '<button class="btn small secondary" onclick="if(confirm(\'关闭评分将回到开场前状态，确认？\'))act(' + e.id + ',\'close\')">关闭评分</button>';
@@ -79,6 +125,7 @@ function render() {
     if (e.status === 'calculated') actions += '<button class="btn small" onclick="act(' + e.id + ',\'publish\')">发布</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'unpublish\')">撤回</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'announce\')">' + (e.announced ? '取消播报' : '播报') + '</button>';
+    if (DEBUG && e.status !== 'published') actions += '<button class="btn small warn" onclick="debugGenerate(' + e.id + ')">⚡生成评分</button>';
     if (e.advancement_count > 0 && e.has_next && (e.status === 'calculated' || e.status === 'published'))
       actions += '<a class="btn small" href="/events/' + CID + '/advancement?project=' + encodeURIComponent(e.project) + '&round=' + e.round + '&event=' + e.id + '">晋级确认</a>';
     var top3 = e.top3.map(function (t) {
@@ -89,9 +136,10 @@ function render() {
     // R100b 行卡分层：头部（序号/编号/名称/状态/动作）+ 指标条（块化，独立行）
     html += '<div class="card rb-row' + (e.status === 'scoring' ? ' scoring-now' : '') + '" data-ceid="' + e.id + '" data-st="' + e.status + '">' +
       '<div class="rb-head">' +
-      '<span class="rb-seq">' + seq + '</span>' +
+      '<span class="rb-seq">第' + seq + '场</span>' +
       '<span class="rb-main" onclick="toggleDetail(' + e.id + ')">' +
-      '<span class="rb-name">' + esc(e.name) + '</span> <span class="ev-code muted">' + esc(e.code) + '</span> ' + stTag(e.status) +
+      '<span class="rb-name">' + esc(e.name) + '</span>' + stTag(e.status) +
+      '<span class="ev-code-mini" title="系统内部编号（仅管理页显示）">' + esc(e.code) + '</span>' +
       '</span>' +
       '<span class="rb-actions" onclick="event.stopPropagation()">' + actions +
       '<a class="btn small secondary" href="/events/' + CID + '/console/' + e.id + '">详情</a></span>' +
@@ -116,12 +164,13 @@ function render() {
       html += '</div>';
     }
     if (e.dances.length && e.judges_eff.length) {
-      html += '<div class="rb-sec"><b class="rb-sec-title">评分进度（裁判 × 舞种）</b> ';
+      html += '<div class="rb-sec"><b class="rb-sec-title">评分进度（裁判 × 舞种' + (DEBUG ? '，调试模式点击代打' : '') + '）</b> ';
       e.dances.forEach(function (d) {
         var done = (e.matrix[d] || []);
         html += '<span class="rb-dance">' + esc(d) + ': ';
         e.judges_eff.forEach(function (j) {
-          html += '<span class="rb-j ' + (done.indexOf(j) > -1 ? 'done' : '') + '">' + esc(j) + '</span>';
+          var clickAttr = DEBUG ? ' style="cursor:pointer" onclick="openDebugJudge(' + e.id + ',\'' + esc(j) + '\',\'' + esc(d) + '\')" title="调试：以该裁判身份代打"' : '';
+          html += '<span class="rb-j ' + (done.indexOf(j) > -1 ? 'done' : '') + '"' + clickAttr + '>' + esc(j) + '</span>';
         });
         html += '</span> ';
       });
@@ -165,6 +214,10 @@ async function act(id, action) {
     } else if (action === 'checkin') {
       var ev2 = DATA.events.filter(function (e) { return e.id === id; })[0];
       await api('POST', path + 'checkin', {numbers: ev2.roster, state: true});
+    } else if (action === 'uncheckin-all') {
+      if (!confirm('清空本场全部检录？')) return;
+      var ev3 = DATA.events.filter(function (e) { return e.id === id; })[0];
+      await api('POST', path + 'checkin', {numbers: ev3.roster, state: false});
     } else if (action === 'publish') { await api('POST', path + 'publish', {}); }
     else if (action === 'unpublish') { await api('POST', path + 'unpublish', {}); }
     else if (action === 'announce') { await api('POST', path + 'announce', {announced: 'toggle'}); }

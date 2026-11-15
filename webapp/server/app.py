@@ -536,9 +536,9 @@ def _check_direct(conn, competition_id, role, username, token) -> bool:
 
 
 def _active_competition():
-    """兜底：最新激活赛事（仅管理端兜底用；公开页请走 _viewer_competition）。"""
+    """兜底：最新激活赛事（仅管理端兜底用；公开页请走 _viewer_competition）。R135 调试赛排除。"""
     return db.rowdict(db.get_db().execute(
-        "SELECT * FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0) ORDER BY id DESC").fetchone())
+        "SELECT * FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0) AND NOT COALESCE(is_debug, 0) ORDER BY id DESC").fetchone())
 
 
 def _viewer_competition(request: Request):
@@ -550,10 +550,16 @@ def _viewer_competition(request: Request):
     except (TypeError, ValueError):
         qid = 0
     if qid:
-        return db.rowdict(db.get_db().execute(
+        c = db.rowdict(db.get_db().execute(
             "SELECT * FROM competitions WHERE id=? AND active=1", (qid,)).fetchone())
+        if c and c.get("is_debug"):
+            # R135 调试专用赛：仅总管理员（环境口令会话）可经显式 ?comp= 访问
+            s = _session(request)
+            if not (s and s.get("role") == "admin" and not s.get("user_id")):
+                return None
+        return c
     actives = db.rows(db.get_db().execute(
-        "SELECT * FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0) ORDER BY id DESC"))
+        "SELECT * FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0) AND NOT COALESCE(is_debug, 0) ORDER BY id DESC"))
     if len(actives) == 1:
         return actives[0]
     return None
@@ -568,6 +574,17 @@ def _current_competition(request: Request):
         if c:
             return c
     return _active_competition()
+
+
+def _public_comp_or_404(competition_id, request=None):
+    """R135 公开侧赛事获取：调试专用赛（is_debug）仅总管理员可访问，其余一律 404
+    （公开页面 / 公开 API 统一走本入口，防止调试赛真实选手数据外泄）。"""
+    c = _comp_or_404(competition_id)
+    if c.get("is_debug"):
+        s = _session(request)
+        if not (s and s.get("role") == "admin" and not s.get("user_id")):
+            raise HTTPException(status_code=404, detail="赛事不存在")
+    return c
 
 
 def _comp_or_404(competition_id):
@@ -658,8 +675,11 @@ async def api_competition_update(competition_id: int, request: Request = None):
 async def competitions_page(request: Request):
     """公开赛事列表：卡片展示全部激活中的赛事。"""
     conn = db.get_db()
+    s = _session(request)
+    super_admin = bool(s and s.get("role") == "admin" and not s.get("user_id"))   # R135 总管理员（环境口令登录，无账号）
+    dbg = "" if super_admin else " AND NOT COALESCE(is_debug, 0)"
     comps = db.rows(conn.execute(
-        "SELECT id, name, date, location FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0) ORDER BY id DESC"))
+        "SELECT id, name, date, location FROM competitions WHERE active=1 AND NOT COALESCE(is_trial, 0)" + dbg + " ORDER BY id DESC"))
     cards = []
     for c in comps:
         evs = db.rows(conn.execute(
@@ -1156,12 +1176,15 @@ async def judge_home(request: Request):
     if comp:
         disabled = _disabled_judges(comp["id"])
         j_disabled = s["judge_code"] in disabled
+        next_rounds = {(r["project_code"], r["round"]) for r in db.rows(db.get_db().execute(
+            "SELECT DISTINCT project_code, round FROM events WHERE competition_id=?", (comp["id"],)))}
         evs = db.rows(db.get_db().execute(
             "SELECT * FROM events WHERE competition_id=? "
             "ORDER BY COALESCE(run_seq, 9999), code", (comp["id"],)))
         for ev in evs:
             ev["dances"] = dances_of(ev["id"])
             ev["run_seq"] = ev["run_seq"] if "run_seq" in ev.keys() else None
+            ev["is_final"] = (ev["project_code"], ev["round"] + 1) not in next_rounds   # R135 顺位场标注录取口径
             if ev["status"] == "scoring" and not j_disabled and ev["dances"]:
                 st_list = _judge_sheet_status(ev["id"], s["judge_code"])
                 ev["my_done"] = st_list
@@ -1206,14 +1229,22 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
     judge_disabled = str(s["judge_code"]) in disabled
     # R112 顶部常驻上/下场导航：全赛事场次序列（run_seq 序），相邻场次评分中才可点
     all_evs = db.rows(db.get_db().execute(
-        "SELECT id, code, status FROM events WHERE competition_id=? "
+        "SELECT id, code, name, run_seq, status FROM events WHERE competition_id=? "
         "ORDER BY COALESCE(run_seq, 9999), code", (comp["id"],)))
     idx = next((i for i, e in enumerate(all_evs) if e["id"] == ceid), None)
     seq_idx, seq_total = (idx + 1 if idx is not None else 0), len(all_evs)
 
+    def _run_label(e):
+        # R135 场次显示口径：场序（第 N 场）为主，编号不出现（comp21 复盘）；
+        # 无场序时回退名称（截短），绝不显示系统编号
+        if e["run_seq"]:
+            return "第{0}场".format(e["run_seq"])
+        nm = (e["name"] or "").strip()
+        return (nm[:10] + "…") if len(nm) > 11 else (nm or "场次")
+
     def _nav(e):
         ds = dances_of(e["id"])
-        return {"id": e["id"], "code": e["code"], "status": e["status"],
+        return {"id": e["id"], "code": _run_label(e), "name": e["name"], "status": e["status"],
                 "href": "/judge/competition-events/{0}/dances/{1}".format(e["id"], ds[0]) if ds and e["status"] == "scoring" else "",
                 "active": bool(ds) and e["status"] == "scoring"}
     # R129 舞种切换导航：本场全部舞种 + 每舞种提交状态（多舞种漏评防线）
@@ -1251,9 +1282,171 @@ async def judge_sheet_page(request: Request, ceid: int, dance: str):
         "n": len(roster_list),
         "prev_ev": prev_ev, "next_ev": next_ev,
         "seq_idx": seq_idx, "seq_total": seq_total,
+        "run_label": _run_label(ev),
         "judge_disabled": judge_disabled, "scoring_nav": scoring_nav,
         "trial": bool(comp.get("is_trial")), "dance_nav": dance_nav,
+        "debug_judge": None,
     })
+
+
+# ------------------------------------------------------------------ R135 调试评分（管理员代打，仅试用/调试赛）
+def _debug_target_ok(comp):
+    return bool(comp.get("is_trial") or comp.get("is_debug"))
+
+
+@app.post("/api/events/{competition_id}/debug-generate")
+async def api_debug_generate(competition_id: int, request: Request = None):
+    """一键生成本场全部启用裁判的全部舞种评分（调试专用）。Mark=前 need 名、顺位=顺序名次、评分=固定分。
+    生成后按收齐逻辑自动计算（不自动发布）。"""
+    s = require_admin(request)
+    comp = _comp_or_404(competition_id)
+    if not _debug_target_ok(comp):
+        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛（正式赛事禁止生成假评分）")
+    body = await request.json()
+    ceid = int(body.get("ceid") or 0)
+    ev = _event_or_404(ceid)
+    if ev["competition_id"] != competition_id:
+        raise HTTPException(status_code=400, detail="场次不属于该赛事")
+    conn = db.get_db()
+    checked = checked_roster(ceid)
+    if not checked:
+        # 一键调试：未检录则先全部检录
+        allnums = roster(ceid)
+        conn.execute("UPDATE event_competitors SET checked_in=1, checked_by='debug', checked_at=datetime('now','localtime') "
+                     "WHERE event_id=? AND competitor_number IN ({0})".format(",".join("?" * len(allnums))),
+                     [ceid] + allnums)
+        conn.commit()
+        checked = checked_roster(ceid)
+    jcodes, _assigned = _event_judges(ev, competition_id)
+    disabled = set(_disabled_judges(competition_id))
+    jcodes = [j for j in jcodes if j not in disabled]
+    if not jcodes:
+        raise HTTPException(status_code=400, detail="无启用裁判")
+    dances = dances_of(ceid)
+    kind = scoring_kind(ev)
+    adv = ev["advancement_count"] or 0
+    ordered = sorted(checked, key=lambda x: (len(x), x))
+    for j in jcodes:
+        for dance in dances:
+            conn.execute("DELETE FROM score_records WHERE event_id=? AND judge_code=? AND dance_name=?",
+                         (ceid, j, dance))
+            if kind == "mark":
+                for num in ordered[:max(1, min(adv, len(ordered)) or len(ordered))]:
+                    conn.execute("INSERT INTO score_records(event_id, judge_code, competitor_number, dance_name, mark, placement) "
+                                 "VALUES(?,?,?,?,1,NULL)", (ceid, j, num, dance))
+            elif kind == "skating":
+                for i, num in enumerate(ordered):
+                    conn.execute("INSERT INTO score_records(event_id, judge_code, competitor_number, dance_name, mark, placement) "
+                                 "VALUES(?,?,?,?,NULL,?)", (ceid, j, num, dance, i + 1))
+            else:
+                for i, num in enumerate(ordered):
+                    conn.execute("INSERT INTO score_records(event_id, judge_code, competitor_number, dance_name, mark, placement) "
+                                 "VALUES(?,?,?,?,?,NULL)", (ceid, j, num, dance, round(9.5 - 0.1 * i, 1)))
+    conn.commit()
+    _audit(_actor_name(s), "debug_generate", "event:{0}".format(ceid),
+           "{0} 生成 {1} 裁判 × {2} 舞种评分".format(ev["code"], len(jcodes), len(dances)), _client_ip(request))
+    sse.bus.publish(competition_id, "score_submitted", {"event_id": ceid, "debug": True})
+    auto = _auto_calculate_if_ready(_event_or_404(ceid), comp)
+    return {"ok": True, "judges": jcodes, "dances": dances, "checked": len(checked), "auto_calculated": auto}
+
+
+@app.get("/events/{competition_id}/debug-judge/{ceid}/{judge}/{dance}", response_class=HTMLResponse)
+async def debug_judge_page(competition_id: int, ceid: int, judge: str, dance: str, request: Request = None):
+    """调试浮层：以指定裁判身份渲染与裁判页完全一致的评分 UI（提交走 debug-sheet）。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    if not _debug_target_ok(comp):
+        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛")
+    ev = _event_or_404(ceid)
+    if ev["competition_id"] != competition_id:
+        raise HTTPException(status_code=400, detail="场次不属于该赛事")
+    dance = dance
+    ev_dances = dances_of(ceid)
+    if dance not in ev_dances:
+        raise HTTPException(status_code=400, detail="舞种不属于该场次")
+    roster_list = roster(ceid)
+    rows = {}
+    for num in roster_list:
+        rows[num] = db.rowdict(db.get_db().execute(
+            "SELECT * FROM score_records WHERE event_id=? AND judge_code=? AND dance_name=? AND competitor_number=?",
+            (ceid, judge, dance, num)).fetchone())
+    checked = set(checked_roster(ceid))
+    return templates.TemplateResponse(request, "judge_sheet.html", {
+        "ev": ev, "comp": comp, "dance": dance,
+        "roster": roster_list, "rows": rows, "checked": checked,
+        "is_skating": scoring_kind(ev) == "skating", "is_mark": scoring_kind(ev) == "mark",
+        "is_score": scoring_kind(ev) == "score",
+        "n": len(roster_list), "prev_ev": None, "next_ev": None,
+        "seq_idx": 0, "seq_total": 0, "run_label": "",
+        "judge_disabled": False, "scoring_nav": None,
+        "trial": bool(comp.get("is_trial")), "dance_nav": [],
+        "debug_judge": judge,
+    })
+
+
+@app.put("/api/events/{competition_id}/debug-sheet")
+async def api_debug_sheet(competition_id: int, request: Request = None):
+    """调试代打提交：以指定裁判身份写入评分（校验与裁判提交一致），写后按收齐自动计算。"""
+    s = require_admin(request)
+    comp = _comp_or_404(competition_id)
+    if not _debug_target_ok(comp):
+        raise HTTPException(status_code=403, detail="调试评分仅限试用赛/调试专用赛")
+    body = await request.json()
+    ceid = int(body.get("ceid") or 0)
+    judge = str(body.get("judge") or "").strip()
+    dance = str(body.get("dance") or "").strip()
+    values = body.get("values") or {}
+    if not judge or not dance:
+        raise HTTPException(status_code=400, detail="judge/dance 必填")
+    ev = _event_or_404(ceid)
+    if ev["competition_id"] != competition_id:
+        raise HTTPException(status_code=400, detail="场次不属于该赛事")
+    if dance not in dances_of(ceid):
+        raise HTTPException(status_code=400, detail="舞种不属于该场次")
+    kind = scoring_kind(ev)
+    checked = set(checked_roster(ceid))
+    if kind == "mark":
+        if not set(map(str, values.keys())) <= checked:
+            raise HTTPException(status_code=400, detail="标记对象必须为已检录选手")
+        if not any(values.values()):
+            raise HTTPException(status_code=400, detail="至少需勾选一名选手")
+    else:
+        if kind == "score" and set(map(str, values.keys())) != checked:
+            raise HTTPException(status_code=400, detail="评分制须为全部已检录选手提交")
+        for num, v in values.items():
+            if str(num) not in checked:
+                raise HTTPException(status_code=400, detail="背号不在已检录名单中: " + str(num))
+            if kind == "skating":
+                try:
+                    p = int(v)
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=400, detail="名次必须为整数")
+                if not (1 <= p <= max(1, len(checked))):
+                    raise HTTPException(status_code=400, detail="名次超出范围")
+            else:
+                fv = float(v)
+                if not (0 <= fv <= 10):
+                    raise HTTPException(status_code=400, detail="评分须为 0~10")
+    conn = db.get_db()
+    conn.execute("DELETE FROM score_records WHERE event_id=? AND judge_code=? AND dance_name=?",
+                 (ceid, judge, dance)) if kind == "mark" else None
+    for num, v in values.items():
+        if kind == "mark":
+            if v:
+                conn.execute("INSERT INTO score_records(event_id, judge_code, competitor_number, dance_name, mark, placement) "
+                             "VALUES(?,?,?,?,1,NULL)", (ceid, judge, str(num), dance))
+        else:
+            conn.execute(
+                "INSERT INTO score_records(event_id, judge_code, competitor_number, dance_name, mark, placement) "
+                "VALUES(?,?,?,?,?,?) ON CONFLICT(event_id, dance_name, judge_code, competitor_number) "
+                "DO UPDATE SET mark=excluded.mark, placement=excluded.placement, timestamp=datetime('now','localtime')",
+                (ceid, judge, str(num), dance, _sheet_mark_value(kind, v), _sheet_placement_value(kind, v)))
+    conn.commit()
+    _audit(_actor_name(s), "debug_sheet", "event:{0}".format(ceid),
+           "{0} 代打 {1}/{2}（{3} 项）".format(ev["code"], judge, dance, len(values)), _client_ip(request))
+    sse.bus.publish(competition_id, "score_submitted", {"event_id": ceid, "dance": dance, "judge": judge})
+    auto = _auto_calculate_if_ready(_event_or_404(ceid), comp)
+    return {"ok": True, "auto_calculated": auto}
 
 
 # ------------------------------------------------------------------ 用户与角色管理（管理员）
@@ -3993,8 +4186,8 @@ def _public_payload(comp=None):
 
 
 @app.get("/api/public/events/{competition_id}/schedule")
-async def api_public_schedule(competition_id: int):
-    comp = _comp_or_404(competition_id)
+async def api_public_schedule(competition_id: int, request: Request = None):
+    comp = _public_comp_or_404(competition_id, request)
     events = db.rows(db.get_db().execute(
         "SELECT id, code,name,project_code,round,status FROM events WHERE competition_id=? ORDER BY project_code, round, code",
         (competition_id,)))
@@ -4003,7 +4196,7 @@ async def api_public_schedule(competition_id: int):
 
 @app.get("/api/public/events/{competition_id}/results")
 async def api_public_results(competition_id: int, request: Request = None, scope: str = "published"):
-    _comp_or_404(competition_id)
+    _public_comp_or_404(competition_id, request)
     # scope 参数保留（v0.2.3 正文单态：仅 published）；明细不对公开端暴露（D5）
     comp = _current_competition(request)
     out = []
@@ -4018,14 +4211,14 @@ async def api_public_results(competition_id: int, request: Request = None, scope
 
 
 @app.get("/api/public/events/{competition_id}/team-standings")
-async def api_team_standings_public(competition_id: int):
-    _comp_or_404(competition_id)
+async def api_team_standings_public(competition_id: int, request: Request = None):
+    _public_comp_or_404(competition_id, request)
     return _team_standings(competition_id, published_only=True)
 
 
 @app.get("/api/public/events/{competition_id}/screen-state")
-async def api_screen_state(competition_id: int):
-    comp = _comp_or_404(competition_id)
+async def api_screen_state(competition_id: int, request: Request = None):
+    comp = _public_comp_or_404(competition_id, request)
     conn = db.get_db()
     scoring = db.rows(conn.execute(
         "SELECT code,name,project_code,round FROM events WHERE competition_id=? AND status='scoring'",
@@ -4196,7 +4389,7 @@ async def api_runsheet_export(competition_id: int, request: Request = None, form
     每场含全部参赛选手。打乱机制：出场顺序按 seed 随机抽签——同 seed 可复现（公平可审计），
     换 seed 即重抽；每场用 seed+场次码 派生独立流，场间互不影响。"""
     import random
-    comp = _comp_or_404(competition_id)
+    comp = _public_comp_or_404(competition_id, request)
     conn = db.get_db()
     seed = (seed or "").strip() or time.strftime("%Y%m%d")
     evs = db.rows(conn.execute(
@@ -4458,10 +4651,10 @@ async def api_judges_export(competition_id: int, request: Request = None):
 
 
 @app.get("/api/public/events/{competition_id}/exports/schedule")
-async def api_public_schedule_export(competition_id: int, format: str = "html", unit: str = ""):
+async def api_public_schedule_export(competition_id: int, request: Request = None, format: str = "html", unit: str = ""):
     """R70 材料生产：赛程表导出（秩序册）。全场或按单位过滤；HTML 打印友好，Markdown 供再编辑。
     公开口径：只含赛程信息（场次/项目/舞种/制式/上场名单），不含成绩。"""
-    comp = _comp_or_404(competition_id)
+    comp = _public_comp_or_404(competition_id, request)
     conn = db.get_db()
     unit = (unit or "").strip()
     evs = db.rows(conn.execute(
@@ -4525,7 +4718,7 @@ async def api_public_schedule_export(competition_id: int, format: str = "html", 
 @app.get("/api/public/events/{competition_id}/qr")
 async def api_competition_qr(competition_id: int, request: Request = None, size: int = 8):
     """R111 赛事专属入口二维码（PNG，可张贴）：默认指向赛事首页，size 参数可调（4~16）。"""
-    comp = _comp_or_404(competition_id)
+    comp = _public_comp_or_404(competition_id, request)
     try:
         import segno
     except ImportError:
@@ -4546,7 +4739,7 @@ async def api_competition_qr(competition_id: int, request: Request = None, size:
 @app.get("/api/public/events/{competition_id}/qr-a4")
 async def api_competition_qr_a4(competition_id: int, request: Request = None):
     """R111b 赛事二维码 A4 打印版（PDF 海报）：赛事名称/日期/地点标题 + 居中大二维码 + 扫码说明，可直接打印张贴。"""
-    comp = _comp_or_404(competition_id)
+    comp = _public_comp_or_404(competition_id, request)
     try:
         import segno
         from reportlab.lib.pagesizes import A4
@@ -4656,10 +4849,10 @@ def _partner_for_rows(rows, code):
 
 
 @app.get("/api/public/events/{competition_id}/lookup")
-async def api_public_lookup(competition_id: int, num: str = "", name: str = "", unit: str = ""):
+async def api_public_lookup(competition_id: int, request: Request = None, num: str = "", name: str = "", unit: str = ""):
     """按背番号或姓名查询公示信息。姓名命中多条返回 candidates 列表让前端选择；
     背番号直接命中。多舞伴/多项目：报名行按 项目+背号 取参赛组合（partner 随项目变化）。"""
-    comp = _comp_or_404(competition_id)
+    comp = _public_comp_or_404(competition_id, request)
     num = (num or "").strip()
     name = (name or "").strip()
     if not num and not name:

@@ -28,7 +28,11 @@
     {% elif a.status == 'published' %}<span class="tag ok">已发布</span>
     {% elif a.status == 'calculated' %}<span class="tag acc">已计算</span>
     {% else %}<span class="tag gray">待开始</span>{% endif %}
-    <span class="muted">第{{ a.round }}轮 · <span class="ev-code">{{ a.code }}</span></span></h2>
+    <span class="quota-badge {% if a.scoring_type == 'Mark制' %}q-mark{% elif a.scoring_type == '顺位法' %}q-skate{% else %}q-score{% endif %}">
+    {% if a.scoring_type == 'Mark制' %}晋级名额 <b>{{ a.advancement_count or "现场通知" }}</b>
+    {% elif a.scoring_type == '顺位法' %}{% if a.advancement_count and not a.is_final %}前 <b>{{ a.advancement_count }}</b> 晋级 · {% endif %}顺位排名
+    {% else %}评分 0~10{% endif %}</span>
+    <span class="muted">第{{ a.round }}轮</span></h2>
   {% if a.status == 'scoring' and a.dances and not j_disabled %}
   <p>舞种：
   {% for d in a.dances %}

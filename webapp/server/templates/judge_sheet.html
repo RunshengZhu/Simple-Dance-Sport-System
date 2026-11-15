@@ -29,24 +29,30 @@
 </div>
 {% endif %}
 {% if judge_disabled %}<p class="err" style="padding:10px 12px;border-radius:10px">⛔ 您已被管理员禁用评分，只能查看，无法提交。</p>{% endif %}
+{% if debug_judge %}<p class="warn" style="padding:8px 12px;border-radius:10px">🐞 调试代打模式：以裁判 <b>{{ debug_judge }}</b> 身份写入评分（提交走调试接口）。</p>{% endif %}
 <h1>{{ dance }} <span class="muted">{{ ev.name }} / {{ ev.scoring_type }}</span>
+  <span class="quota-badge {% if is_mark %}q-mark{% elif is_skating %}q-skate{% else %}q-score{% endif %}">
+    {% if is_mark %}晋级名额 <b>{{ ev.advancement_count or "按现场通知" }}</b>
+    {% elif is_skating %}{% if ev.advancement_count %}前 <b>{{ ev.advancement_count }}</b> 晋级 · {% endif %}顺位 <b>1~{{ n }}</b>
+    {% else %}评分 <b>0~10</b>{% endif %}
+  </span>
   <button type="button" class="btn small secondary" id="guide-btn" style="margin-left:8px">? 评分说明</button></h1>
 <div id="guide-pop" class="guide-pop" hidden>
   <div class="guide-pop-box">
     <b>打分要点 · {{ ev.scoring_type }}</b>
     {% if is_mark %}
     <ul>
-      <li>点选手行<b>给 Mark</b>（再点取消）——表示你认为该选手应晋级</li>
+      <li>点背号块<b>给 Mark</b>（再点取消）——表示你认为该选手应晋级</li>
       <li>打开默认全空；「全选 / 清空」快捷按钮可整批调整</li>
-      <li>通常勾选人数 = 晋级名额（本场名额 {{ ev.advancement_count or "按现场通知" }}）</li>
+      <li>本场晋级名额 <b>{{ ev.advancement_count or "按现场通知" }}</b>——通常勾选人数 = 名额</li>
       <li>勾满名额后底部「提交 Mark 名单」才可用；灰 = 还差几人</li>
     </ul>
     {% elif is_skating %}
     <ul>
-      <li>给本场<b>全部选手排名次</b>：1=最好，不并列、不打分</li>
-      <li><b>顺序点选</b>：按名次依次点选手；<b>直接指定</b>：先点选手再点下方名次键盘</li>
-      <li>点已排选手取消并自动补位；「重置」清空重来</li>
-      <li>全部已检录选手排完，底部「提交名次表」可用</li>
+      <li>把左侧背号<b>拖到右侧名次槽</b>：1 号槽 = 第 1 名（最好），依次往下</li>
+      <li>不用拖也可以：<b>直接点背号</b> = 依次放入下一个空槽；点已占用的槽 = 取消该选手</li>
+      <li>拖到已占用的槽 = 两个选手交换名次；「重置」清空重来</li>
+      <li>底部「提交名次表」在至少排了一名后可用（未排的按缺评计）</li>
     </ul>
     {% else %}
     <ul>
@@ -65,52 +71,47 @@
 {% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
 
 {% if is_mark %}
-<p class="muted">Mark 制（预赛晋级票）：点击选手行给予 <b>Mark</b>，再点一次取消。勾选人数不限——票数供名次参考，实际晋级由晋级人数参数与晋级确认决定{% if ev.advancement_count %}（本场晋级名额 <b>{{ ev.advancement_count }}</b>）{% endif %}。已选 <span id="mark-count">0</span> / 已检录 <span id="mark-cap">{{ checked|length }}</span> <span id="adv-note" class="muted">{% if ev.advancement_count %}（还差 {{ ev.advancement_count }} 人满足名额 {{ ev.advancement_count }}）{% endif %}</span></p>
 <div class="mark-tools">
   <button type="button" class="btn small secondary" onclick="markAll(1)">全选</button>
   <button type="button" class="btn small secondary" onclick="markAll(0)">清空</button>
+  <span class="muted">已选 <span id="mark-count">0</span> / 已检录 <span id="mark-cap">{{ checked|length }}</span>
+  <span id="adv-note" class="muted">{% if ev.advancement_count %}（还差 {{ ev.advancement_count }} 人满足名额 {{ ev.advancement_count }}）{% endif %}</span></span>
 </div>
-<div class="mark-list">
+<div class="mark-grid">
   {% for num in roster %}
   {% set ok = num in checked %}
-  <div class="mark-row {{ '' if ok else 'off' }}" data-num="{{ num }}">
+  <div class="mark-row mark-cell {{ '' if ok else 'off' }}" data-num="{{ num }}">
     <span class="mark-box"></span>
     <span class="row-num">{{ num }}</span>
-    <span class="mark-hint">{{ '🔒 未检录' if not ok else '点击给 Mark' }}</span>
     <input type="checkbox" class="val" data-num="{{ num }}" {% if not ok %}disabled{% endif %} {% if rows.get(num) and rows[num]["mark"] is not none %}{{ "checked" if rows[num]["mark"] else "" }}{% endif %}>
   </div>
   {% endfor %}
 </div>
 {% elif is_skating %}
-<div class="mode-toggle">
-  <button type="button" class="mt-btn active" data-mode="seq">① 顺序点选</button>
-  <button type="button" class="mt-btn" data-mode="direct">② 直接指定</button>
-  <button type="button" class="mt-btn ghost" id="reset-all">重置</button>
-</div>
-<p class="muted" id="mode-hint">按名次顺序依次点击选手：第 1 次点击 = 第 1 名，第 2 次 = 第 2 名……点已排选手取消并自动补位。</p>
-<div class="rank-list">
-  {% for num in roster %}
-  {% set ok = num in checked %}
-  <div class="rank-row {{ '' if ok else 'off' }}" data-num="{{ num }}">
-    <span class="rank-badge"></span>
-    <span class="row-num">{{ num }}</span>
-    <span class="rank-hint">{{ '🔒 未检录' if not ok else '点击排名' }}</span>
-    <input type="hidden" class="val" data-num="{{ num }}" {% if not ok %}disabled{% endif %} value="{{ rows.get(num) and rows[num]["placement"] if rows.get(num) and rows[num]["placement"] else "" }}">
+<div class="skate-wrap">
+  <div class="rank-grid">
+    {% for num in roster %}
+    {% set ok = num in checked %}
+    <div class="rank-row rank-cell {{ '' if ok else 'off' }}" data-num="{{ num }}">
+      <span class="rank-badge"></span>
+      <span class="row-num">{{ num }}</span>
+      <input type="hidden" class="val" data-num="{{ num }}" {% if not ok %}disabled{% endif %} value="{{ rows.get(num) and rows[num]["placement"] if rows.get(num) and rows[num]["placement"] else "" }}">
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
+  <div class="rank-slots" id="rank-slots" aria-label="名次槽位"></div>
 </div>
-<div class="rank-keypad" id="keypad" style="display:none">
-  <div class="kp-title">为 <b id="kp-num">--</b> 指定名次 <span class="muted">灰色名次已被占用；点自己的名次键 = 取消</span></div>
-  <div class="kp-keys" id="kp-keys"></div>
+<div class="mode-toggle">
+  <button type="button" class="mt-btn ghost" id="reset-all">重置</button>
+  <span class="muted" id="mode-hint">点背号 = 依次放入下一个空槽 · 拖背号到槽位 = 指定名次 · 点已占用槽位 = 取消</span>
 </div>
 {% else %}
 <p class="muted">为每支队伍打 0~10 分（一位小数），点击输入框唤起数字键盘。</p>
-<div class="score-list">
+<div class="score-grid">
   {% for num in roster %}
   {% set ok = num in checked %}
-  <label class="score-row {{ '' if ok else 'off' }}">
+  <label class="score-row score-cell {{ '' if ok else 'off' }}">
     <span class="row-num">{{ num }}</span>
-    <span class="mark-hint">{{ '🔒 未检录' if not ok else '' }}</span>
     <input type="number" class="val" data-num="{{ num }}" min="0" max="10" step="0.5" inputmode="decimal" placeholder="0.0~10.0"
       {% if not ok %}disabled{% endif %}
       value="{{ rows.get(num) and rows[num]["mark"] if rows.get(num) and rows[num]["mark"] is not none else "" }}">
@@ -124,12 +125,16 @@
   <button class="btn big" id="submit" onclick="submitSheet()" {% if judge_disabled %}disabled title="已被管理员禁用评分"{% endif %}>提交「{{ dance }}」{% if is_skating %}名次表{% elif is_score %}评分表{% else %}Mark{% endif %}（当前舞种）</button>
   <span id="msg"></span>
 </div>
-<p class="muted">提交后如场次未关闭可再次修改提交。</p>
+{% if not debug_judge %}<p class="muted">提交后如场次未关闭可再次修改提交。</p>{% endif %}
 </div>
-{% set onb_key = "judge" %}{% include "_onboarding.html" %}
+{% if not debug_judge %}{% set onb_key = "judge" %}{% include "_onboarding.html" %}{% endif %}
 {% endblock %}
 {% block scripts %}
 var CEID = {{ ev.id }}, DANCE = {{ dance|tojson }}, SKATING = {{ is_skating|tojson }}, SCORE = {{ is_score|tojson }}, N = {{ n }}, CHECKED = {{ checked|length }};
+var SUBMIT_URL = '/api/judge/competition-events/' + CEID + '/dances/' + encodeURIComponent(DANCE) + '/sheet';
+{% if debug_judge %}
+var SUBMIT_URL = '/api/events/{{ ev.competition_id }}/debug-sheet';
+{% endif %}
 /* R113 评分说明快捷弹层 */
 (function () {
   var b = document.getElementById('guide-btn'), pop = document.getElementById('guide-pop');
@@ -163,109 +168,128 @@ function collect() {
 }
 
 if (SKATING) {
-  var assignMode = 'seq', selected = null;
-  var keypad = document.getElementById('keypad'), kpKeys = document.getElementById('kp-keys'),
-      kpNum = document.getElementById('kp-num'), modeHint = document.getElementById('mode-hint');
-  var HINTS = {
-    seq: '按名次顺序依次点击选手：第 1 次点击 = 第 1 名，第 2 次 = 第 2 名……点已排选手取消并自动补位。',
-    direct: '直接指定：点击选手行选中，再点下方名次键；点自己的名次键 = 取消。两种模式可随时切换，已排名次保留。'
-  };
+  /* R135 槽位式顺位 UI：左侧背号矩阵 + 右侧 1~N 名次槽。
+     交互：点背号 = 放入下一个空槽；拖背号到槽 = 指定名次（占用则交换）；
+     点已占用槽 = 取消该选手；点已排背号 = 取消。数据仍存于行内 hidden .val。 */
+  var slotsBox = document.getElementById('rank-slots');
   function rowsAll() { return Array.prototype.slice.call(document.querySelectorAll('.rank-row')); }
+  function rowOf(num) { return document.querySelector('.rank-row[data-num="' + num + '"]'); }
   function getV(row) { return row.querySelector('input.val').value; }
   function setV(row, v) { row.querySelector('input.val').value = v; }
+  function placed() {
+    return rowsAll().filter(function (r) { return getV(r) !== ''; })
+      .sort(function (a, b) { return parseInt(getV(a), 10) - parseInt(getV(b), 10); });
+  }
+  function buildSlots() {
+    slotsBox.innerHTML = '';
+    for (var r = 1; r <= N; r++) {
+      (function (r) {
+        var d = document.createElement('div');
+        d.className = 'slot'; d.dataset.r = String(r);
+        d.innerHTML = '<span class="slot-rank">' + r + '</span><span class="slot-num"></span>';
+        d.addEventListener('click', function () {
+          var owner = rankOwner(r);
+          if (owner) { setV(rowOf(owner), ''); renderSkating(); }
+        });
+        slotsBox.appendChild(d);
+      })(r);
+    }
+  }
   function rankOwner(r) {
     var out = null;
     rowsAll().forEach(function (row) { if (getV(row) === String(r)) out = row.dataset.num; });
     return out;
   }
+  function nextFreeSlot() {
+    for (var r = 1; r <= N; r++) { if (!rankOwner(r)) return r; }
+    return null;
+  }
   function renderSkating() {
     rowsAll().forEach(function (row) {
-      var v = getV(row), badge = row.querySelector('.rank-badge'), hint = row.querySelector('.rank-hint');
-      var off = row.classList.contains('off');
+      var v = getV(row), badge = row.querySelector('.rank-badge');
       if (v) { badge.textContent = v; row.classList.add('assigned'); } else { badge.textContent = ''; row.classList.remove('assigned'); }
-      var sel = assignMode === 'direct' && selected === row.dataset.num;
-      row.classList.toggle('selected', sel);
-      if (off) { hint.textContent = '🔒 未检录'; return; }
-      if (assignMode === 'seq') hint.textContent = v ? '点击取消' : '点击排名';
-      else hint.textContent = v ? '当前第 ' + v + ' 名' : (sel ? '在下方点名次' : '点击选中');
     });
-    var done = rowsAll().filter(function (row) { return getV(row) !== ''; }).length;
+    Array.prototype.forEach.call(slotsBox.children, function (slot) {
+      var owner = rankOwner(parseInt(slot.dataset.r, 10));
+      slot.classList.toggle('filled', !!owner);
+      slot.querySelector('.slot-num').textContent = owner || '';
+    });
+    var done = placed().length;
     document.getElementById('progress').textContent = '已排 ' + done + ' / ' + CHECKED + (done < CHECKED ? ' · 还差 ' + (CHECKED - done) : ' · 可提交');
-    // R60：拦截提示随排名进度即时刷新/清除，杜绝「还差 5 却提示还有 7」的过期警告
-    var msgEl = document.getElementById('msg');
+    var msgEl = document.getElementById('msg');   // R60：拦截提示随进度刷新/清除
     if (msgEl && msgEl.className === 'err') {
       if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
-      else msgEl.textContent = '还有 ' + (CHECKED - done) + (SKATING ? ' 名选手未排名' : ' 支队伍未评分');
-    }
-    var show = assignMode === 'direct' && selected;
-    keypad.style.display = show ? 'block' : 'none';
-    if (show) {
-      kpNum.textContent = selected;
-      Array.prototype.forEach.call(kpKeys.children, function (key) {
-        var owner = rankOwner(key.dataset.r);
-        key.classList.toggle('taken', !!owner && owner !== selected);
-        key.classList.toggle('own', owner === selected);
-      });
+      else msgEl.textContent = '还有 ' + (CHECKED - done) + ' 名选手未排名';
     }
   }
-  function setMode(m) {
-    assignMode = m; selected = null;
-    document.querySelectorAll('.mt-btn[data-mode]').forEach(function (b) { b.classList.toggle('active', b.dataset.mode === m); });
-    modeHint.textContent = HINTS[m];
-    renderSkating();
-  }
-  function tapSeq(num) {
-    var row = document.querySelector('.rank-row[data-num="' + num + '"]');
-    if (row.classList.contains('off')) { offToast(); return; }   // 未检录不可排
-    var ord = rowsAll().filter(function (r) { return getV(r) !== ''; })
-      .sort(function (a, b) { return parseInt(getV(a), 10) - parseInt(getV(b), 10); })
-      .map(function (r) { return r.dataset.num; });
-    var i = ord.indexOf(num);
-    if (i >= 0) ord.splice(i, 1); else ord.push(num);
-    rowsAll().forEach(function (r) {
-      var k = ord.indexOf(r.dataset.num);
-      setV(r, k >= 0 ? String(k + 1) : '');
-    });
-    renderSkating();
-  }
-  function tapDirect(num) {
-    var row = document.querySelector('.rank-row[data-num="' + num + '"]');
+  function assignSlot(num, r) {
+    var row = rowOf(num);
     if (row.classList.contains('off')) { offToast(); return; }
-    selected = (selected === num) ? null : num;
+    var prevOwner = rankOwner(r);
+    var old = getV(row);
+    if (prevOwner && prevOwner !== num) setV(rowOf(prevOwner), old || '');   // 交换
+    setV(row, String(r));
     renderSkating();
   }
-  function keyRank(r) {
-    if (!selected) return;
-    var row = document.querySelector('.rank-row[data-num="' + selected + '"]');
-    if (getV(row) === String(r)) setV(row, '');
-    else setV(row, String(r));
-    var next = rowsAll().filter(function (row) { return getV(row) === '' && !row.classList.contains('off'); })[0];
-    selected = next ? next.dataset.num : selected;
-    if (!next) selected = row.dataset.num;   // 全排完时保持当前行便于调整
+  function tapChip(num) {
+    var row = rowOf(num);
+    if (row.classList.contains('off')) { offToast(); return; }
+    var cur = getV(row);
+    if (cur !== '') { setV(row, ''); renderSkating(); return; }   // 已排 → 取消
+    var r = nextFreeSlot();
+    if (r === null) return;
+    setV(row, String(r));
     renderSkating();
   }
-  document.querySelectorAll('.rank-row').forEach(function (row) {
-    row.addEventListener('click', function () {
-      if (assignMode === 'seq') tapSeq(row.dataset.num); else tapDirect(row.dataset.num);
+  /* 指针拖拽（桌面 + 移动统一）：pointerdown 起拖，越过槽位高亮，松手落槽 */
+  var drag = null;
+  function slotFromPoint(x, y) {
+    var el = document.elementFromPoint(x, y);
+    return el ? el.closest('.slot') : null;
+  }
+  rowsAll().forEach(function (row) {
+    row.addEventListener('pointerdown', function (e) {
+      if (row.classList.contains('off')) return;
+      drag = { num: row.dataset.num, x: e.clientX, y: e.clientY, moved: false, ghost: null };
+      e.preventDefault();
     });
   });
-  document.querySelectorAll('.mt-btn[data-mode]').forEach(function (b) {
-    b.addEventListener('click', function () { setMode(b.dataset.mode); });
+  document.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    if (!drag.moved && Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 8) return;
+    drag.moved = true;
+    if (!drag.ghost) {
+      drag.ghost = document.createElement('div');
+      drag.ghost.className = 'drag-ghost';
+      drag.ghost.textContent = drag.num;
+      document.body.appendChild(drag.ghost);
+    }
+    drag.ghost.style.left = (e.clientX + 10) + 'px';
+    drag.ghost.style.top = (e.clientY - 14) + 'px';
+    Array.prototype.forEach.call(slotsBox.children, function (s) { s.classList.remove('hover'); });
+    var slot = slotFromPoint(e.clientX, e.clientY);
+    if (slot) slot.classList.add('hover');
+  });
+  document.addEventListener('pointerup', function (e) {
+    if (!drag) return;
+    var d = drag; drag = null;
+    if (d.ghost) d.ghost.remove();
+    Array.prototype.forEach.call(slotsBox.children, function (s) { s.classList.remove('hover'); });
+    if (d.moved) {
+      var slot = slotFromPoint(e.clientX, e.clientY);
+      if (slot) assignSlot(d.num, parseInt(slot.dataset.r, 10));
+      /* 移动后未落到槽位 → 视为取消操作 */
+      else { setV(rowOf(d.num), ''); renderSkating(); }
+    } else {
+      tapChip(d.num);
+    }
   });
   document.getElementById('reset-all').addEventListener('click', function () {
     if (!confirm('清空全部已排名次？')) return;
     rowsAll().forEach(function (row) { setV(row, ''); });
-    selected = null;
     renderSkating();
   });
-  for (var k = 1; k <= N; k++) {
-    (function (r) {
-      var btn = document.createElement('button');
-      btn.type = 'button'; btn.className = 'kp-key'; btn.dataset.r = String(r); btn.textContent = String(r);
-      btn.addEventListener('click', function () { keyRank(r); });
-      kpKeys.appendChild(btn);
-    })(k);
-  }
+  buildSlots();
   renderSkating();
 } else if (SCORE) {
   function renderScore() {
@@ -286,12 +310,8 @@ if (SKATING) {
   function renderMark() {
     document.querySelectorAll('.mark-row').forEach(function (row) {
       var cb = row.querySelector('input.val');
-      if (row.classList.contains('off')) {
-        row.querySelector('.mark-hint').textContent = '🔒 未检录';
-        return;
-      }
+      if (row.classList.contains('off')) return;
       row.classList.toggle('checked', cb.checked);
-      row.querySelector('.mark-hint').textContent = cb.checked ? '已给 Mark · 点击取消' : '点击给 Mark';
     });
     var cnt = document.getElementById('mark-count');
     if (cnt) cnt.textContent = document.querySelectorAll('.mark-row:not(.off) input.val:checked').length;
@@ -324,7 +344,6 @@ if (SKATING) {
       }
     }
   }
-  var ADV_READY = document.querySelectorAll('.mark-row input.val:checked').length > 0;   // 已有回显则不默认全选
   document.querySelectorAll('.mark-row').forEach(function (row) {
     row.addEventListener('click', function () {
       if (row.classList.contains('off')) { offToast(); return; }
@@ -333,7 +352,7 @@ if (SKATING) {
       renderMark();
     });
   });
-  // Mark 快捷操作：全选/清空（触发行点击保持计数同步）
+  // Mark 快捷操作：全选/清空（触发点击保持计数同步）
   function markToggle(rows, want) {
     rows.forEach(function (row) {
       var cb = row.querySelector('input.val');
@@ -343,15 +362,7 @@ if (SKATING) {
   window.markAll = function (state) {
     markToggle(Array.from(document.querySelectorAll('.mark-row:not(.off)')), !!state);
   };
-  window.markTop = function (n) {
-    var rows = Array.from(document.querySelectorAll('.mark-row:not(.off)'));
-    markToggle(rows, false);                       // 先清空
-    rows.slice(0, Math.min(n, rows.length)).forEach(function (row) {
-      if (!row.querySelector('input.val').checked) row.click();
-    });
-  };
   renderMark();
-  // R112：首次进入默认全空（用户反馈），裁判用「全选」按钮自助操作
 }
 
 async function submitSheet() {
@@ -365,14 +376,15 @@ async function submitSheet() {
     }
   }
   try {
-    var r = await api('PUT', '/api/judge/competition-events/' + CEID + '/dances/' + encodeURIComponent(DANCE) + '/sheet', {values: collect()});
+    var r = await api('PUT', SUBMIT_URL, {values: collect()});
     el.className = 'ok';
-    el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判') + '——仅当前舞种「' + DANCE + '」，请切换舞种继续';
+    el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判') + (DEBUGJ ? '（调试代打）' : '——仅当前舞种「' + DANCE + '」，请切换舞种继续');
     var dnCur = document.getElementById('dn-cur');
     if (dnCur) dnCur.innerHTML = DANCE + ' ✓ 已提交';
-    try { sessionStorage.removeItem('sheet:' + CEID + ':' + encodeURIComponent(DANCE)); } catch (err) {}
+    if (!DEBUGJ) { try { sessionStorage.removeItem('sheet:' + CEID + ':' + encodeURIComponent(DANCE)); } catch (err) {} }
   } catch (e) { el.className = 'err'; el.textContent = e.message; }
 }
+var DEBUGJ = {% if debug_judge %}true{% else %}false{% endif %};
 
 var CID = {{ ev.competition_id }};
 /* 检录变化 → 就地更新置灰与 Mark 上限，不重载（保护正在输入的分值） */
@@ -387,11 +399,6 @@ function refreshOffState() {
         if (el.type === 'hidden') return;   /* rank-row 的 .val 为 hidden，点击拦截由 off 类负责 */
         el.disabled = !ok;
       });
-      var hint = row.querySelector('.mark-hint, .rank-hint');
-      if (hint) {
-        if (!ok) hint.textContent = '🔒 未检录';
-        else if (hint.textContent === '🔒 未检录') hint.textContent = row.classList.contains('rank-row') ? '点击排名' : (row.classList.contains('mark-row') ? '点击给 Mark' : '');
-      }
     });
     var cap = document.getElementById('mark-cap');
     if (cap) cap.textContent = d.checked_n;
@@ -406,6 +413,7 @@ function refreshOffState() {
     else if (typeof renderScore === 'function') renderScore();
   }).catch(function () {});
 }
+{% if not debug_judge %}
 connectSSE('/api/events/' + CID + '/stream', {
   competition_event_opened: softReload,
   roster_changed: softReload,
@@ -490,4 +498,5 @@ var TRIAL = {{ trial|tojson }};
     }).observe(msgEl, { attributes: true, attributeFilter: ['class'], childList: true, characterData: true });
   }
 })();
+{% endif %}
 {% endblock %}
