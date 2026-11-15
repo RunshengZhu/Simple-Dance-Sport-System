@@ -191,7 +191,25 @@ def check_status(admin, ceid, expect_in):
     }""", ceid)
     return any(s in st for s in expect_in), st[:80]
 
+
+def preflight_isolation(target_cid=21):
+    """R133 预演隔离守卫（comp21 事故：冒烟直接写生产正式赛事并静默改坏名单）：
+    目标赛事非试用赛（is_trial）时拒绝执行；确需对生产预演须显式 ALLOW_PROD_SMOKE=1。"""
+    import os as _os, urllib.request as _u
+    if _os.environ.get("ALLOW_PROD_SMOKE") == "1":
+        print("!! ALLOW_PROD_SMOKE=1：隔离守卫已解除（对正式赛事写入）", flush=True)
+        return
+    req = _u.Request(BASE + "/api/events",
+                     headers={"Cookie": "session=" + COOKIES["admin"]})
+    data = json.load(_u.urlopen(req, timeout=15))
+    comp = next((c for c in data["events"] if c["id"] == target_cid), None)
+    if comp and not comp.get("is_trial"):
+        raise SystemExit("预演隔离守卫：赛事 %s（%s）不是试用赛——冒烟禁止对正式赛事写入。\n"
+                         "如确需对生产预演，请设环境变量 ALLOW_PROD_SMOKE=1。" % (target_cid, comp.get("name")))
+
+
 def main():
+    preflight_isolation()
     with sync_playwright() as p:
         b = p.chromium.launch()
         ctx, pg = {}, {}

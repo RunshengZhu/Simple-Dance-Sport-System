@@ -693,14 +693,17 @@ async def competition_home(request: Request, competition_id: int):
                 ev["results"] = [{"rank": r["rank"], "number": str(r["competitor_number"]),
                                   "name": nb.get(str(r["competitor_number"]), ""),
                                   "total": r.get("total_score")} for r in res["overall_results"]]
-            nxt = db.rowdict(conn.execute(
+            # R133 多分场：晋级名单 = 下一轮全部分场的并集（fetchone 单场只显示第一个分场）
+            nxt_rows = db.rows(conn.execute(
                 "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
-                (comp["id"], ev["project_code"], ev["round"] + 1)).fetchone())
-            if nxt:
+                (comp["id"], ev["project_code"], ev["round"] + 1)))
+            if nxt_rows:
+                nxt_ids = [r["id"] for r in nxt_rows]
+                ph = ",".join("?" * len(nxt_ids))
                 ev["advanced"] = [{"number": r["competitor_number"], "name": nb.get(str(r["competitor_number"]), "")}
                                   for r in db.rows(conn.execute(
-                                      "SELECT competitor_number FROM event_competitors WHERE event_id=? "
-                                      "ORDER BY CAST(competitor_number AS INTEGER)", (nxt["id"],)))]
+                                      "SELECT DISTINCT competitor_number FROM event_competitors WHERE event_id IN ({0}) "
+                                      "ORDER BY CAST(competitor_number AS INTEGER)".format(ph), nxt_ids))]
         events.append(ev)
     payload["events"] = events
     ca = _compadmin(request)
@@ -1578,6 +1581,22 @@ async def api_delete_event(competition_id: int, request: Request = None):
     return {"ok": True}
 
 
+def _project_member_numbers(conn, competition_id: int, project_code: str):
+    """R133 场次项目的报名背号集合：精确码 → 主干前缀回退（P01Z02→P01A/B/C，同 _display_names 规则）。
+    供开赛名单校验与晋级回填互斥校验使用。单人拆项等无本项目报名行的背号由调用方
+    以「既有名单」兜底（api_open），不在本函数放宽。"""
+    codes = {r["project_code"] for r in db.rows(conn.execute(
+        "SELECT DISTINCT project_code FROM competitors WHERE competition_id=?", (competition_id,)))}
+    q = "SELECT number FROM competitors WHERE competition_id=? AND project_code=?"
+    args = [competition_id, project_code]
+    if project_code not in codes:
+        m0 = re.match(r"^[A-Z]+\d+", project_code or "")
+        if m0 and m0.group(0) != project_code:
+            q = "SELECT number FROM competitors WHERE competition_id=? AND project_code LIKE ?"
+            args = [competition_id, m0.group(0) + "%"]
+    return {r["number"] for r in db.rows(conn.execute(q, args))}
+
+
 def _display_names(conn, competition_id: int, project_code=None):
     """背番号→显示名：双人项目「张三 / 李四」（partner 为 R71 组合搭档列，纯展示），
     单人项目即本人。计分/检录/晋级仍按背番号一人一号。
@@ -2314,9 +2333,24 @@ async def api_open(ceid: int, request: Request = None):
         raise HTTPException(status_code=400, detail="背号不在选手库中: " + ",".join(unknown[:5]))
     if dances_of(ev["id"]) == []:
         raise HTTPException(status_code=400, detail="场次未配置舞种，请检查赛程导入")
-    had_scores = bool(db.get_db().execute(
-        "SELECT 1 FROM score_records WHERE event_id=? LIMIT 1", (ceid,)).fetchone())
     conn = db.get_db()
+    # R133 开赛名单归属校验：名单非空时，新增背号必须属于该场次项目（精确码/主干前缀
+    # P01Z02→P01A/B/C 报名，或既有名单成员——单人拆项如 P14 的 1403/1406 靠既有名单兜底）。
+    # comp21 事故：跨项目背号经 open 重写混入分组场次——既有名单存在时越界即拒。
+    # 名单为空（评分制集体场等首开场景）→ 仅要求背号在选手库，审计留痕可追溯。
+    existing = {r["competitor_number"] for r in db.rows(conn.execute(
+        "SELECT competitor_number FROM event_competitors WHERE event_id=?", (ceid,)))}
+    if existing:
+        members = _project_member_numbers(conn, comp["id"], ev["project_code"]) | existing
+        foreign = [n for n in roster_list if n not in members]
+        if foreign:
+            raise HTTPException(status_code=400, detail="背号不属于该项目报名/既有名单: " + ",".join(foreign[:8]))
+    had_scores = bool(conn.execute(
+        "SELECT 1 FROM score_records WHERE event_id=? LIMIT 1", (ceid,)).fetchone())
+    if had_scores and not body.get("reset"):
+        # R133 有评分数据的重开必须显式 reset=true（原为隐式清场——comp21 事故名单被静默重建）
+        raise HTTPException(status_code=409,
+                            detail="该场次已有评分/成绩数据。确认重开（清空该场评分/成绩并按此名单重建）请传 reset:true")
     if had_scores or body.get("reset"):
         # 重开（清空评分）= 全部重来，检录状态一并重置
         conn.execute("DELETE FROM event_competitors WHERE event_id=?", (ceid,))
@@ -2331,6 +2365,11 @@ async def api_open(ceid: int, request: Request = None):
         conn.execute("INSERT OR IGNORE INTO event_competitors(event_id, competitor_number) VALUES(?,?)", (ceid, num))
     conn.execute("UPDATE events SET status='scoring' WHERE id=?", (ceid,))
     conn.commit()
+    # R133 开赛补审计：roster 全量入审计（comp21 事故因 api_open 无审计而无法归因客户端）
+    _audit(_actor_name(s), "event_open", "event:{0}".format(ceid),
+           "{0} 开赛 roster={1}{2}".format(ev["code"], ",".join(roster_list),
+                                           "（reset 清场重建）" if body.get("reset") else ""),
+           _client_ip(request))
     sse.bus.publish(comp["id"], "competition_event_opened", {"event_id": ceid, "roster": roster_list})
     return {"ok": True, "roster": roster_list, "reset_scores": had_scores}
 
@@ -2913,7 +2952,18 @@ async def api_reset_scoring(competition_id: int, request: Request = None):
     所有场次回到待赛；保留报名名单、赛程定义（名称/舞种/制式/晋级名额/团体计分）、出场顺序、
     裁判与工作人员、直达链接与口令。用于测试后清理或比赛重赛。破坏性操作——记审计。"""
     s = require_admin(request)
-    _comp_or_404(competition_id)
+    comp = db.rowdict(db.get_db().execute(
+        "SELECT id, name FROM competitions WHERE id=?", (competition_id,)).fetchone())
+    if not comp:
+        raise HTTPException(status_code=404, detail="赛事不存在")
+    # R133 破坏性操作加固：须请求体 confirm=赛事名全字匹配（comp21 比赛日被全量 reset 三次）
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if (body.get("confirm") or "").strip() != (comp["name"] or "").strip():
+        raise HTTPException(status_code=400,
+                            detail='破坏性操作：请在请求体传 confirm="{0}"（赛事名全字匹配）以确认恢复初始状态'.format(comp["name"]))
     conn = db.get_db()
     evs = db.rows(conn.execute("SELECT id, round FROM events WHERE competition_id=?", (competition_id,)))
     ids = [e["id"] for e in evs]
@@ -3440,7 +3490,7 @@ async def api_proposal(project_code: str, round_no: int, request: Request = None
 
 @app.post("/api/projects/{project_code}/rounds/{round_no}/advancement-confirm")
 async def api_confirm(project_code: str, round_no: int, request: Request = None):
-    require_admin(request)
+    s = require_admin(request)
     body = await request.json()
     # R126 追加模式优先：单场确认走 assign（不清空其他场已确认名单），无 advancing 也不报错
     if body.get("assign") and body.get("append"):
@@ -3479,6 +3529,31 @@ async def api_confirm(project_code: str, round_no: int, request: Request = None)
     # R126 追加模式：单场确认——按各场次表格勾选分别回填（INSERT OR IGNORE，不清空其他场已确认名单）
     assign = body.get("assign")
     if assign and isinstance(assign, dict):
+        # R133 同轮分场互斥：同一背号不得同时填入多个分场（comp21 复赛 A/B 重复事故——
+        # 全量视图重蛇形 + 追加不清理导致跨场副本）。请求内互斥 + 与既有回填互斥，冲突即拒。
+        seen = {}
+        for code, nums in assign.items():
+            for n in nums:
+                n = str(n).strip()
+                if not n:
+                    continue
+                if n in seen and seen[n] != code:
+                    raise HTTPException(status_code=400,
+                                        detail="背号 {0} 同时出现在 {1} 与 {2}——同一轮的分场名单必须互斥".format(
+                                            n, seen[n], code))
+                seen[n] = code
+        next_ids = {r["code"]: r["id"] for r in db.rows(conn.execute(
+            "SELECT id, code FROM events WHERE competition_id=? AND project_code=? AND round=?",
+            (comp["id"], project_code, round_no + 1)))}
+        for code, nums in assign.items():
+            for other_id in [i for c, i in next_ids.items() if c != code]:
+                rosters = {r["competitor_number"] for r in db.rows(conn.execute(
+                    "SELECT competitor_number FROM event_competitors WHERE event_id=?", (other_id,)))}
+                clash = sorted({str(n).strip() for n in nums if str(n).strip() in rosters})
+                if clash:
+                    raise HTTPException(status_code=400,
+                                        detail="背号 {0} 已在其他分场（{1}）名单中——同一轮的分场名单必须互斥".format(
+                                            ",".join(clash[:8]), code))
         filled = {}
         for code, nums in assign.items():
             ev_n = db.rowdict(conn.execute(
@@ -3493,16 +3568,25 @@ async def api_confirm(project_code: str, round_no: int, request: Request = None)
                 ins.append(str(n))
             filled[code] = ins
         conn.commit()
+        _audit(_actor_name(s), "advancement_confirm", "project:{0}".format(project_code),
+               "R{0} 追加回填 {1}".format(round_no + 1,
+                                           "；".join("{0}:{1}".format(c, ",".join(v)) for c, v in filled.items())),
+               _client_ip(request))
         sse.bus.publish(comp["id"], "schedule_changed", {"filled": filled, "append": True})
         return {"ok": True, "filled": filled, "append": True}
     filled = confirm_advancement(comp["id"], project_code, round_no, advancing)
+    _audit(_actor_name(s), "advancement_confirm", "project:{0}".format(project_code),
+           "R{0} 全量回填 {1}".format(round_no + 1,
+                                      "；".join("{0}:{1}".format(c, ",".join(v)) for c, v in filled.items())),
+           _client_ip(request))
     sse.bus.publish(comp["id"], "schedule_changed", {"filled": filled})
     return {"ok": True, "filled": filled}
 
 
 # ------------------------------------------------- team standings (M6/D12/D13)
-def _team_standings(competition_id, published_only):
-    """按单位聚合团体总分：双人=主报单位（D13），集体=队伍单位（competitors.unit）。
+def _team_entries(competition_id, published_only):
+    """R133 团体总分 entries 构建——唯一来源（此前 admin 页内联了一份旧口径副本，
+    缺 team_mode/freshman_half/跨院平分，导致管理榜与公开榜不一致）。
     published_only=True 仅统计已发布场次（公开口径）；False 统计全部已计算（管理预览）。"""
     conn = db.get_db()
     _comp_or_404(competition_id)
@@ -3566,8 +3650,12 @@ def _team_standings(competition_id, published_only):
                     agg = {u1: 0.5, u2: 0.5}
                 for u, sh in agg.items():
                     entries.append({"project": pr, "number": num, "unit": u, "rank": r["rank"], "share": sh})
+    return entries
+
+
+def _team_standings(competition_id, published_only):
     from core.team_standing import compute_team_standings
-    return compute_team_standings(entries)
+    return compute_team_standings(_team_entries(competition_id, published_only))
 
 
 @app.get("/api/events/{competition_id}/team-standings")
@@ -3648,35 +3736,10 @@ async def team_standings_admin_page(request: Request, competition_id: int, best:
     require_admin(request)
     comp = _comp_or_404(competition_id)
     best_n = int(best) if best.isdigit() and int(best) > 0 else None
-    conn = db.get_db()
+    # R133 单一来源：与公开榜/大屏共用 _team_entries（旧内联副本缺 team_mode/freshman_half/
+    # 跨院平分，导致管理榜与公开榜不一致——comp21 复盘）
     from core.team_standing import compute_team_standings
-    events = db.rows(conn.execute(
-        "SELECT * FROM events WHERE competition_id=? AND status IN ('calculated','published') ORDER BY project_code, round, code",
-        (competition_id,)))
-    # R73 成员信息：每组合行含主报成员与搭档的 (单位, 身份)。身份含「老」=老生（老带新项目老生不计分）。
-    comp_rows = db.rows(conn.execute(
-        "SELECT number, project_code, unit, partner_unit, role, partner_role FROM competitors WHERE competition_id=?",
-        (competition_id,)))
-    member_by_key = {}
-    for c in comp_rows:
-        member_by_key[(c["project_code"], c["number"])] = c
-    unit_by_number = {c["number"]: (c["unit"] or "") for c in comp_rows}
-    entries = []
-    last_round = {}
-    with_results = []
-    for ev in events:
-        data = load_results(ev["id"])
-        if data and data.get("overall_results"):
-            with_results.append((ev, data))
-            if ev["project_code"] not in last_round or ev["round"] > last_round[ev["project_code"]]:
-                last_round[ev["project_code"]] = ev["round"]
-    for ev, data in with_results:
-        if ev["round"] != last_round[ev["project_code"]]:
-            continue
-        for r in data["overall_results"]:
-            num = str(r["competitor_number"])
-            entries.append({"project": ev["project_code"], "number": num,
-                            "unit": unit_by_number.get(num, ""), "rank": r["rank"]})
+    entries = _team_entries(competition_id, published_only=False)
     standings = compute_team_standings(entries, best_n=best_n)
     return templates.TemplateResponse(request, "team_standings.html", {
         "request": request, "comp": comp, "standings": standings, "best_n": best_n})
@@ -4699,13 +4762,16 @@ async def api_public_lookup(competition_id: int, num: str = "", name: str = "", 
                         continue  # 前缀并列——归属不明确，宁缺勿错
                     pair = max(cps, key=lambda pr: lcp(ev["project_code"], pr[0]))  # 分组场次按前缀归属
                 adv = None
-                nxt = db.rowdict(conn.execute(
+                # R133 多分场：下一轮可能有多个场次（R2A/R2B），须查全部——fetchone 单场会把
+                # 另一分场的晋级者误判为未晋级（comp21: 802 案例，25 人误显）
+                nxt_ids = [r["id"] for r in db.rows(conn.execute(
                     "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
-                    (comp["id"], ev["project_code"], ev["round"] + 1)).fetchone())
-                if nxt and ev["status"] == "published":
+                    (comp["id"], ev["project_code"], ev["round"] + 1)))]
+                if nxt_ids and ev["status"] == "published":
+                    ph = ",".join("?" * len(nxt_ids))
                     in_next = conn.execute(
-                        "SELECT 1 FROM event_competitors WHERE event_id=? AND competitor_number=?",
-                        (nxt["id"], ev["competitor_number"])).fetchone()
+                        "SELECT 1 FROM event_competitors WHERE competitor_number=? AND event_id IN ({0})".format(ph),
+                        [ev["competitor_number"]] + nxt_ids).fetchone()
                     adv = bool(in_next)
                 rank = total = None
                 if ev["status"] == "published":
@@ -4765,13 +4831,15 @@ async def api_public_lookup(competition_id: int, num: str = "", name: str = "", 
         partner_disp = _partner_for_rows(rows, ev["project_code"])
         # 晋级判定：非最末轮已发布、选手在下一轮名单中
         adv = None
-        nxt = db.rowdict(conn.execute(
+        # R133 多分场：下一轮全部场次一起查（fetchone 单场会误判另一分场的晋级者）
+        nxt_ids = [r["id"] for r in db.rows(conn.execute(
             "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
-            (comp["id"], ev["project_code"], ev["round"] + 1)).fetchone())
-        if nxt and ev["status"] == "published":
+            (comp["id"], ev["project_code"], ev["round"] + 1)))]
+        if nxt_ids and ev["status"] == "published":
+            ph = ",".join("?" * len(nxt_ids))
             in_next = conn.execute(
-                "SELECT 1 FROM event_competitors WHERE event_id=? AND competitor_number=?",
-                (nxt["id"], num)).fetchone()
+                "SELECT 1 FROM event_competitors WHERE competitor_number=? AND event_id IN ({0})".format(ph),
+                [num] + nxt_ids).fetchone()
             adv = bool(in_next)
         # 已发布名次
         rank = None

@@ -279,7 +279,10 @@ def test_uncheck_deletes_scores_then_reset_open_clears_all(env):
     # 已有评分 → 再次 open 走全清：检录一并重置，reset_scores=True
     r = req("POST", f"/api/competition-events/{ceid}/open",
             json={"roster": ["105", "106"]}, role="admin")
-    assert r.status_code == 200 and r.json()["reset_scores"] is True
+    # R133：已有评分的 open 须显式 reset=true（隐式清场移除——comp21 事故修复）
+    r2 = req("POST", f"/api/competition-events/{ceid}/open",
+             json={"roster": ["105", "106"], "reset": True}, role="admin")
+    assert r.status_code == 409 and r2.status_code == 200 and r2.json()["reset_scores"] is True
     state = req("GET", f"/api/competition-events/{ceid}/checkin", role="marshal").json()
     assert state["checked"] == [] and state["total"] == 2
 
