@@ -42,17 +42,17 @@
     <b>打分要点 · {{ ev.scoring_type }}</b>
     {% if is_mark %}
     <ul>
-      <li>点背号块<b>给 Mark</b>（再点取消）——表示你认为该选手应晋级</li>
-      <li>打开默认全空；「全选 / 清空」快捷按钮可整批调整</li>
-      <li>本场晋级名额 <b>{{ ev.advancement_count or "按现场通知" }}</b>——通常勾选人数 = 名额</li>
-      <li>勾满名额后底部「提交 Mark 名单」才可用；灰 = 还差几人</li>
+      <li>点背号块<b>选中</b>（再点取消）——矩阵只有背号，干净无干扰</li>
+      <li><b>正选</b>：点中的选手晋级；<b>反选</b>：点中的选手淘汰，其余晋级（红色标记）</li>
+      <li>评分方式可随时在工具条切换，选择后<b>后续场次自动保持</b></li>
+      <li>本场晋级名额 <b>{{ ev.advancement_count or "按现场通知" }}</b>；提交前底部会提示还差/已满足</li>
     </ul>
     {% elif is_skating %}
     <ul>
-      <li>把左侧背号<b>拖到右侧名次槽</b>：1 号槽 = 第 1 名（最好），依次往下</li>
-      <li>不用拖也可以：<b>直接点背号</b> = 依次放入下一个空槽；点已占用的槽 = 取消该选手</li>
-      <li>拖到已占用的槽 = 两个选手交换名次；「重置」清空重来</li>
-      <li>底部「提交名次表」在至少排了一名后可用（未排的按缺评计）</li>
+      <li><b>拖拽（默认）</b>：把左侧背号拖到右侧名次槽（1=最好）；也支持两次点选——先点背号再点槽位</li>
+      <li><b>顺序点选</b>：按名次依次点背号，自动放入下一个空槽</li>
+      <li>点已排名的背号 = 取消；点已占用的槽位 = 取消；「重置」清空全部</li>
+      <li>评分方式可随时切换，选择后<b>后续场次自动保持</b></li>
     </ul>
     {% else %}
     <ul>
@@ -71,39 +71,43 @@
 {% if not roster %}<p class="err">上场名单为空或场次未开场。</p>{% endif %}
 
 {% if is_mark %}
-<div class="mark-tools">
-  <button type="button" class="btn small secondary" onclick="markAll(1)">全选</button>
-  <button type="button" class="btn small secondary" onclick="markAll(0)">清空</button>
-  <span class="muted">已选 <span id="mark-count">0</span> / 已检录 <span id="mark-cap">{{ checked|length }}</span>
+<div class="mode-toggle" id="mark-mode-bar">
+  <span class="mt-label">评分方式：</span>
+  <button type="button" class="mt-btn" data-mm="normal">正选 · 点中=晋级</button>
+  <button type="button" class="mt-btn" data-mm="inverse">反选 · 点中=淘汰</button>
+  <button type="button" class="btn small secondary" onclick="markAll(1)" id="mk-all">全选</button>
+  <button type="button" class="btn small secondary" onclick="markAll(0)" id="mk-clear">清空</button>
+  <span class="muted" id="mark-count-line">已选 <span id="mark-count">0</span> / 已检录 <span id="mark-cap">{{ checked|length }}</span>
   <span id="adv-note" class="muted">{% if ev.advancement_count %}（还差 {{ ev.advancement_count }} 人满足名额 {{ ev.advancement_count }}）{% endif %}</span></span>
 </div>
-<div class="mark-grid">
+<div class="mark-grid" id="mark-grid">
   {% for num in roster %}
   {% set ok = num in checked %}
   <div class="mark-row mark-cell {{ '' if ok else 'off' }}" data-num="{{ num }}">
-    <span class="mark-box"></span>
     <span class="row-num">{{ num }}</span>
     <input type="checkbox" class="val" data-num="{{ num }}" {% if not ok %}disabled{% endif %} {% if rows.get(num) and rows[num]["mark"] is not none %}{{ "checked" if rows[num]["mark"] else "" }}{% endif %}>
   </div>
   {% endfor %}
 </div>
 {% elif is_skating %}
+<div class="mode-toggle" id="skate-mode-bar">
+  <span class="mt-label">评分方式：</span>
+  <button type="button" class="mt-btn" data-sm="drag">拖拽 / 两击指定（默认）</button>
+  <button type="button" class="mt-btn" data-sm="seq">顺序点选</button>
+  <button type="button" class="btn small secondary" id="reset-all">重置</button>
+  <span class="muted" id="mode-hint"></span>
+</div>
 <div class="skate-wrap">
-  <div class="rank-grid">
+  <div class="rank-grid" id="rank-grid">
     {% for num in roster %}
     {% set ok = num in checked %}
     <div class="rank-row rank-cell {{ '' if ok else 'off' }}" data-num="{{ num }}">
-      <span class="rank-badge"></span>
       <span class="row-num">{{ num }}</span>
       <input type="hidden" class="val" data-num="{{ num }}" {% if not ok %}disabled{% endif %} value="{{ rows.get(num) and rows[num]["placement"] if rows.get(num) and rows[num]["placement"] else "" }}">
     </div>
     {% endfor %}
   </div>
   <div class="rank-slots" id="rank-slots" aria-label="名次槽位"></div>
-</div>
-<div class="mode-toggle">
-  <button type="button" class="mt-btn ghost" id="reset-all">重置</button>
-  <span class="muted" id="mode-hint">点背号 = 依次放入下一个空槽 · 拖背号到槽位 = 指定名次 · 点已占用槽位 = 取消</span>
 </div>
 {% else %}
 <p class="muted">为每支队伍打 0~10 分（一位小数），点击输入框唤起数字键盘。</p>
@@ -160,18 +164,25 @@ function collect() {
     else values[num] = el.checked;
   });
   if (!SKATING && !SCORE) {
-    var picked = {};
-    Object.keys(values).forEach(function (num) { if (values[num]) picked[num] = true; });
-    return picked;   // 仅 Mark 制：只提交勾选给予 Mark 的选手（core 语义）；SCORE 须保留数值
+    /* R136 Mark：正选=点中者晋级；反选=点中者淘汰（未点中的已检录选手全部晋级）。
+       提交载荷始终是「晋级者 = true」，与模式无关。 */
+    var out = {};
+    document.querySelectorAll('.mark-row:not(.off)').forEach(function (row) {
+      var cb = row.querySelector('input.val');
+      var adv = (MARK_MODE === 'inverse') ? !cb.checked : cb.checked;
+      if (adv) out[row.dataset.num] = true;
+    });
+    return out;
   }
   return values;
 }
 
 if (SKATING) {
-  /* R135 槽位式顺位 UI：左侧背号矩阵 + 右侧 1~N 名次槽。
-     交互：点背号 = 放入下一个空槽；拖背号到槽 = 指定名次（占用则交换）；
-     点已占用槽 = 取消该选手；点已排背号 = 取消。数据仍存于行内 hidden .val。 */
+  /* R136 槽位式顺位 UI（解耦）：两种评分方式，选择持久化（localStorage）——
+     drag（默认）：拖背号到槽位；两次点选替代——点未排名背号(选中)→点槽位=指定；点已排名背号/占用槽=取消。
+     seq：顺序点选——按名次依次点背号，自动放入下一个空槽；点已排背号=取消。 */
   var slotsBox = document.getElementById('rank-slots');
+  var SKATE_MODE = localStorage.getItem('judge-skate-mode') || 'drag';
   function rowsAll() { return Array.prototype.slice.call(document.querySelectorAll('.rank-row')); }
   function rowOf(num) { return document.querySelector('.rank-row[data-num="' + num + '"]'); }
   function getV(row) { return row.querySelector('input.val').value; }
@@ -179,21 +190,6 @@ if (SKATING) {
   function placed() {
     return rowsAll().filter(function (r) { return getV(r) !== ''; })
       .sort(function (a, b) { return parseInt(getV(a), 10) - parseInt(getV(b), 10); });
-  }
-  function buildSlots() {
-    slotsBox.innerHTML = '';
-    for (var r = 1; r <= N; r++) {
-      (function (r) {
-        var d = document.createElement('div');
-        d.className = 'slot'; d.dataset.r = String(r);
-        d.innerHTML = '<span class="slot-rank">' + r + '</span><span class="slot-num"></span>';
-        d.addEventListener('click', function () {
-          var owner = rankOwner(r);
-          if (owner) { setV(rowOf(owner), ''); renderSkating(); }
-        });
-        slotsBox.appendChild(d);
-      })(r);
-    }
   }
   function rankOwner(r) {
     var out = null;
@@ -204,23 +200,50 @@ if (SKATING) {
     for (var r = 1; r <= N; r++) { if (!rankOwner(r)) return r; }
     return null;
   }
+  function buildSlots() {
+    slotsBox.innerHTML = '';
+    for (var r = 1; r <= N; r++) {
+      (function (r) {
+        var d = document.createElement('div');
+        d.className = 'slot'; d.dataset.r = String(r);
+        d.innerHTML = '<span class="slot-rank">' + r + '</span><span class="slot-num"></span>';
+        d.addEventListener('click', function () {
+          var owner = rankOwner(r);
+          if (owner) { setV(rowOf(owner), ''); renderSkating(); return; }   // 点占用槽 = 取消
+          if (SKATE_MODE === 'drag' && selected) {                           // 两击指定：已选背号 → 点槽位
+            assignSlot(selected, r); selected = null; renderSkating();
+          }
+        });
+        slotsBox.appendChild(d);
+      })(r);
+    }
+  }
   function renderSkating() {
     rowsAll().forEach(function (row) {
-      var v = getV(row), badge = row.querySelector('.rank-badge');
-      if (v) { badge.textContent = v; row.classList.add('assigned'); } else { badge.textContent = ''; row.classList.remove('assigned'); }
+      var v = getV(row);
+      row.classList.toggle('assigned', v !== '');
+      row.classList.toggle('selected', SKATE_MODE === 'drag' && selected === row.dataset.num);
     });
     Array.prototype.forEach.call(slotsBox.children, function (slot) {
       var owner = rankOwner(parseInt(slot.dataset.r, 10));
       slot.classList.toggle('filled', !!owner);
+      slot.classList.toggle('ready', SKATE_MODE === 'drag' && !!selected && !owner);
       slot.querySelector('.slot-num').textContent = owner || '';
     });
     var done = placed().length;
     document.getElementById('progress').textContent = '已排 ' + done + ' / ' + CHECKED + (done < CHECKED ? ' · 还差 ' + (CHECKED - done) : ' · 可提交');
-    var msgEl = document.getElementById('msg');   // R60：拦截提示随进度刷新/清除
+    var msgEl = document.getElementById('msg');
     if (msgEl && msgEl.className === 'err') {
       if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
       else msgEl.textContent = '还有 ' + (CHECKED - done) + ' 名选手未排名';
     }
+    var hint = document.getElementById('mode-hint');
+    if (hint) hint.textContent = SKATE_MODE === 'drag'
+      ? '拖背号到槽位 = 指定名次；点未排名背号 → 点槽位 = 两击指定；点已排名背号或占用槽位 = 取消'
+      : '按名次顺序点背号，自动放入下一个空槽；点已排名背号 = 取消';
+    document.querySelectorAll('#skate-mode-bar .mt-btn[data-sm]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.sm === SKATE_MODE);
+    });
   }
   function assignSlot(num, r) {
     var row = rowOf(num);
@@ -231,29 +254,44 @@ if (SKATING) {
     setV(row, String(r));
     renderSkating();
   }
-  function tapChip(num) {
+  function tapSeq(num) {
     var row = rowOf(num);
     if (row.classList.contains('off')) { offToast(); return; }
     var cur = getV(row);
     if (cur !== '') { setV(row, ''); renderSkating(); return; }   // 已排 → 取消
-    var r = nextFreeSlot();
-    if (r === null) return;
-    setV(row, String(r));
+    var ord = placed().map(function (r) { return r.dataset.num; });
+    ord.push(num);
+    rowsAll().forEach(function (r2) {
+      var k = ord.indexOf(r2.dataset.num);
+      setV(r2, k >= 0 ? String(k + 1) : '');
+    });
     renderSkating();
   }
-  /* 指针拖拽（桌面 + 移动统一）：pointerdown 起拖，越过槽位高亮，松手落槽 */
-  var drag = null;
+  var selected = null, drag = null;
+  function tapChipDrag(num) {
+    var row = rowOf(num);
+    if (row.classList.contains('off')) { offToast(); return; }
+    if (getV(row) !== '') { setV(row, ''); renderSkating(); return; }   // 点已排名背号 = 取消
+    selected = (selected === num) ? null : num;                          // 选中等待槽位
+    renderSkating();
+  }
   function slotFromPoint(x, y) {
     var el = document.elementFromPoint(x, y);
     return el ? el.closest('.slot') : null;
   }
-  rowsAll().forEach(function (row) {
+  function bindChip(row) {
     row.addEventListener('pointerdown', function (e) {
-      if (row.classList.contains('off')) return;
+      if (row.classList.contains('off') || SKATE_MODE !== 'drag') return;   // seq 模式禁用拖拽（解耦）
       drag = { num: row.dataset.num, x: e.clientX, y: e.clientY, moved: false, ghost: null };
       e.preventDefault();
     });
-  });
+    row.addEventListener('click', function () {
+      if (row.classList.contains('off')) { offToast(); return; }
+      if (SKATE_MODE === 'drag') tapChipDrag(row.dataset.num);
+      else tapSeq(row.dataset.num);
+    });
+  }
+  rowsAll().forEach(bindChip);
   document.addEventListener('pointermove', function (e) {
     if (!drag) return;
     if (!drag.moved && Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 8) return;
@@ -278,15 +316,22 @@ if (SKATING) {
     if (d.moved) {
       var slot = slotFromPoint(e.clientX, e.clientY);
       if (slot) assignSlot(d.num, parseInt(slot.dataset.r, 10));
-      /* 移动后未落到槽位 → 视为取消操作 */
-      else { setV(rowOf(d.num), ''); renderSkating(); }
-    } else {
-      tapChip(d.num);
+      else { setV(rowOf(d.num), ''); renderSkating(); }   // 拖出槽位 = 取消
     }
+    /* 未移动（单击）由 click 事件处理，这里不重复 */
+  });
+  document.querySelectorAll('#skate-mode-bar .mt-btn[data-sm]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      SKATE_MODE = b.dataset.sm;
+      localStorage.setItem('judge-skate-mode', SKATE_MODE);   // R136 选择持久化：后续场次默认保持
+      selected = null;
+      renderSkating();
+    });
   });
   document.getElementById('reset-all').addEventListener('click', function () {
     if (!confirm('清空全部已排名次？')) return;
     rowsAll().forEach(function (row) { setV(row, ''); });
+    selected = null;
     renderSkating();
   });
   buildSlots();
@@ -295,7 +340,7 @@ if (SKATING) {
   function renderScore() {
     var done = Array.prototype.filter.call(document.querySelectorAll('input.val:not([disabled])'), function (i) { return i.value !== ''; }).length;
     document.getElementById('progress').textContent = '已填 ' + done + ' / ' + CHECKED + (done < CHECKED ? ' · 还差 ' + (CHECKED - done) : ' · 可提交');
-    var msgEl = document.getElementById('msg');   // R60：拦截提示随进度刷新/清除
+    var msgEl = document.getElementById('msg');
     if (msgEl && msgEl.className === 'err') {
       if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
       else msgEl.textContent = '还有 ' + (CHECKED - done) + ' 支队伍未评分';
@@ -307,42 +352,66 @@ if (SKATING) {
   });
   renderScore();
 } else {
+  /* R136 Mark 矩阵：只有背号；两种评分方式（正选/反选）持久化（localStorage）。
+     正选=点中晋级（绿色）；反选=点中淘汰（红色标记），未点中的已检录选手晋级。 */
+  var MARK_MODE = localStorage.getItem('judge-mark-mode') || 'normal';
+  function tappedRows() {
+    return document.querySelectorAll('.mark-row:not(.off) input.val:checked').length;
+  }
   function renderMark() {
     document.querySelectorAll('.mark-row').forEach(function (row) {
       var cb = row.querySelector('input.val');
       if (row.classList.contains('off')) return;
-      row.classList.toggle('checked', cb.checked);
+      row.classList.toggle('picked', cb.checked && MARK_MODE === 'normal');
+      row.classList.toggle('elim', cb.checked && MARK_MODE === 'inverse');
     });
+    var grid = document.getElementById('mark-grid');
+    if (grid) grid.classList.toggle('mode-inverse', MARK_MODE === 'inverse');
     var cnt = document.getElementById('mark-count');
-    if (cnt) cnt.textContent = document.querySelectorAll('.mark-row:not(.off) input.val:checked').length;
-    var done = document.querySelectorAll('.mark-row:not(.off) input.val:checked').length;   // R132 只计已检录行的勾选（草稿恢复的旧勾选不计）
-    document.getElementById('progress').textContent = '已选 ' + done + ' / ' + CHECKED;
-    var msgEl = document.getElementById('msg');   // R60：拦截提示随进度刷新/清除
-    if (msgEl && msgEl.className === 'err') {
-      if (done >= CHECKED) { msgEl.className = ''; msgEl.textContent = ''; }
-      else msgEl.textContent = '还有 ' + (CHECKED - done) + ' 支队伍未给 Mark';
-    }
-    // R108c/R130d/R132：Mark 需勾满 min(晋级名额, 已检录数) 才可提交——检录不足名额时按实际人数晋级；
-    // 草稿恢复/检录变化导致的未检录行勾选一律清零（计数只算已检录行）
+    if (cnt) cnt.textContent = tappedRows();
+    var done = tappedRows();
     var ADV = {{ ev.advancement_count or 0 }};
     var sub = document.getElementById('submit');
     document.querySelectorAll('.mark-row.off input.val:checked').forEach(function (cb) {
       cb.checked = false;   // 未检录行不允许保留勾选（草稿恢复残留）
     });
-    if (sub && ADV > 0) {
+    var allBtn = document.getElementById('mk-all'), clrBtn = document.getElementById('mk-clear');
+    if (allBtn) allBtn.textContent = MARK_MODE === 'inverse' ? '全部标为淘汰' : '全选';
+    if (clrBtn) clrBtn.textContent = '清空';
+    if (ADV > 0 && sub) {
       var need = Math.min(ADV, CHECKED);
-      var lack = need - done;
+      var advancers = (MARK_MODE === 'inverse') ? (CHECKED - done) : done;
+      var lack = need - advancers;
       sub.disabled = lack > 0;
+      var note = document.getElementById('adv-note');
       if (CHECKED < ADV) {
-        sub.title = lack > 0 ? '检录 ' + CHECKED + ' 人不足名额 ' + ADV + '，勾满全部检录选手即可提交' : '';
-        var note0 = document.getElementById('adv-note');
-        if (note0) note0.textContent = '（检录 ' + CHECKED + ' 人不足名额 ' + ADV + '——全部检录选手均晋级，勾满 ' + need + ' 人即可提交）';
+        sub.title = lack > 0 ? '检录 ' + CHECKED + ' 人不足名额 ' + ADV + '，全部检录选手均晋级' : '';
+        if (note) note.textContent = '（检录 ' + CHECKED + ' 人不足名额 ' + ADV + '——全部检录选手均晋级）';
       } else {
-        sub.title = lack > 0 ? '还需勾选 ' + lack + ' 名（晋级名额 ' + ADV + '）' : '';
-        var note = document.getElementById('adv-note');
-        if (note) note.textContent = lack > 0 ? '（还差 ' + lack + ' 人满足名额 ' + ADV + '）' : '（名额 ' + ADV + ' 已满足）';
+        sub.title = lack > 0 ? (MARK_MODE === 'inverse'
+          ? '将晋级 ' + advancers + ' 人不足名额 ' + ADV + '，还需标淘汰 ' + (-lack) + ' 人'
+          : '还需勾选 ' + lack + ' 名（晋级名额 ' + ADV + '）') : '';
+        if (note) note.textContent = lack > 0
+          ? (MARK_MODE === 'inverse' ? '（将晋级 ' + advancers + ' / 名额 ' + ADV + '——还需标淘汰 ' + (-lack) + ' 人）'
+                                     : '（还差 ' + lack + ' 人满足名额 ' + ADV + '）')
+          : '（名额 ' + ADV + ' 已满足）';
       }
     }
+    document.getElementById('progress').textContent = (MARK_MODE === 'inverse'
+      ? '已标淘汰 ' + done + ' · 将晋级 ' + Math.max(0, CHECKED - done) + ' / ' + CHECKED
+      : '已选 ' + done + ' / ' + CHECKED);
+    var msgEl = document.getElementById('msg');
+    if (msgEl && msgEl.className === 'err') {
+      var advancers2 = (MARK_MODE === 'inverse') ? (CHECKED - done) : done;
+      var need2 = Math.min({{ ev.advancement_count or 0 }}, CHECKED);
+      if ({{ ev.advancement_count or 0 }} > 0 && advancers2 >= need2) { msgEl.className = ''; msgEl.textContent = ''; }
+      else msgEl.textContent = MARK_MODE === 'inverse'
+        ? '将晋级不足名额，还需标淘汰'
+        : '还有 ' + (CHECKED - done) + ' 支队伍未给 Mark';
+    }
+    document.querySelectorAll('#mark-mode-bar .mt-btn[data-mm]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.mm === MARK_MODE);
+    });
   }
   document.querySelectorAll('.mark-row').forEach(function (row) {
     row.addEventListener('click', function () {
@@ -352,7 +421,6 @@ if (SKATING) {
       renderMark();
     });
   });
-  // Mark 快捷操作：全选/清空（触发点击保持计数同步）
   function markToggle(rows, want) {
     rows.forEach(function (row) {
       var cb = row.querySelector('input.val');
@@ -362,6 +430,13 @@ if (SKATING) {
   window.markAll = function (state) {
     markToggle(Array.from(document.querySelectorAll('.mark-row:not(.off)')), !!state);
   };
+  document.querySelectorAll('#mark-mode-bar .mt-btn[data-mm]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      MARK_MODE = b.dataset.mm;
+      localStorage.setItem('judge-mark-mode', MARK_MODE);   // R136 选择持久化：后续场次默认保持
+      renderMark();
+    });
+  });
   renderMark();
 }
 
@@ -396,7 +471,7 @@ function refreshOffState() {
       var ok = !!set[String(row.dataset.num)];
       row.classList.toggle('off', !ok);
       row.querySelectorAll('input, select, button').forEach(function (el) {
-        if (el.type === 'hidden') return;   /* rank-row 的 .val 为 hidden，点击拦截由 off 类负责 */
+        if (el.type === 'hidden') return;
         el.disabled = !ok;
       });
     });
@@ -407,7 +482,6 @@ function refreshOffState() {
       ' · 盲评原则：评分页仅显示背番号' +
       (N - d.checked_n > 0 ? ' · 未检录 ' + (N - d.checked_n) + ' 人置灰不可评' : '');
     CHECKED = d.checked_n;
-    /* R132：检录变化后重渲门禁/进度（renderMark/renderSkating/renderScore 由各分支定义） */
     if (typeof renderMark === 'function') renderMark();
     else if (typeof renderSkating === 'function') renderSkating();
     else if (typeof renderScore === 'function') renderScore();
@@ -477,20 +551,16 @@ var TRIAL = {{ trial|tojson }};
       return true;
     } catch (e) { return false; }
   }
-  // 恢复（初始化渲染完成后执行一次）
   var restored = restore();
   if (restored) {
     var m = document.getElementById('msg');
     if (m && !m.textContent) { m.className = 'muted'; m.textContent = '已恢复上次未提交的作答（本机暂存）'; }
   }
-  // R63 根治「软刷新/重载冲掉未提交名次」：赋值即刻同步落盘（原 300ms 去抖窗口内的重载会丢最后的点击），
-  // 通过 __beforeSoftReload 钩子在 softReload 重载前强制保存，pageshow（bfcache 回退/恢复）重应用草稿。
   window.__saveSheetDraft = save;
   window.__beforeSoftReload = save;
   document.addEventListener('click', function () { try { save(); } catch (e) {} });
   document.addEventListener('input', function () { try { save(); } catch (e) {} });
   window.addEventListener('pageshow', function () { try { if (restore()) { var m2 = document.getElementById('msg'); if (m2 && !m2.textContent) { m2.className = 'muted'; m2.textContent = '已恢复上次未提交的作答（本机暂存）'; } } } catch (e) {} });
-  // 提交成功清除（挂接 submitSheet 的成功写点：观察 msg 变 ok）
   var msgEl = document.getElementById('msg');
   if (msgEl) {
     new MutationObserver(function () {

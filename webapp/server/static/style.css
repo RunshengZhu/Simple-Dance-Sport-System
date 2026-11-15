@@ -1209,3 +1209,23 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
   .judge-sheet .rank-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important; }
 }
 .lookup-hero .lk-seq, .lk-seq { color: var(--acc-ink); background: var(--acc-tint); border-radius: 6px; padding: 2px 8px; font-size: .85rem; margin-right: 6px; }
+
+/* ================= R136 裁判评分矩阵精简（只有背号）+ 评分方式持久化 ================= */
+.judge-sheet .mode-toggle .mt-label { font-weight: 700; color: var(--ink-soft); font-size: .9rem; }
+/* Mark：干净矩阵，只有背号 */
+.judge-sheet .mark-cell .mark-box { display: none; }
+.judge-sheet .mark-cell.picked { border-color: var(--acc); background: var(--acc-tint); box-shadow: inset 0 0 0 2px var(--acc); }
+/* 反选模式：点中=淘汰，红色差异标记 */
+.judge-sheet .mark-cell.elim { border-color: #e74c3c; background: #fdecea; box-shadow: inset 0 0 0 2px #e74c3c; color: #c0392b; }
+.judge-sheet .mark-cell.elim::after {
+  content: "淘汰"; position: absolute; top: 4px; right: 6px;
+  font-size: .62rem; font-weight: 800; color: #fff; background: #e74c3c;
+  border-radius: 6px; padding: 1px 5px;
+}
+.judge-sheet .mark-grid.mode-inverse .mark-cell:not(.picked):not(.off) { background: var(--acc-tint); border-color: var(--acc-line); }
+/* 顺位：矩阵只有背号（名次状态用底色区分，不显示数字） */
+.judge-sheet .rank-cell .rank-badge { display: none; }
+.judge-sheet .rank-cell.assigned { border-color: var(--acc); background: var(--acc-tint); cursor: pointer; }
+.judge-sheet .rank-cell.selected { outline: 3px solid var(--acc); outline-offset: -2px; background: var(--acc-tint); }
+.judge-sheet .slot.ready { border-style: solid; border-color: var(--acc); animation: slotPulse 1.2s ease-in-out infinite; }
+@keyframes slotPulse { 0%,100% { box-shadow: 0 0 0 0 var(--acc-soft); } 50% { box-shadow: 0 0 0 5px var(--acc-soft); } }
