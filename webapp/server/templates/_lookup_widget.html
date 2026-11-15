@@ -69,8 +69,10 @@ function renderResult(d) {
       } else {
         badge = '<span class="lk-badge lk-st">' + r.status_label + '</span>';
       }
+      var seqLabel = r.run_seq ? '第' + r.run_seq + '场' : '';
       html += '<div class="lk-event">' +
-        '<div class="lk-ev-head"><b>' + r.code + '</b> <span class="lk-ev-name">' + r.name + '</span></div>' +
+        '<div class="lk-ev-head">' + (seqLabel ? '<b class="lk-seq">' + seqLabel + '</b> ' : '') +
+        '<span class="lk-ev-name">' + r.name + '</span></div>' +
         '<div class="lk-ev-meta muted">' + (r.dance || '—') + (r.partner ? ' · 搭档 ' + r.partner : '') + '</div>' +
         '<div class="lk-ev-badges">' + badge + '</div>' +
         '</div>';

@@ -576,6 +576,12 @@ def _current_competition(request: Request):
     return _active_competition()
 
 
+def _project_names(conn, competition_id: int):
+    """R135 项目编号→项目名称映射（公示口径不展示编号）。"""
+    return {r["code"]: (r["name"] or r["code"]) for r in db.rows(conn.execute(
+        "SELECT code, name FROM projects WHERE competition_id=?", (competition_id,)))}
+
+
 def _public_comp_or_404(competition_id, request=None):
     """R135 公开侧赛事获取：调试专用赛（is_debug）仅总管理员可访问，其余一律 404
     （公开页面 / 公开 API 统一走本入口，防止调试赛真实选手数据外泄）。"""
@@ -4921,6 +4927,7 @@ async def api_public_lookup(competition_id: int, request: Request = None, num: s
             # 单一女生：组合档案（无背号；每场搭档=该场男伴，名次/晋级随男伴背号）
             pairs = sorted({(r["project_code"], r["number"]) for r in as_partner},
                            key=lambda t: (t[1].zfill(8), t[0]))
+            pnames = _project_names(conn, comp["id"])
             male_by_pair = {(r["project_code"], r["number"]): (r["name"] or "").strip() for r in as_partner}
             # 按男伴背号全量取场次；报项码与场次码不一致（P01A → P01Z01 分组）时按前缀归属，
             # 该男伴在其他报项项目（与其他女生的 pair）的精确码场次剔除
@@ -4986,7 +4993,7 @@ async def api_public_lookup(competition_id: int, request: Request = None, num: s
                                 rank = r0["rank"]
                                 total = r0.get("total_score")
                                 break
-                schedule.append({"code": ev["code"], "name": ev["name"], "round": ev["round"],
+                schedule.append({"run_seq": ev["run_seq"] if "run_seq" in ev.keys() else None, "code": ev["code"], "name": ev["name"], "round": ev["round"],
                                  "dance": ev["dances"], "scoring_type": ev["scoring_type"],
                                  "status": ev["status"],
                                  "status_label": st_names.get(ev["status"], ev["status"]),
@@ -5006,7 +5013,7 @@ async def api_public_lookup(competition_id: int, request: Request = None, num: s
                 uniq[(p0["name"], p0["number"])] = p0
             partners = sorted(uniq.values(), key=lambda p0: (p0["number"].zfill(8), p0["name"]))
             return {"number": "", "name": name, "unit": u0,
-                    "projects": sorted({p for p, _ in pairs}),
+                    "projects": [pnames.get(p, p) for p in sorted({p for p, _ in pairs})],
                     "partners": partners, "schedule": schedule,
                     "note": "公示口径：仅姓名、单位、赛程状态与已发布成绩"}
         else:
@@ -5016,6 +5023,7 @@ async def api_public_lookup(competition_id: int, request: Request = None, num: s
         "SELECT number, project_code, name, partner, unit FROM competitors "
         "WHERE competition_id=? AND number=? ORDER BY project_code",
         (comp["id"], num)))
+    pnames = _project_names(conn, comp["id"])
     if not rows:
         raise HTTPException(status_code=404, detail="未找到该背番号")
 
@@ -5056,7 +5064,7 @@ async def api_public_lookup(competition_id: int, request: Request = None, num: s
                         rank = r0["rank"]
                         total = r0.get("total_score")
                         break
-        schedule.append({"code": ev["code"], "name": ev["name"], "round": ev["round"],
+        schedule.append({"run_seq": ev["run_seq"] if "run_seq" in ev.keys() else None, "code": ev["code"], "name": ev["name"], "round": ev["round"],
                          "dance": ev["dances"], "scoring_type": ev["scoring_type"],
                          "status": ev["status"], "status_label": st_names.get(ev["status"], ev["status"]),
                          "advancement": adv, "rank": rank, "total_score": total,
@@ -5074,7 +5082,7 @@ async def api_public_lookup(competition_id: int, request: Request = None, num: s
         if not unit and r["unit"]:
             unit = r["unit"]
     return {"number": num, "name": disp_name, "unit": unit,
-            "projects": projects, "schedule": schedule,
+            "projects": [pnames.get(p, p) for p in projects], "schedule": schedule,
             "note": "公示口径：仅姓名、单位、赛程状态与已发布成绩"}
 
 

@@ -1208,3 +1208,4 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
   .judge-sheet .rank-grid, .judge-sheet .mark-grid, .judge-sheet .score-grid { width: 100%; }
   .judge-sheet .rank-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important; }
 }
+.lookup-hero .lk-seq, .lk-seq { color: var(--acc-ink); background: var(--acc-tint); border-radius: 6px; padding: 2px 8px; font-size: .85rem; margin-right: 6px; }
