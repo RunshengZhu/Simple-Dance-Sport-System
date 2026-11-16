@@ -37,6 +37,29 @@ CREATE TABLE IF NOT EXISTS competitions (
     location TEXT DEFAULT '',
     active INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS registrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    competition_id INTEGER NOT NULL REFERENCES competitions(id),
+    mode TEXT DEFAULT 'individual',            -- R137：individual=个人报名 / unit=单位报名（批量）
+    batch_id TEXT DEFAULT '',                  -- 单位批量提交分组（同一次提交共享）
+    unit TEXT DEFAULT '',                      -- 单位名称
+    contact_name TEXT DEFAULT '',              -- 联系人
+    contact_phone TEXT DEFAULT '',             -- 联系电话
+    name TEXT DEFAULT '',                      -- 选手（主报）姓名
+    unit_self TEXT DEFAULT '',                 -- 选手单位（个人模式可与批次单位不同）
+    role TEXT DEFAULT '',                      -- 选手身份（新生/老生等）
+    partner TEXT DEFAULT '',                   -- 搭档姓名
+    partner_unit TEXT DEFAULT '',
+    partner_role TEXT DEFAULT '',
+    projects TEXT DEFAULT '',                  -- 报名项目（逗号分隔项目编号）
+    note TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',             -- pending 待审 / approved 通过 / rejected 不通过 / imported 已转正式名单
+    submit_code TEXT DEFAULT '',               -- 提交码（供选手自查进度）
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    reviewed_at TEXT DEFAULT '',
+    review_note TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_reg_comp ON registrations(competition_id, status);
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     competition_id INTEGER NOT NULL REFERENCES competitions(id),
@@ -146,6 +169,14 @@ def init_db():
         conn.execute("ALTER TABLE competitions ADD COLUMN is_trial INTEGER DEFAULT 0")   # R122c：试用赛（练习专用，公开侧隐藏，评分页刷新即重置）
     if "is_debug" not in comp_cols:
         conn.execute("ALTER TABLE competitions ADD COLUMN is_debug INTEGER DEFAULT 0")   # R135：调试专用赛（仅总管理员可见，公开侧/管理端列表均隐藏）
+    if "reg_open" not in comp_cols:
+        conn.execute("ALTER TABLE competitions ADD COLUMN reg_open INTEGER DEFAULT 0")       # R137：开放报名开关
+    if "reg_modes" not in comp_cols:
+        conn.execute("ALTER TABLE competitions ADD COLUMN reg_modes TEXT DEFAULT 'individual'")  # R137：报名模式（逗号分隔 individual/unit）
+    if "reg_note" not in comp_cols:
+        conn.execute("ALTER TABLE competitions ADD COLUMN reg_note TEXT DEFAULT ''")         # R137：报名须知（公示）
+    if "reg_unit_code" not in comp_cols:
+        conn.execute("ALTER TABLE competitions ADD COLUMN reg_unit_code TEXT DEFAULT ''")    # R137：单位报名口令（可空=不校验）
     user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "pw_plain" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN pw_plain TEXT DEFAULT ''")   # R76c：口令留档（设置/重置时同步记录，供口令表导出；与直达链接同库同等保护）

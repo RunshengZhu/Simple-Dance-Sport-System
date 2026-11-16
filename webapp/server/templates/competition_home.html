@@ -93,6 +93,13 @@
 {% endfor %}
 {% endif %}
 
+{% if comp.reg_open %}
+<div class="card" style="border-color:var(--acc)">
+  <h2 style="margin:0 0 4px">📝 报名通道已开放</h2>
+  <p class="muted" style="margin:0 0 10px">{{ comp.name }} 正在接收报名，点击下方进入报名页填写并提交。</p>
+  <a class="btn" href="/competitions/{{ comp.id }}/register">进入报名 →</a>
+</div>
+{% endif %}
 {% if standings %}
 <h2>团体总分榜</h2>
 <div class="card table-fit">

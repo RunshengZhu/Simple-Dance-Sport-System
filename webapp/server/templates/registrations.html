@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
+{% block cid %}{{ comp.id }}{% endblock %}
+{% block title %}报名管理 · {{ comp.name }}{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+{{ bar(comp, 'registrations') }}
+<h1>报名管理 <span class="muted">{{ comp.name }}</span></h1>
+
+<div class="card" id="reg-settings">
+  <b>报名设置</b>
+  <div class="reg-grid">
+    <div><label class="switch-line"><input type="checkbox" id="s-open"> <b>开放报名</b></label></div>
+    <div><label class="switch-line"><input type="checkbox" id="s-mode-individual"> 个人报名</label></div>
+    <div><label class="switch-line"><input type="checkbox" id="s-mode-unit"> 单位报名（批量）</label></div>
+    <div><label>单位报名口令（留空 = 不校验）</label><input id="s-unit-code" placeholder="如 XM2026"></div>
+  </div>
+  <label>报名须知（公示在报名页顶部）</label>
+  <textarea id="s-note" rows="3" placeholder="截止时间、资格要求、审核说明等"></textarea>
+  <button class="btn" id="s-save" style="margin-top:8px">保存设置</button>
+  <span class="muted" style="margin-left:10px">报名页地址：<a id="reg-url" href="/competitions/{{ comp.id }}/register" target="_blank">/competitions/{{ comp.id }}/register</a></span>
+</div>
+
+<div class="card" id="reg-stats">
+  <b>各项目报名统计</b> <span id="reg-stats-body" class="muted">加载中…</span>
+</div>
+
+<div class="card">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <b>报名明细</b>
+    <select id="r-filter-st">
+      <option value="all">全部状态</option>
+      <option value="pending">待审核</option>
+      <option value="approved">已通过</option>
+      <option value="rejected">未通过</option>
+      <option value="imported">已编入名单</option>
+    </select>
+    <input id="r-search" placeholder="搜姓名/单位/提交码">
+    <a class="btn small secondary" id="r-export" href="/api/events/{{ comp.id }}/registrations/export" download>导出 CSV</a>
+    <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <label class="muted">转正起始背号</label><input id="c-start" style="width:90px" inputmode="numeric" placeholder="默认顺延">
+      <button class="btn" id="c-btn">通过 → 编入名单</button>
+    </span>
+  </div>
+  <div id="reg-list"><div class="muted">加载中…</div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+var CID = {{ comp.id }};
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+  return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+var DATA = null;
+
+async function load() {
+  DATA = await api('GET', '/api/events/' + CID + '/registrations');
+  var s = DATA.settings;
+  document.getElementById('s-open').checked = !!s.open;
+  document.getElementById('s-mode-individual').checked = s.modes.indexOf('individual') > -1;
+  document.getElementById('s-mode-unit').checked = s.modes.indexOf('unit') > -1;
+  document.getElementById('s-note').value = DATA.reg_note || '';
+  renderStats();
+  renderList();
+}
+
+document.getElementById('s-save').onclick = async function () {
+  var modes = [];
+  if (document.getElementById('s-mode-individual').checked) modes.push('individual');
+  if (document.getElementById('s-mode-unit').checked) modes.push('unit');
+  if (!modes.length) { toast('至少启用一种报名模式', 'err'); return; }
+  try {
+    await api('POST', '/api/events/' + CID + '/registrations/settings', {
+      reg_open: document.getElementById('s-open').checked,
+      reg_modes: modes,
+      reg_note: document.getElementById('s-note').value,
+      reg_unit_code: document.getElementById('s-unit-code').value
+    });
+    toast('已保存', 'ok'); load();
+  } catch (e) { toast(e.message, 'err'); }
+};
+
+function renderStats() {
+  var parts = [];
+  DATA.projects.forEach(function (p) {
+    var n = DATA.stats[p.code] || 0;
+    parts.push('<span class="rb-metric"><span class="rb-k">' + esc(p.name) + '</span><span class="rb-v">' + n + '</span></span>');
+  });
+  document.getElementById('reg-stats-body').innerHTML = parts.join(' ') || '暂无报名';
+}
+
+function renderList() {
+  var st = document.getElementById('r-filter-st').value;
+  var q = document.getElementById('r-search').value.trim().toLowerCase();
+  var rows = DATA.rows.filter(function (r) {
+    if (st !== 'all' && r.status !== st) return false;
+    if (q && ((r.name || '') + (r.unit || '') + (r.submit_code || '')).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  var stTag = {pending: '<span class="tag warn">待审核</span>', approved: '<span class="tag ok">已通过</span>',
+               rejected: '<span class="tag gray">未通过</span>', imported: '<span class="tag acc">已编入</span>'};
+  var html = '<table><tr><th></th><th>状态</th><th>选手</th><th>搭档</th><th>单位</th><th>项目</th><th>身份</th><th>联系</th><th>提交码</th><th>方式</th><th>时间</th><th>操作</th></tr>';
+  rows.forEach(function (r) {
+    var projs = (r.projects || '').split(',').filter(Boolean)
+      .map(function (p) { return esc(DATA.pnames[p] || p); }).join('、');
+    html += '<tr data-rid="' + r.id + '">' +
+      '<td><input type="checkbox" class="r-sel" data-rid="' + r.id + '"></td>' +
+      '<td>' + stTag[r.status] + '</td>' +
+      '<td><b>' + esc(r.name) + '</b>' + (r.review_note ? '<br><small class="muted">' + esc(r.review_note) + '</small>' : '') + '</td>' +
+      '<td>' + esc(r.partner || '—') + '</td>' +
+      '<td>' + esc(r.unit || r.unit_self || '—') + '</td>' +
+      '<td>' + projs + '</td>' +
+      '<td>' + esc(r.role || '—') + (r.partner_role ? '/' + esc(r.partner_role) : '') + '</td>' +
+      '<td>' + esc(r.contact_name || '') + '<br><small>' + esc(r.contact_phone || '') + '</small></td>' +
+      '<td><small>' + esc(r.submit_code) + '</small></td>' +
+      '<td>' + (r.mode === 'unit' ? '单位' : '个人') + '</td>' +
+      '<td><small>' + esc((r.created_at || '').slice(5, 16)) + '</small></td>' +
+      '<td>' +
+      '<span style="display:flex;gap:4px">' +
+      (r.status !== 'approved' && r.status !== 'imported' ? '<button class="btn tiny ok" onclick="review([' + r.id + '],\\'approve\\')">通过</button>' : '') +
+      (r.status !== 'rejected' && r.status !== 'imported' ? '<button class="btn tiny danger" onclick="review([' + r.id + '],\\'reject\\')">驳回</button>' : '') +
+      '</span></td></tr>';
+  });
+  html += '</table>';
+  if (!rows.length) html = '<div class="muted">暂无报名记录' + (DATA.reg_open ? '' : '（报名未开放）') + '。</div>';
+  document.getElementById('reg-list').innerHTML = html;
+}
+document.getElementById('r-filter-st').onchange = renderList;
+document.getElementById('r-search').oninput = renderList;
+
+async function review(ids, action) {
+  var note = action === 'reject' ? (prompt('驳回原因（选手可见）') || '') : '';
+  try { await api('POST', '/api/events/' + CID + '/registrations/review', {ids: ids, action: action, review_note: note}); load(); }
+  catch (e) { toast(e.message, 'err'); }
+}
+document.getElementById('c-btn').onclick = async function () {
+  var ids = Array.prototype.map.call(document.querySelectorAll('.r-sel:checked'), function (c) { return parseInt(c.dataset.rid, 10); });
+  if (!ids.length) { toast('请先勾选要编入名单的「已通过」报名', 'err'); return; }
+  if (!confirm('将选中的 ' + ids.length + ' 条报名编入正式名单（自动分配背号）？')) return;
+  try {
+    var r = await api('POST', '/api/events/' + CID + '/registrations/convert',
+                      {ids: ids, start_number: document.getElementById('c-start').value.trim()});
+    toast('已编入 ' + r.entries + ' 条（生成 ' + r.rows + ' 行名单，号 ' + r.numbers.join(',') + (r.numbers.length < r.entries ? '…' : '') + '）', 'ok');
+    load();
+  } catch (e) { toast(e.message, 'err'); }
+};
+
+load().catch(function (e) { document.getElementById('reg-list').innerHTML = '<div class="card err">' + esc(e.message) + '</div>'; });
+{% endblock %}

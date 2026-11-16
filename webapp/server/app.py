@@ -109,6 +109,7 @@ _NAV_GROUPS = [
         ("/roster", "名单"),
         ("/schedule?tab=projects", "项目管理"),
         ("/schedule", "赛程编排"),
+        ("/registrations", "报名管理"),
         ("/staff-links", "工作人员与直达链接"),
     ]),
     ("run", "比赛控制", [
@@ -4200,6 +4201,273 @@ def _public_payload(comp=None):
     return {"competition": {k: comp[k] for k in ("id", "name", "date", "location")},
             "events": events, "published_results": published,
             "team_standings": _team_standings(comp["id"], published_only=True)}
+
+
+# ------------------------------------------------------------------ R137 报名系统
+def _reg_settings(comp):
+    return {"open": bool(comp.get("reg_open")),
+            "modes": [m for m in (comp.get("reg_modes") or "individual").split(",") if m in ("individual", "unit")],
+            "note": comp.get("reg_note") or "",
+            "unit_code": bool(comp.get("reg_unit_code"))}
+
+
+def _reg_proj_list(conn, competition_id):
+    return [{"code": r["code"], "name": (r["name"] or r["code"])} for r in db.rows(conn.execute(
+        "SELECT code, name FROM projects WHERE competition_id=? ORDER BY code", (competition_id,)))]
+
+
+@app.get("/competitions/{competition_id}/register", response_class=HTMLResponse)
+async def register_page(request: Request, competition_id: int):
+    """R137 公开报名页（免登录）：个人报名 / 单位报名（批量）。"""
+    comp = _public_comp_or_404(competition_id, request)
+    st = _reg_settings(comp)
+    if not st["open"]:
+        return templates.TemplateResponse(request, "register.html", {
+            "request": request, "comp": comp, "reg": st, "projects": [], "closed": True})
+    conn = db.get_db()
+    return templates.TemplateResponse(request, "register.html", {
+        "request": request, "comp": comp, "reg": st,
+        "projects": _reg_proj_list(conn, competition_id), "closed": False})
+
+
+@app.post("/api/public/events/{competition_id}/register")
+async def api_register_submit(competition_id: int, request: Request = None):
+    """R137 报名提交（公开，免登录）。individual=单条组合；unit=批量（members[]，同一 batch）。"""
+    comp = _public_comp_or_404(competition_id, request)
+    st = _reg_settings(comp)
+    if not st["open"]:
+        raise HTTPException(status_code=400, detail="报名未开放")
+    body = await request.json()
+    mode = str(body.get("mode") or "").strip()
+    if mode not in ("individual", "unit") or mode not in st["modes"]:
+        raise HTTPException(status_code=400, detail="报名模式未开放或无效")
+    if mode == "unit" and comp.get("reg_unit_code"):
+        if str(body.get("unit_code") or "").strip() != comp["reg_unit_code"].strip():
+            raise HTTPException(status_code=403, detail="单位报名口令不正确")
+    conn = db.get_db()
+    proj_codes = {r["code"] for r in db.rows(conn.execute(
+        "SELECT code FROM projects WHERE competition_id=?", (competition_id,)))}
+    members = body.get("members") or []
+    if mode == "individual" and not members:
+        # 兼容顶层字段形态：单个成员直接平铺在 body 上
+        members = [{k: body.get(k) for k in ("name", "unit", "role", "partner", "partner_unit", "partner_role", "projects")}]
+    if not isinstance(members, list) or not members:
+        raise HTTPException(status_code=400, detail="缺少报名成员")
+    contact_name = str(body.get("contact_name") or "").strip()
+    contact_phone = str(body.get("contact_phone") or "").strip()
+    unit = str(body.get("unit") or "").strip()
+    note = str(body.get("note") or "").strip()[:300]
+    if mode == "individual" and not contact_phone:
+        raise HTTPException(status_code=400, detail="请填写联系电话")
+    if mode == "unit" and (not unit or not contact_name or not contact_phone):
+        raise HTTPException(status_code=400, detail="单位报名需填写单位名称、联系人与联系电话")
+    batch_id = secrets.token_hex(8)
+    submit_code = "BM" + secrets.token_hex(3).upper()
+    ins, problems = 0, []
+    for m in members:
+        name = str(m.get("name") or "").strip()
+        if not name:
+            problems.append("存在未填写姓名的成员"); continue
+        projs = [str(x).strip() for x in (m.get("projects") or [])]
+        bad = [x for x in projs if x not in proj_codes]
+        if not projs:
+            problems.append("%s 未选择项目" % name); continue
+        if bad:
+            problems.append("%s 项目无效: %s" % (name, ",".join(bad[:3]))); continue
+        conn.execute(
+            "INSERT INTO registrations(competition_id, mode, batch_id, unit, contact_name, contact_phone, "
+            "name, unit_self, role, partner, partner_unit, partner_role, projects, note, submit_code) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (competition_id, mode, batch_id,
+             unit or str(m.get("unit") or "").strip(), contact_name, contact_phone,
+             name, str(m.get("unit") or "").strip(),
+             str(m.get("role") or "").strip()[:20],
+             str(m.get("partner") or "").strip(),
+             str(m.get("partner_unit") or "").strip(),
+             str(m.get("partner_role") or "").strip()[:20],
+             ",".join(projs), note, submit_code))
+        ins += 1
+    if ins == 0:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail="；".join(problems[:3]) or "无有效报名条目")
+    conn.commit()
+    _audit("报名提交", "register_submit", "comp:{0}".format(competition_id),
+           "{0} 模式 {1} 条（提交码 {2}）".format(mode, ins, submit_code), _client_ip(request))
+    return {"ok": True, "count": ins, "submit_code": submit_code, "problems": problems}
+
+
+@app.get("/api/public/events/{competition_id}/register/status")
+async def api_register_status(competition_id: int, request: Request = None, code: str = ""):
+    """报名进度自查：凭提交码查询（提交码即凭证）。"""
+    comp = _public_comp_or_404(competition_id, request)
+    code = (code or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="请提供提交码")
+    rows = db.rows(db.get_db().execute(
+        "SELECT name, unit, partner, projects, status, review_note, created_at, mode FROM registrations "
+        "WHERE competition_id=? AND submit_code=? ORDER BY id", (competition_id, code)))
+    st_map = {"pending": "待审核", "approved": "已通过", "rejected": "未通过", "imported": "已编入名单"}
+    return {"ok": bool(rows), "entries": [
+        {"name": r["name"], "unit": r["unit"], "partner": r["partner"],
+         "projects": [p for p in (r["projects"] or "").split(",") if p],
+         "status": r["status"], "status_label": st_map.get(r["status"], r["status"]),
+         "review_note": r["review_note"], "created_at": r["created_at"]} for r in rows]}
+
+
+@app.get("/events/{competition_id}/registrations", response_class=HTMLResponse)
+async def registrations_page(request: Request, competition_id: int):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    return templates.TemplateResponse(request, "registrations.html", {"request": request, "comp": comp})
+
+
+@app.get("/api/events/{competition_id}/registrations")
+async def api_registrations_list(competition_id: int, request: Request = None):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    rows = db.rows(conn.execute(
+        "SELECT * FROM registrations WHERE competition_id=? ORDER BY (status!='pending'), status, id DESC",
+        (competition_id,)))
+    pnames = _project_names(conn, competition_id)
+    st = _reg_settings(comp)
+    stats = {}
+    for r in rows:
+        for p in (r["projects"] or "").split(","):
+            if p:
+                stats[p] = stats.get(p, 0) + 1
+    return {"settings": st, "reg_note": st["note"],
+            "reg_open": st["open"], "reg_modes": comp.get("reg_modes") or "individual",
+            "reg_unit_code_set": bool(comp.get("reg_unit_code")),
+            "projects": _reg_proj_list(conn, competition_id),
+            "pnames": pnames, "stats": stats,
+            "rows": [dict(r) for r in rows]}
+
+
+@app.post("/api/events/{competition_id}/registrations/settings")
+async def api_registrations_settings(competition_id: int, request: Request = None):
+    s = require_admin(request)
+    comp = _comp_or_404(competition_id)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    body = await request.json()
+    modes = [m for m in (body.get("reg_modes") or []) if m in ("individual", "unit")]
+    conn = db.get_db()
+    conn.execute(
+        "UPDATE competitions SET reg_open=?, reg_modes=?, reg_note=?, reg_unit_code=? WHERE id=?",
+        (1 if body.get("reg_open") else 0, ",".join(modes) or "individual",
+         str(body.get("reg_note") or "")[:500], str(body.get("reg_unit_code") or "").strip(),
+         competition_id))
+    conn.commit()
+    _audit(_actor_name(s), "reg_settings", "comp:{0}".format(competition_id),
+           "开放={0} 模式={1}".format(bool(body.get("reg_open")), ",".join(modes)), _client_ip(request))
+    return {"ok": True}
+
+
+@app.post("/api/events/{competition_id}/registrations/review")
+async def api_registrations_review(competition_id: int, request: Request = None):
+    s = require_admin(request)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    body = await request.json()
+    ids = [int(x) for x in (body.get("ids") or []) if str(x).isdigit()]
+    action = body.get("action")
+    if action not in ("approve", "reject", "pending"):
+        raise HTTPException(status_code=400, detail="action 须为 approve/reject/pending")
+    if not ids:
+        raise HTTPException(status_code=400, detail="未选择报名条目")
+    st_map = {"approve": "approved", "reject": "rejected", "pending": "pending"}
+    note = str(body.get("review_note") or "")[:200]
+    conn = db.get_db()
+    qmarks = ",".join("?" * len(ids))
+    conn.execute("UPDATE registrations SET status=?, review_note=?, reviewed_at=datetime('now','localtime') "
+                 "WHERE competition_id=? AND id IN ({0})".format(qmarks),
+                 (st_map[action], note, competition_id) + tuple(ids))
+    conn.commit()
+    _audit(_actor_name(s), "reg_review", "comp:{0}".format(competition_id),
+           "{0} {1} 条（{2}）".format(action, len(ids), note), _client_ip(request))
+    return {"ok": True, "updated": len(ids)}
+
+
+@app.post("/api/events/{competition_id}/registrations/convert")
+async def api_registrations_convert(competition_id: int, request: Request = None):
+    """审核通过 → 转正式名单：为每条通过记录分配背号（从起点号或现有最大号+1 顺延），
+    每条记录按所选项目各生成一行 competitors（同号多项目）。"""
+    s = require_admin(request)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    body = await request.json()
+    conn = db.get_db()
+    rows = db.rows(conn.execute(
+        "SELECT * FROM registrations WHERE competition_id=? AND status='approved' ORDER BY id",
+        (competition_id,)))
+    if body.get("ids"):
+        want = {int(x) for x in body["ids"] if str(x).isdigit()}
+        rows = [r for r in rows if r["id"] in want]
+    if not rows:
+        raise HTTPException(status_code=400, detail="没有待转化的「已通过」报名")
+    start = body.get("start_number")
+    known = {r["number"] for r in db.rows(conn.execute(
+        "SELECT number FROM competitors WHERE competition_id=?", (competition_id,)))}
+    maxn = 100
+    for n in known:
+        try:
+            maxn = max(maxn, int(n))
+        except (TypeError, ValueError):
+            pass
+    nxt = int(start) if start and str(start).isdigit() and int(start) > 0 else maxn + 1
+    created, used = 0, []
+    for r in rows:
+        while str(nxt) in known:
+            nxt += 1
+        num = str(nxt)
+        known.add(num)
+        used.append(num)
+        for proj in [p for p in (r["projects"] or "").split(",") if p]:
+            conn.execute(
+                "INSERT INTO competitors(competition_id, number, project_code, name, unit, role, partner, partner_unit, partner_role) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (competition_id, num, proj, r["name"], r["unit"] or r["unit_self"], r["role"],
+                 r["partner"], r["partner_unit"], r["partner_role"]))
+            created += 1
+        conn.execute("UPDATE registrations SET status='imported', reviewed_at=datetime('now','localtime') WHERE id=?",
+                     (r["id"],))
+        nxt += 1
+    conn.commit()
+    _audit(_actor_name(s), "reg_convert", "comp:{0}".format(competition_id),
+           "转化 {0} 条报名 → {1} 行名单（号 {2}…）".format(len(rows), created, used[0] if used else "-"),
+           _client_ip(request))
+    sse.bus.publish(competition_id, "schedule_changed", {"converted": len(rows)})
+    return {"ok": True, "entries": len(rows), "rows": created,
+            "numbers": used[:20], "next": nxt}
+
+
+@app.get("/api/events/{competition_id}/registrations/export")
+async def api_registrations_export(competition_id: int, request: Request = None):
+    """报名明细 CSV 导出（审核用全字段）。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    rows = db.rows(conn.execute(
+        "SELECT * FROM registrations WHERE competition_id=? ORDER BY status, id", (competition_id,)))
+    pnames = _project_names(conn, competition_id)
+    st_map = {"pending": "待审核", "approved": "已通过", "rejected": "未通过", "imported": "已编入名单"}
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["状态", "模式", "提交码", "单位", "联系人", "联系电话", "选手姓名", "选手单位",
+                "选手身份", "搭档姓名", "搭档单位", "搭档身份", "报名项目", "备注", "审核备注", "提交时间"])
+    for r in rows:
+        projs = "；".join(pnames.get(p, p) for p in (r["projects"] or "").split(",") if p)
+        w.writerow([st_map.get(r["status"], r["status"]), r["mode"], r["submit_code"], r["unit"],
+                    r["contact_name"], r["contact_phone"], r["name"], r["unit_self"], r["role"],
+                    r["partner"], r["partner_unit"], r["partner_role"], projs, r["note"],
+                    r["review_note"], r["created_at"]])
+    return Response(buf.getvalue().encode("utf-8-sig"),
+                    media_type="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=registrations-{0}.csv".format(competition_id)})
 
 
 @app.get("/api/public/events/{competition_id}/schedule")

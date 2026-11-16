@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}报名 · {{ comp.name }}{% endblock %}
+{% block nav %}<a href="/competitions/{{ comp.id }}">← 赛事主页</a>{% endblock %}
+{% block content %}
+<h1>{{ comp.name }} <span class="muted">报名</span></h1>
+{% if closed %}
+<div class="card"><p class="muted">报名尚未开放。开放后可在此页提交报名；也可回到<a href="/competitions/{{ comp.id }}">赛事主页</a>查看赛程与成绩。</p></div>
+{% else %}
+{% if reg.note %}<div class="card"><b>报名须知</b><p class="muted" style="white-space:pre-wrap;margin:6px 0 0">{{ reg.note }}</p></div>{% endif %}
+
+<div class="card" id="reg-form-card">
+<div class="reg-mode-tabs">
+  {% for m in reg.modes %}
+  <button type="button" class="reg-tab {{ 'active' if loop.first }}" data-mode="{{ m }}">{{ "个人报名" if m == "individual" else "单位报名（批量）" }}</button>
+  {% endfor %}
+</div>
+
+<div id="unit-code-row" style="display:none">
+  <label>单位报名口令</label>
+  <input id="f-unit-code" placeholder="由赛事方提供" autocomplete="off">
+</div>
+<div class="reg-grid">
+  <div id="f-unit-wrap"><label>单位名称 *</label><input id="f-unit" placeholder="学校/俱乐部全称"></div>
+  <div><label>联系人 *</label><input id="f-contact" placeholder="姓名"></div>
+  <div><label>联系电话 *</label><input id="f-phone" inputmode="tel" placeholder="手机号"></div>
+</div>
+
+<div id="members"></div>
+<p class="muted">选择项目：点击卡片选中（可多选）。</p>
+<button class="btn secondary" id="add-member" style="display:none">＋ 添加一名成员</button>
+<div class="reg-grid"><div><label>备注</label><input id="f-note" placeholder="选填"></div></div>
+<button class="btn big" id="reg-submit">提交报名</button>
+<div id="reg-msg"></div>
+</div>
+
+<div class="card" id="reg-done" style="display:none">
+  <h2>✅ 提交成功</h2>
+  <p>提交码：<b id="done-code" style="font-size:1.6rem;letter-spacing:2px"></b>（请截图保存，凭此码查询审核进度）</p>
+  <p class="muted" id="done-count"></p>
+  <div id="done-status"></div>
+  <button class="btn secondary" id="reg-again">再报一组</button>
+</div>
+
+<div class="card">
+  <b>查询报名进度</b>
+  <div class="reg-grid">
+    <div><label>提交码</label><input id="q-code" placeholder="如 BM1A2B3C"></div>
+  </div>
+  <button class="btn" id="q-btn">查询</button>
+  <div id="q-result"></div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+var CID = {{ comp.id }}, MODES = {{ reg.modes | tojson }}, NEED_UNIT_CODE = {{ 'true' if reg.unit_code else 'false' }};
+var PROJECTS = {{ projects | tojson }};
+var MODE = MODES[0] || 'individual';
+
+function el(tag, cls, html) { var d = document.createElement(tag); d.className = cls || ''; if (html !== undefined) d.innerHTML = html; return d; }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+  return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+
+/* 项目多选 chips */
+function projChips(selected) {
+  var box = el('div', 'proj-chips');
+  PROJECTS.forEach(function (p) {
+    var b = el('button', 'proj-chip' + (selected.indexOf(p.code) > -1 ? ' on' : ''), esc(p.name));
+    b.type = 'button'; b.dataset.code = p.code;
+    b.onclick = function () { b.classList.toggle('on'); };
+    box.appendChild(b);
+  });
+  return box;
+}
+function pickedProjects(root) {
+  return Array.prototype.map.call(root.querySelectorAll('.proj-chip.on'), function (b) { return b.dataset.code; });
+}
+
+/* 成员行（单位模式多行；个人模式单行） */
+function addMember() {
+  var d = el('div', 'card member-row');
+  d.innerHTML = '<div class="reg-grid">' +
+    '<div><label>姓名 *</label><input class="m-name" placeholder="选手姓名"></div>' +
+    '<div><label>单位</label><input class="m-unit" placeholder="与上方单位相同可不填"></div>' +
+    '<div><label>身份</label><input class="m-role" placeholder="如：新生 / 老生"></div>' +
+    '<div><label>搭档姓名</label><input class="m-partner" placeholder="无搭档可不填"></div>' +
+    '<div><label>搭档单位</label><input class="m-punit"></div>' +
+    '<div><label>搭档身份</label><input class="m-prole" placeholder="如：新生"></div>' +
+    '</div><label class="muted">报名项目 *</label>';
+  d.appendChild(projChips([]));
+  if (MODE === 'unit' && document.querySelectorAll('.member-row').length > 0) {
+    var rm = el('button', 'btn small danger', '移除此成员');
+    rm.type = 'button';
+    rm.onclick = function () { d.remove(); };
+    d.appendChild(rm);
+  }
+  document.getElementById('members').appendChild(d);
+}
+
+/* 模式切换 */
+function setMode(m) {
+  MODE = m;
+  document.querySelectorAll('.reg-tab').forEach(function (t) { t.classList.toggle('active', t.dataset.mode === m); });
+  document.getElementById('members').innerHTML = '';
+  document.getElementById('unit-code-row').style.display = (m === 'unit' && NEED_UNIT_CODE) ? '' : 'none';
+  document.getElementById('f-unit-wrap').style.display = m === 'unit' ? '' : 'none';
+  document.getElementById('add-member').style.display = m === 'unit' ? '' : 'none';
+  addMember();
+  if (m === 'unit' && !document.getElementById('f-unit').value) {
+    /* 单位模式自动把单位名带进首成员 */
+  }
+}
+document.querySelectorAll('.reg-tab').forEach(function (t) {
+  t.onclick = function () { setMode(t.dataset.mode); };
+});
+document.getElementById('add-member').onclick = addMember;
+setMode(MODE);
+
+/* 提交 */
+document.getElementById('reg-submit').onclick = async function () {
+  var btn = this, msg = document.getElementById('reg-msg');
+  msg.textContent = '';
+  var members = [];
+  var okForm = true;
+  document.querySelectorAll('.member-row').forEach(function (row) {
+    var name = row.querySelector('.m-name').value.trim();
+    var projs = pickedProjects(row);
+    if (!name || !projs.length) { okForm = false; }
+    members.push({ name: name,
+      unit: row.querySelector('.m-unit').value.trim(),
+      role: row.querySelector('.m-role').value.trim(),
+      partner: row.querySelector('.m-partner').value.trim(),
+      partner_unit: row.querySelector('.m-punit').value.trim(),
+      partner_role: row.querySelector('.m-prole').value.trim(),
+      projects: projs });
+  });
+  if (!okForm) { msg.className = 'err'; msg.textContent = '请补全成员姓名与报名项目'; return; }
+  btn.disabled = true;
+  try {
+    var r = await api('POST', '/api/public/events/' + CID + '/register', {
+      mode: MODE,
+      unit: document.getElementById('f-unit').value.trim(),
+      contact_name: document.getElementById('f-contact').value.trim(),
+      contact_phone: document.getElementById('f-phone').value.trim(),
+      unit_code: document.getElementById('f-unit-code').value.trim(),
+      note: document.getElementById('f-note').value.trim(),
+      members: members
+    });
+    document.getElementById('reg-form-card').style.display = 'none';
+    document.getElementById('reg-done').style.display = '';
+    document.getElementById('done-code').textContent = r.submit_code;
+    document.getElementById('done-count').textContent = '共提交 ' + r.count + ' 条报名' +
+      (r.problems && r.problems.length ? '；部分条目未提交：' + r.problems.join('；') : '');
+    queryStatus(r.submit_code);
+  } catch (e) { msg.className = 'err'; msg.textContent = e.message; }
+  btn.disabled = false;
+};
+document.getElementById('reg-again').onclick = function () {
+  document.getElementById('reg-done').style.display = 'none';
+  document.getElementById('reg-form-card').style.display = '';
+  setMode(MODE);
+};
+
+/* 进度查询 */
+async function queryStatus(code) {
+  var box = document.getElementById('done-status');
+  var qbox = document.getElementById('q-result');
+  try {
+    var r = await api('GET', '/api/public/events/' + CID + '/register/status?code=' + encodeURIComponent(code));
+    var stMap = {pending: '待审核', approved: '已通过', rejected: '未通过', imported: '已编入名单'};
+    var html = '<table><tr><th>选手</th><th>搭档</th><th>项目</th><th>状态</th></tr>';
+    r.entries.forEach(function (e0) {
+      html += '<tr><td>' + esc(e0.name) + '</td><td>' + esc(e0.partner || '—') + '</td><td>' +
+        esc(e0.projects.join('、')) + '</td><td>' + esc(e0.status_label) +
+        (e0.review_note ? '（' + esc(e0.review_note) + '）' : '') + '</td></tr>';
+    });
+    html += '</table>';
+    if (box) box.innerHTML = html;
+    if (qbox) qbox.innerHTML = r.ok ? html : '<p class="err">未找到该提交码</p>';
+  } catch (e) { if (qbox) qbox.textContent = e.message; }
+}
+document.getElementById('q-btn').onclick = function () {
+  var c = document.getElementById('q-code').value.trim();
+  if (c) queryStatus(c);
+};
+{% endblock %}

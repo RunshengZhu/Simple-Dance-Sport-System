@@ -1252,3 +1252,22 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 }
 .judge-sheet .rs-key:active { background: var(--acc-soft); border-color: var(--acc); }
 .judge-sheet .rs-key.taken { opacity: .3; text-decoration: line-through; }
+
+/* ================= R137 报名系统 ================= */
+.reg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 8px 0; }
+.reg-grid label, #reg-form-card label, #reg-settings label, #reg-done label { display: block; font-size: .85rem; color: var(--ink-soft); margin-bottom: 4px; }
+.reg-grid input, #reg-form-card input, #reg-settings input, #reg-settings textarea { width: 100%; padding: 10px; border: 1px solid var(--line-strong); border-radius: 8px; }
+.reg-mode-tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.reg-tab { border: 1.5px solid var(--line-strong); background: var(--card); border-radius: 999px; padding: 8px 16px; font-weight: 700; color: var(--ink-soft); }
+.reg-tab.active { background: var(--acc); border-color: var(--acc); color: #fff; }
+.member-row { margin: 10px 0; }
+.proj-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+.proj-chip { border: 1.5px solid var(--line-strong); border-radius: 999px; padding: 8px 14px; background: var(--card); font-weight: 600; color: var(--ink-soft); max-width: 100%; }
+.proj-chip.on { background: var(--acc); border-color: var(--acc); color: #fff; }
+.switch-line { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+.btn.tiny { padding: 4px 10px; font-size: .8rem; }
+.btn.tiny.ok { background: var(--acc); border-color: var(--acc); color: #fff; }
+.btn.tiny.danger { background: #fdecea; border-color: #e74c3c; color: #c0392b; }
+.btn.small.warn { background: #fff3d6; }
+#reg-msg.err, #q-result .err { color: #c0392b; }
+#reg-done { border-color: var(--acc); }
