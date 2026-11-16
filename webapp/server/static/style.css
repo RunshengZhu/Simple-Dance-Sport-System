@@ -1271,3 +1271,14 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .btn.small.warn { background: #fff3d6; }
 #reg-msg.err, #q-result .err { color: #c0392b; }
 #reg-done { border-color: var(--acc); }
+
+/* R138 反馈基础设施：busy 按钮 + 禁用态 */
+.btn.loading { opacity: .6; pointer-events: none; }
+.btn[disabled] { opacity: .55; }
+.btn.loading::before, .btn[disabled].busy-ind::before {
+  content: ""; display: inline-block; width: .85em; height: .85em; margin-right: 6px;
+  border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%;
+  vertical-align: -2px; animation: btnSpin .7s linear infinite;
+}
+@keyframes btnSpin { to { transform: rotate(360deg); } }
+.toast { max-width: min(92vw, 460px); }

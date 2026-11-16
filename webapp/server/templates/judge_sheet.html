@@ -482,7 +482,9 @@ if (SKATING) {
   renderMark();
 }
 
+var SUBMIT_BUSY = false;
 async function submitSheet() {
+  if (SUBMIT_BUSY) return;   // R138 防双击重复提交
   var el = document.getElementById('msg');
   if (SKATING || SCORE) {
     var filled = Object.keys(collect()).length;
@@ -492,6 +494,9 @@ async function submitSheet() {
       return;
     }
   }
+  var btn = document.getElementById('submit');
+  SUBMIT_BUSY = true;
+  if (btn) { btn.disabled = true; btn.dataset.oldText = btn.textContent; btn.textContent = '提交中…'; }
   try {
     var r = await api('PUT', SUBMIT_URL, {values: collect()});
     el.className = 'ok';
@@ -500,6 +505,10 @@ async function submitSheet() {
     if (dnCur) dnCur.innerHTML = DANCE + ' ✓ 已提交';
     if (!DEBUGJ) { try { sessionStorage.removeItem('sheet:' + CEID + ':' + encodeURIComponent(DANCE)); } catch (err) {} }
   } catch (e) { el.className = 'err'; el.textContent = e.message; }
+  finally {
+    SUBMIT_BUSY = false;
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.oldText || btn.textContent; }
+  }
 }
 var DEBUGJ = {% if debug_judge %}true{% else %}false{% endif %};
 

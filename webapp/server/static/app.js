@@ -123,9 +123,16 @@ function copyText(text, okMsg) {
 }
 
 /* ---- R42：轻量 toast（替代高频 alert）与返回顶部 ---- */
+var _toastSeen = {};
 function toast(msg, type, ms) {
   var wrap = document.getElementById('toast-wrap');
   if (!wrap) return;
+  /* R138 反馈防打架：同文案 3s 内去重；同时在屏上限 3 条（挤掉最旧） */
+  var key = (type || '') + '|' + msg;
+  var now = Date.now();
+  if (_toastSeen[key] && now - _toastSeen[key] < 3000) return;
+  _toastSeen[key] = now;
+  while (wrap.children.length >= 3) wrap.removeChild(wrap.firstChild);
   var el = document.createElement('div');
   el.className = 'toast ' + (type || '');
   el.textContent = msg;

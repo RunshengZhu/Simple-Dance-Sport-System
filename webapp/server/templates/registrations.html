@@ -63,10 +63,13 @@ async function load() {
 }
 
 document.getElementById('s-save').onclick = async function () {
+  if (REG_BUSY) return;
   var modes = [];
   if (document.getElementById('s-mode-individual').checked) modes.push('individual');
   if (document.getElementById('s-mode-unit').checked) modes.push('unit');
   if (!modes.length) { toast('至少启用一种报名模式', 'err'); return; }
+  REG_BUSY = true;
+  var btnS = this; btnS.disabled = true;
   try {
     await api('POST', '/api/events/' + CID + '/registrations/settings', {
       reg_open: document.getElementById('s-open').checked,
@@ -76,6 +79,7 @@ document.getElementById('s-save').onclick = async function () {
     });
     toast('已保存', 'ok'); load();
   } catch (e) { toast(e.message, 'err'); }
+  finally { REG_BUSY = false; btnS.disabled = false; }
 };
 
 function renderStats() {
@@ -126,21 +130,29 @@ function renderList() {
 document.getElementById('r-filter-st').onchange = renderList;
 document.getElementById('r-search').oninput = renderList;
 
+var REG_BUSY = false;
 async function review(ids, action) {
+  if (REG_BUSY) return;
   var note = action === 'reject' ? (prompt('驳回原因（选手可见）') || '') : '';
+  REG_BUSY = true;
   try { await api('POST', '/api/events/' + CID + '/registrations/review', {ids: ids, action: action, review_note: note}); load(); }
   catch (e) { toast(e.message, 'err'); }
+  finally { REG_BUSY = false; }
 }
 document.getElementById('c-btn').onclick = async function () {
+  if (REG_BUSY) return;
   var ids = Array.prototype.map.call(document.querySelectorAll('.r-sel:checked'), function (c) { return parseInt(c.dataset.rid, 10); });
   if (!ids.length) { toast('请先勾选要编入名单的「已通过」报名', 'err'); return; }
   if (!confirm('将选中的 ' + ids.length + ' 条报名编入正式名单（自动分配背号）？')) return;
+  REG_BUSY = true;
+  var btn0 = this; btn0.disabled = true;
   try {
     var r = await api('POST', '/api/events/' + CID + '/registrations/convert',
                       {ids: ids, start_number: document.getElementById('c-start').value.trim()});
     toast('已编入 ' + r.entries + ' 条（生成 ' + r.rows + ' 行名单，号 ' + r.numbers.join(',') + (r.numbers.length < r.entries ? '…' : '') + '）', 'ok');
     load();
   } catch (e) { toast(e.message, 'err'); }
+  finally { REG_BUSY = false; btn0.disabled = false; }
 };
 
 load().catch(function (e) { document.getElementById('reg-list').innerHTML = '<div class="card err">' + esc(e.message) + '</div>'; });

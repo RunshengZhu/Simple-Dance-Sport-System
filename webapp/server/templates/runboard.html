@@ -42,6 +42,7 @@
 {% block scripts %}
 var CID = {{ comp.id }};
 var DATA = null;
+var ANCHOR_CONSUMED = false;
 var DEBUG = localStorage.getItem('rb-debug') === '1';
 
 /* R135 调试开关：右上角切换；开启后每场出现「⚡生成评分」，评分矩阵可点开代打浮层 */
@@ -59,10 +60,14 @@ var DEBUG = localStorage.getItem('rb-debug') === '1';
   paint();
 })();
 
+var DBG_BUSY = false;
 async function debugGenerate(id) {
+  if (DBG_BUSY) return;
   if (!confirm('生成该场全部启用裁判的全部舞种评分？（未检录将自动全检录，生成后自动计算）')) return;
+  DBG_BUSY = true;
   try { await api('POST', '/api/events/' + CID + '/debug-generate', {ceid: id}); toast('已生成评分并计算', 'ok'); await load(); }
   catch (e) { toast(e.message, 'err'); }
+  finally { DBG_BUSY = false; }
 }
 function openDebugJudge(id, judge, dance) {
   var ov = document.getElementById('dbg-overlay');
@@ -188,14 +193,18 @@ function render() {
     var el = document.getElementById('rb-detail-' + e.id);
     if (el) el.style.display = (e.status === 'scoring') ? '' : 'none';
   });
-  // R123 晋级确认页锚点跳转：#ev-{ceid} → 滚动定位 + 高亮闪烁
-  if (location.hash && location.hash.indexOf('#ev-') === 0) {
+  // R123 晋级确认页锚点跳转：#ev-{ceid} → 滚动定位 + 高亮闪烁。
+  // R138 修复：锚点定位只执行一次（既往每次 SSE 刷新 render() 都重放定位/闪烁，
+  // 比赛中事件频繁 → 页面反复被拉回锚点行干扰操作）。消费后即清除 hash。
+  if (!ANCHOR_CONSUMED && location.hash && location.hash.indexOf('#ev-') === 0) {
+    ANCHOR_CONSUMED = true;
     var ceid = location.hash.slice(4);
     var row = document.querySelector('.rb-row[data-ceid="' + ceid + '"]');
     if (row) {
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
       row.classList.add('rb-flash');
       setTimeout(function () { row.classList.remove('rb-flash'); }, 4000);
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e2) {}
     }
   }
 }
@@ -205,8 +214,15 @@ function toggleDetail(id) {
   if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
+var ACT_BUSY = {};
+var ACT_OK = {open: '已开赛', checkin: '已全部检录', 'uncheckin-all': '已清空检录', publish: '已发布',
+              unpublish: '已撤回', announce: '已更新播报标记', close: '已关闭评分',
+              calc: '已计算', return: '已退回评分'};
 async function act(id, action) {
   var path = '/api/competition-events/' + id + '/';
+  var key = id + ':' + action;
+  if (ACT_BUSY[key]) return;   // R138 防重入：同一动作进行中忽略重复点击
+  ACT_BUSY[key] = 1;
   try {
     if (action === 'open') {
       var ev = DATA.events.filter(function (e) { return e.id === id; })[0];
@@ -227,8 +243,10 @@ async function act(id, action) {
       if (!confirm('退回将清空本场全部评分与结果，确认？')) return;
       await api('POST', path + 'return-scores', {});
     }
+    if (ACT_OK[action]) toast(ACT_OK[action], 'ok');   // R138 每个动作都有明确反馈
     await load();
   } catch (e) { toast(e.message, 'err'); }
+  finally { delete ACT_BUSY[key]; }
 }
 
 async function toggleJudgeEnabled(code, enabled) {
