@@ -109,6 +109,14 @@
   </div>
   <div class="rank-slots" id="rank-slots" aria-label="名次槽位"></div>
 </div>
+<div class="rank-sheet" id="rank-sheet" hidden>
+  <div class="rs-head">
+    <b>为 <span id="rs-num">--</span> 选择名次</b>
+    <button type="button" class="btn small secondary" id="rs-close">收起</button>
+  </div>
+  <div class="rs-keys" id="rs-keys"></div>
+  <p class="muted" style="margin:6px 0 0">大按键直接点选名次；灰色 = 已被占用（点占用槽位可取消该选手）。也可以收起后拖拽或点槽位。</p>
+</div>
 {% else %}
 <p class="muted">为每支队伍打 0~10 分（一位小数），点击输入框唤起数字键盘。</p>
 <div class="score-grid">
@@ -209,9 +217,9 @@ if (SKATING) {
         d.innerHTML = '<span class="slot-rank">' + r + '</span><span class="slot-num"></span>';
         d.addEventListener('click', function () {
           var owner = rankOwner(r);
-          if (owner) { setV(rowOf(owner), ''); renderSkating(); return; }   // 点占用槽 = 取消
+          if (owner) { setV(rowOf(owner), ''); closeSheet(); renderSkating(); return; }   // 点占用槽 = 取消
           if (SKATE_MODE === 'drag' && selected) {                           // 两击指定：已选背号 → 点槽位
-            assignSlot(selected, r); selected = null; renderSkating();
+            assignSlot(selected, r); selected = null; closeSheet(); renderSkating();
           }
         });
         slotsBox.appendChild(d);
@@ -230,6 +238,11 @@ if (SKATING) {
       slot.classList.toggle('ready', SKATE_MODE === 'drag' && !!selected && !owner);
       slot.querySelector('.slot-num').textContent = owner || '';
     });
+    var sheet = document.getElementById('rank-sheet');
+    if (sheet && !sheet.hidden) {
+      if (SKATE_MODE !== 'drag' || !selected) closeSheet();
+      else renderSheet();
+    }
     var done = placed().length;
     document.getElementById('progress').textContent = '已排 ' + done + ' / ' + CHECKED + (done < CHECKED ? ' · 还差 ' + (CHECKED - done) : ' · 可提交');
     var msgEl = document.getElementById('msg');
@@ -271,9 +284,38 @@ if (SKATING) {
   function tapChipDrag(num) {
     var row = rowOf(num);
     if (row.classList.contains('off')) { offToast(); return; }
-    if (getV(row) !== '') { setV(row, ''); renderSkating(); return; }   // 点已排名背号 = 取消
-    selected = (selected === num) ? null : num;                          // 选中等待槽位
+    if (getV(row) !== '') { setV(row, ''); closeSheet(); renderSkating(); return; }   // 点已排名背号 = 取消
+    selected = (selected === num) ? null : num;
+    if (selected) openSheet(selected); else closeSheet();                // R136b：选中即弹名次盘（移动端免误触）
     renderSkating();
+  }
+  /* R136b 名次盘（底部弹层）：大按键选名次，替代在小槽位上精准点击 */
+  function openSheet(num) {
+    document.getElementById('rs-num').textContent = num;
+    renderSheet();
+    document.getElementById('rank-sheet').hidden = false;
+  }
+  function closeSheet() {
+    document.getElementById('rank-sheet').hidden = true;
+  }
+  function renderSheet() {
+    var keys = document.getElementById('rs-keys');
+    keys.innerHTML = '';
+    for (var r = 1; r <= N; r++) {
+      (function (r) {
+        var owner = rankOwner(r);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rs-key' + (owner ? ' taken' : '');
+        btn.textContent = owner ? (r + ' · ' + owner) : String(r);
+        btn.disabled = !!owner;
+        btn.addEventListener('click', function () {
+          if (selected) { assignSlot(selected, r); }
+          selected = null; closeSheet(); renderSkating();
+        });
+        keys.appendChild(btn);
+      })(r);
+    }
   }
   function slotFromPoint(x, y) {
     var el = document.elementFromPoint(x, y);
@@ -315,7 +357,7 @@ if (SKATING) {
     Array.prototype.forEach.call(slotsBox.children, function (s) { s.classList.remove('hover'); });
     if (d.moved) {
       var slot = slotFromPoint(e.clientX, e.clientY);
-      if (slot) assignSlot(d.num, parseInt(slot.dataset.r, 10));
+      if (slot) { assignSlot(d.num, parseInt(slot.dataset.r, 10)); closeSheet(); }
       else { setV(rowOf(d.num), ''); renderSkating(); }   // 拖出槽位 = 取消
     }
     /* 未移动（单击）由 click 事件处理，这里不重复 */
@@ -324,14 +366,14 @@ if (SKATING) {
     b.addEventListener('click', function () {
       SKATE_MODE = b.dataset.sm;
       localStorage.setItem('judge-skate-mode', SKATE_MODE);   // R136 选择持久化：后续场次默认保持
-      selected = null;
+      selected = null; closeSheet();
       renderSkating();
     });
   });
   document.getElementById('reset-all').addEventListener('click', function () {
     if (!confirm('清空全部已排名次？')) return;
     rowsAll().forEach(function (row) { setV(row, ''); });
-    selected = null;
+    selected = null; closeSheet();
     renderSkating();
   });
   buildSlots();

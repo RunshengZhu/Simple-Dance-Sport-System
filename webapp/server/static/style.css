@@ -1229,3 +1229,26 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .judge-sheet .rank-cell.selected { outline: 3px solid var(--acc); outline-offset: -2px; background: var(--acc-tint); }
 .judge-sheet .slot.ready { border-style: solid; border-color: var(--acc); animation: slotPulse 1.2s ease-in-out infinite; }
 @keyframes slotPulse { 0%,100% { box-shadow: 0 0 0 0 var(--acc-soft); } 50% { box-shadow: 0 0 0 5px var(--acc-soft); } }
+
+/* ================= R136b 顺位槽位加大 + 名次盘弹层（移动端防误触） ================= */
+.judge-sheet .slot { min-height: 56px; padding: 10px 14px; }
+.judge-sheet .slot .slot-num { font-size: 1.45rem; }
+.judge-sheet .rank-slots { gap: 8px; flex: 0 0 190px; }
+@media (max-width: 640px) {
+  .judge-sheet .rank-slots { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .judge-sheet .slot { min-height: 60px; }
+}
+.judge-sheet .rank-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 65;
+  background: var(--card, #fff); border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 30px rgba(0,0,0,.22);
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+}
+.judge-sheet .rs-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.judge-sheet .rs-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 10px; }
+.judge-sheet .rs-key {
+  min-height: 58px; border: 1.5px solid var(--line-strong); border-radius: 12px;
+  background: var(--card); font-size: 1.35rem; font-weight: 800; color: var(--ink-strong);
+}
+.judge-sheet .rs-key:active { background: var(--acc-soft); border-color: var(--acc); }
+.judge-sheet .rs-key.taken { opacity: .3; text-decoration: line-through; }
