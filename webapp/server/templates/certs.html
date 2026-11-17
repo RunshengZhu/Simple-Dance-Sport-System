@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% from "_comp_bar.html" import bar with context %}
+{% block cid %}{{ comp.id }}{% endblock %}
+{% block title %}荣誉证书 · {{ ev.name }}{% endblock %}
+{% block nav %}{% endblock %}
+{% block content %}
+{{ bar(comp, 'certs') }}
+<h1>荣誉证书 <span class="muted">{{ ev.name }}</span>
+  {% if ev.cert_printed_at %}<span class="tag ok">已打印（{{ ev.cert_printed_at }}）</span>
+  {% else %}<span class="tag warn">未打印</span>{% endif %}</h1>
+<p class="muted">按名次顺序生成，<b>每位选手一份证书</b>（该选手姓名排在名单开头）。支持单人/双人/集体项目；集体项目请核对并编辑名单后生成。</p>
+
+<div class="card">
+  <b>证书模板</b>
+  <div id="tmpl-list" style="margin:8px 0">加载中…</div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input id="t-name" placeholder="模板名称（如：荣誉证书A4）" style="max-width:220px">
+    <input type="file" id="t-file" accept=".docx">
+    <button class="btn small" id="t-upload">上传模板</button>
+    <button class="btn small danger" id="t-del">删除选中</button>
+  </div>
+  <p class="muted" style="margin:8px 0 0">模板为 Word 文档（<b>仅支持 .docx</b>，旧版 .doc 请先另存为 .docx），在正文中使用占位符：
+  {% for ph in ["{{赛事名称}}","{{项目名称}}","{{名次}}","{{名次数字}}","{{选手名单}}","{{单位}}","{{日期}}"] %}
+    <code>{{ ph }}</code>{% if not loop.last %}、{% endif %}{% endfor %}。
+  生成时自动按名次填充；<b>{{选手名单}}</b> 为该组合全部选手（本人姓名在开头），人数多时自动缩小字号。</p>
+</div>
+
+<div class="card">
+  <b>获奖名单与成员核对</b> <span class="muted">点击成员可编辑（每行一个姓名；集体项目在此录入全部成员）</span>
+  <div id="ranks"><div class="muted">加载中…</div></div>
+</div>
+
+<div class="card" id="gen-card">
+  <b>生成与打印</b>
+  <p class="muted" style="margin:6px 0">按名次顺序生成单一 Word 文档（每份证书一页），打开后直接打印即可。</p>
+  <button class="btn big" id="gen-btn">🏅 生成全部证书（docx）</button>
+  <span id="gen-msg" class="muted"></span>
+</div>
+{% endblock %}
+{% block scripts %}
+var CID = {{ comp.id }}, CEID = {{ ev.id }};
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+  return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+var DATA = null;
+
+async function load() {
+  DATA = await api('GET', '/api/events/' + CID + '/certs/' + CEID);
+  renderTemplates();
+  renderRanks();
+}
+
+function renderTemplates() {
+  var box = document.getElementById('tmpl-list');
+  if (!DATA.templates.length) {
+    box.innerHTML = '<div class="muted">尚未上传模板——请先上传 docx 证书模板。</div>';
+    return;
+  }
+  var html = '';
+  DATA.templates.forEach(function (t, i) {
+    html += '<label class="switch-line" style="display:inline-flex;margin-right:16px">' +
+      '<input type="radio" name="tmpl" value="' + t.id + '"' + (i === 0 ? ' checked' : '') + '> ' +
+      esc(t.name) + ' <small class="muted">（' + esc((t.created_at || '').slice(0, 10)) + '）</small></label>';
+  });
+  box.innerHTML = html;
+}
+function pickedTemplate() {
+  var r = document.querySelector('input[name="tmpl"]:checked');
+  return r ? parseInt(r.value, 10) : 0;
+}
+
+function renderRanks() {
+  var box = document.getElementById('ranks');
+  if (!DATA.ranks.length) { box.innerHTML = '<div class="muted">暂无成绩——请先发布该场次。</div>'; return; }
+  var html = '<table><tr><th>名次</th><th>背号</th><th>证书名单（每行一位，第一位领证者）</th><th>单位</th></tr>';
+  DATA.ranks.forEach(function (r) {
+    html += '<tr data-num="' + esc(r.number) + '">' +
+      '<td><b>' + esc(r.rank) + '</b></td><td><b>' + esc(r.number) + '</b></td>' +
+      '<td><textarea class="cm-input" data-num="' + esc(r.number) + '" rows="' + Math.max(1, r.names.length) + '" style="width:100%">' + esc(r.names.join('\n')) + '</textarea>' +
+      (r.override ? '<small class="muted">已手动编辑</small>' : '') + '</td>' +
+      '<td class="muted">' + esc(r.unit || '—') + '</td></tr>';
+  });
+  html += '</table>';
+  box.innerHTML = html;
+}
+
+async function saveMember(num, input) {
+  await api('POST', '/api/events/' + CID + '/certs/' + CEID + '/members', {number: num, members: input.value});
+  input.style.borderColor = 'var(--acc)';
+  setTimeout(function () { input.style.borderColor = ''; }, 1200);
+}
+document.getElementById('ranks').addEventListener('change', function (e) {
+  if (e.target.classList.contains('cm-input')) saveMember(e.target.dataset.num, e.target);
+});
+
+document.getElementById('t-upload').onclick = async function () {
+  var f = document.getElementById('t-file').files[0];
+  if (!f) { toast('请选择 docx 文件', 'err'); return; }
+  var b64 = await new Promise(function (res) {
+    var rd = new FileReader();
+    rd.onload = function () { res(rd.result.split(',')[1]); };
+    rd.readAsDataURL(f);
+  });
+  try {
+    await api('POST', '/api/events/' + CID + '/certs/templates', {name: document.getElementById('t-name').value.trim() || f.name.replace(/\.docx$/i, ''), b64: b64});
+    toast('模板已上传', 'ok'); load();
+  } catch (e) { toast(e.message, 'err'); }
+};
+document.getElementById('t-del').onclick = async function () {
+  var r = document.querySelector('input[name="tmpl"]:checked');
+  if (!r) { toast('请先选中模板', 'err'); return; }
+  if (!confirm('删除该模板？')) return;
+  try { await api('DELETE', '/api/events/' + CID + '/certs/templates/' + r.value); load(); }
+  catch (e) { toast(e.message, 'err'); }
+};
+
+document.getElementById('gen-btn').onclick = async function () {
+  var btn = this, msg = document.getElementById('gen-msg');
+  if (!pickedTemplate()) { toast('请先选择/上传模板', 'err'); return; }
+  btn.disabled = true; msg.textContent = '生成中…';
+  try {
+    var resp = await fetch('/api/events/' + CID + '/certs/' + CEID + '/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({template_id: pickedTemplate()})
+    });
+    if (!resp.ok) {
+      var d = await resp.json().catch(function () { return {}; });
+      throw new Error(d.detail || ('HTTP ' + resp.status));
+    }
+    var blob = await resp.blob();
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'certs-' + CEID + '.docx';
+    document.body.appendChild(a); a.click(); a.remove();
+    msg.textContent = '已生成并标记为已打印——请打开文档打印，并提醒工作人员按名次整理证书。';
+    toast('已生成 ' + DATA.ranks.length + ' 个名次的证书文档', 'ok');
+    load();
+  } catch (e) { msg.textContent = ''; toast(e.message, 'err'); }
+  btn.disabled = false;
+};
+
+load().catch(function (e) { document.getElementById('ranks').innerHTML = '<div class="card err">' + esc(e.message) + '</div>'; });
+{% endblock %}

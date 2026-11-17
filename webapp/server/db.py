@@ -60,6 +60,21 @@ CREATE TABLE IF NOT EXISTS registrations (
     review_note TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_reg_comp ON registrations(competition_id, status);
+CREATE TABLE IF NOT EXISTS cert_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    competition_id INTEGER NOT NULL REFERENCES competitions(id),
+    name TEXT DEFAULT '',
+    fname TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS cert_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id),
+    number TEXT NOT NULL,
+    members TEXT DEFAULT '',                   -- 每行一个姓名（覆盖自动名单：主报+搭档）
+    UNIQUE(event_id, number)
+);
+CREATE INDEX IF NOT EXISTS idx_reg_comp ON registrations(competition_id, status);
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     competition_id INTEGER NOT NULL REFERENCES competitions(id),
@@ -177,6 +192,9 @@ def init_db():
         conn.execute("ALTER TABLE competitions ADD COLUMN reg_note TEXT DEFAULT ''")         # R137：报名须知（公示）
     if "reg_unit_code" not in comp_cols:
         conn.execute("ALTER TABLE competitions ADD COLUMN reg_unit_code TEXT DEFAULT ''")    # R137：单位报名口令（可空=不校验）
+    ev_cols0 = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
+    if "cert_printed_at" not in ev_cols0:
+        conn.execute("ALTER TABLE events ADD COLUMN cert_printed_at TEXT DEFAULT ''")   # R139：证书打印时间（空=未打印）
     user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "pw_plain" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN pw_plain TEXT DEFAULT ''")   # R76c：口令留档（设置/重置时同步记录，供口令表导出；与直达链接同库同等保护）

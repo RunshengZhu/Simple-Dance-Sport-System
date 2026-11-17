@@ -1467,6 +1467,371 @@ async def api_debug_sheet(competition_id: int, request: Request = None):
     return {"ok": True, "auto_calculated": auto}
 
 
+# ------------------------------------------------------------------ R139 荣誉证书（模板填充 + 打印）
+CERT_DIR_NAME = "cert-templates"
+_CN_NUM = {1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "七", 8: "八",
+           9: "九", 10: "十"}
+
+
+def _cn_rank(n):
+    if n <= 0:
+        return str(n)
+    if n <= 10:
+        return "第" + _CN_NUM[n] + "名"
+    if n < 20:
+        return "第十" + _CN_NUM[n - 10] + "名"
+    if n < 100:
+        t, u = divmod(n, 10)
+        return "第" + _CN_NUM.get(t, str(t)) + "十" + (_CN_NUM.get(u, "") if u else "") + "名"
+    return "第" + str(n) + "名"
+
+
+def _cert_dir(competition_id):
+    base = os.path.dirname(db.DEFAULT_DB)
+    d = os.path.join(base, CERT_DIR_NAME, str(competition_id))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _escape_xml(t):
+    from xml.sax.saxutils import escape as _e
+    return _e(str(t))
+
+
+def _docx_fill(template_bytes, mapping, name_count=None):
+    """docx=zip：对 word/document.xml 及页眉页脚做段落级占位符替换。
+    段内合并全部 <w:t> 文本后整体替换占位符（容忍占位符被 Word 拆分为多个 run），
+    重建为单 run（沿用该段首个 run 的 rPr 格式）。{{选手名单}} 人数多时自动缩小字号。"""
+    import io as _io
+    import zipfile as _zf
+    zin = _zf.ZipFile(_io.BytesIO(template_bytes))
+    buf = _io.BytesIO()
+    zout = _zf.ZipFile(buf, "w", _zf.ZIP_DEFLATED)
+    para_re = re.compile(r"<w:p[ >].*?</w:p>", re.S)
+    rpr_re = re.compile(r"<w:rPr>.*?</w:rPr>", re.S)
+
+    def shrink(rpr, cnt):
+        m = re.search(r'<w:sz w:val="(\d+)"', rpr)
+        base = int(m.group(1)) if m else 28
+        new = base - (8 if cnt >= 12 else 6 if cnt >= 8 else 4 if cnt >= 5 else 0)
+        new = max(14, new)
+        if m:
+            rpr = rpr.replace('w:val="%d"' % base, 'w:val="%d"' % new, 1)
+        else:
+            rpr += '<w:sz w:val="%d"/><w:szCs w:val="%d"/>' % (new, new)
+        return rpr
+
+    def repl_para(m0):
+        para = m0.group(0)
+        texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", para)
+        combined = "".join(texts)
+        if "{{" not in combined:
+            return para
+        out = combined
+        for k, v in mapping.items():
+            out = out.replace(k, v)
+        i = para.find("<w:r")
+        if i < 0:
+            return para
+        j = para.rfind("</w:r>") + len("</w:r>")
+        head, tail = para[:i], para[j:]
+        first_run_end = para.find("</w:r>", i) + len("</w:r>")
+        first_run = para[i:first_run_end]
+        m_rpr = rpr_re.search(first_run)
+        rpr = m_rpr.group(0) if m_rpr else ""
+        if name_count and name_count >= 5 and "{{选手名单}}" in combined:
+            rpr = shrink(rpr, name_count)
+        return head + "<w:r>" + rpr + '<w:t xml:space="preserve">' + out + "</w:t></w:r>" + tail
+
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if re.match(r"word/(document|header\d*|footer\d*)\.xml$", item.filename):
+            xml = data.decode("utf-8")
+            xml = para_re.sub(repl_para, xml)
+            data = xml.encode("utf-8")
+        zout.writestr(item, data)
+    zin.close()
+    zout.close()
+    return buf.getvalue()
+
+
+def _docx_split(doc):
+    """拆 document.xml → (head 含 <w:body> 前缀, body inner, sectPr 完整段, 尾部)。
+    兼容自闭合 <w:sectPr/> 与含子元素的 sectPr。"""
+    i = doc.find("<w:body>")
+    if i < 0:
+        raise ValueError("模板缺少 <w:body>")
+    i += len("<w:body>")
+    j = doc.find("<w:sectPr", i)
+    if j < 0:
+        raise ValueError("模板缺少 sectPr")
+    k = doc.find("</w:sectPr>", j)
+    if k >= 0:
+        sect, tail = doc[j:k + len("</w:sectPr>")], doc[k + len("</w:sectPr>"):]
+    else:
+        k2 = doc.find("/>", j)
+        sect, tail = doc[j:k2 + 2], doc[k2 + 2:]
+    return doc[:i], doc[i:j], sect, tail
+
+
+def _docx_body_fill(template_bytes, mapping, name_count=None):
+    """只对 word/document.xml 正文做段落级替换，返回（替换后的正文 XML, sectPr）。
+    供多份证书合并为单文档。"""
+    import io as _io
+    import zipfile as _zf
+    zin = _zf.ZipFile(_io.BytesIO(template_bytes))
+    xml = zin.read("word/document.xml").decode("utf-8")
+    zin.close()
+    _head, body, _sect, _tail = _docx_split(xml)
+    para_re2 = re.compile(r"<w:p[ >].*?</w:p>", re.S)
+    rpr_re2 = re.compile(r"<w:rPr>.*?</w:rPr>", re.S)
+
+    def shrink(rpr, cnt):
+        m2 = re.search(r'<w:sz w:val="(\d+)"', rpr)
+        base = int(m2.group(1)) if m2 else 28
+        new = base - (8 if cnt >= 12 else 6 if cnt >= 8 else 4 if cnt >= 5 else 0)
+        new = max(14, new)
+        if m2:
+            rpr = rpr.replace('w:val="%d"' % base, 'w:val="%d"' % new, 1)
+        else:
+            rpr += '<w:sz w:val="%d"/><w:szCs w:val="%d"/>' % (new, new)
+        return rpr
+
+    def repl_para(m0):
+        para = m0.group(0)
+        texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", para)
+        combined = "".join(texts)
+        if "{{" not in combined:
+            return para
+        out = combined
+        for k, v in mapping.items():
+            out = out.replace(k, v)
+        i = para.find("<w:r")
+        if i < 0:
+            return para
+        j = para.rfind("</w:r>") + len("</w:r>")
+        head, tail = para[:i], para[j:]
+        first_run_end = para.find("</w:r>", i) + len("</w:r>")
+        first_run = para[i:first_run_end]
+        m_rpr = rpr_re2.search(first_run)
+        rpr = m_rpr.group(0) if m_rpr else ""
+        if name_count and name_count >= 5 and "{{选手名单}}" in combined:
+            rpr = shrink(rpr, name_count)
+        return head + "<w:r>" + rpr + '<w:t xml:space="preserve">' + out + "</w:t></w:r>" + tail
+
+    return para_re2.sub(repl_para, body)
+
+
+def _docx_merge(template_bytes, filled_bodies):
+    """N 份填充后的正文合并为单一 docx（每份一页，分页符分隔），其余 zip 部件原样保留。"""
+    import io as _io
+    import zipfile as _zf
+    zin = _zf.ZipFile(_io.BytesIO(template_bytes))
+    doc = zin.read("word/document.xml").decode("utf-8")
+    _head, _body, _sect, _tail = _docx_split(doc)
+    page_break = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+    joined = page_break.join(filled_bodies)
+    doc2 = _head + joined + _sect + _tail
+    buf2 = _io.BytesIO()
+    zout2 = _zf.ZipFile(buf2, "w", _zf.ZIP_DEFLATED)
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "word/document.xml":
+            data = doc2.encode("utf-8")
+        zout2.writestr(item, data)
+    zin.close()
+    zout2.close()
+    return buf2.getvalue()
+
+
+def _cert_members_auto(conn, ev, number):
+    """自动名单：主报+搭档（去重保序）。集体项目可用 cert_members 覆盖。"""
+    names, units = [], []
+    for r in db.rows(conn.execute(
+            "SELECT name, unit, partner, partner_unit FROM competitors "
+            "WHERE competition_id=? AND project_code=? AND number=?",
+            (ev["competition_id"], ev["project_code"], str(number)))):
+        for nm in (r["name"], r["partner"]):
+            nm = (nm or "").strip()
+            if nm and nm not in names:
+                names.append(nm)
+        for u in (r["unit"], r["partner_unit"]):
+            u = (u or "").strip()
+            if u and u not in units:
+                units.append(u)
+    return names, units
+
+
+def _cert_overrides(conn, ceid):
+    return {r["number"]: r["members"] for r in db.rows(conn.execute(
+        "SELECT number, members FROM cert_members WHERE event_id=?", (ceid,)))}
+
+
+@app.get("/events/{competition_id}/certs/{ceid}", response_class=HTMLResponse)
+async def certs_page(request: Request, competition_id: int, ceid: int):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    ev = _event_or_404(ceid)
+    return templates.TemplateResponse(request, "certs.html", {
+        "request": request, "comp": comp, "ev": ev})
+
+
+@app.get("/api/events/{competition_id}/certs/{ceid}")
+async def api_certs_data(competition_id: int, ceid: int, request: Request = None):
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    ev = _event_or_404(ceid)
+    conn = db.get_db()
+    res = load_results(ceid)
+    over = _cert_overrides(conn, ceid)
+    ranks = []
+    if res:
+        for r0 in res.get("overall_results", []):
+            num = str(r0["competitor_number"])
+            names, units = _cert_members_auto(conn, ev, num)
+            if num in over:
+                names = [x.strip() for x in over[num].split("\n") if x.strip()]
+            ranks.append({"rank": r0["rank"], "number": num,
+                          "names": names, "unit": "、".join(units),
+                          "override": num in over})
+        ranks.sort(key=lambda x: (x["rank"], x["number"]))
+    tmpls = [dict(r) for r in db.rows(conn.execute(
+        "SELECT id, name, fname, created_at FROM cert_templates WHERE competition_id=? ORDER BY id DESC",
+        (competition_id,)))]
+    return {"ev": {"id": ev["id"], "code": ev["code"], "name": ev["name"],
+                   "scoring_type": ev["scoring_type"], "cert_printed_at": ev["cert_printed_at"] if "cert_printed_at" in ev.keys() else ""},
+            "ranks": ranks, "templates": tmpls,
+            "placeholders": ["{{赛事名称}}", "{{项目名称}}", "{{名次}}", "{{名次数字}}", "{{选手名单}}", "{{单位}}", "{{日期}}"]}
+
+
+@app.post("/api/events/{competition_id}/certs/{ceid}/members")
+async def api_certs_members(competition_id: int, ceid: int, request: Request = None):
+    """保存某背号的证书名单覆盖（每行一个姓名；集体项目用）。"""
+    require_admin(request)
+    _event_or_404(ceid)
+    body = await request.json()
+    number = str(body.get("number") or "").strip()
+    members = str(body.get("members") or "").replace("、", "\n").replace(",", "\n")
+    names = [x.strip() for x in members.split("\n") if x.strip()]
+    conn = db.get_db()
+    if names:
+        conn.execute("INSERT INTO cert_members(event_id, number, members) VALUES(?,?,?) "
+                     "ON CONFLICT(event_id, number) DO UPDATE SET members=excluded.members",
+                     (ceid, number, "\n".join(names)))
+    else:
+        conn.execute("DELETE FROM cert_members WHERE event_id=? AND number=?", (ceid, number))
+    conn.commit()
+    return {"ok": True, "names": names}
+
+
+@app.post("/api/events/{competition_id}/certs/templates")
+async def api_certs_template_upload(competition_id: int, request: Request = None):
+    """上传证书模板（docx；base64）。doc 为二进制格式不支持，请先另存为 docx。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    body = await request.json()
+    name = str(body.get("name") or "").strip() or "证书模板"
+    b64 = str(body.get("b64") or "")
+    import base64 as _b64
+    try:
+        data = _b64.b64decode(b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="base64 解码失败")
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="模板过大（>20MB）")
+    if data[:4] == b"\xd0\xcf\x11\xe0":
+        raise HTTPException(status_code=400, detail="检测到旧版 .doc 二进制格式——请用 Word/WPS 另存为 .docx 后再上传")
+    if not (data[:2] == b"PK" and b"word/document.xml" in data):
+        raise HTTPException(status_code=400, detail="不是有效的 docx 文件")
+    fname = "t%d-%s.docx" % (int(time.time()), secrets.token_hex(4))
+    path = os.path.join(_cert_dir(competition_id), fname)
+    with open(path, "wb") as f:
+        f.write(data)
+    conn = db.get_db()
+    cur = conn.execute("INSERT INTO cert_templates(competition_id, name, fname) VALUES(?,?,?)",
+                       (competition_id, name[:60], fname))
+    conn.commit()
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.delete("/api/events/{competition_id}/certs/templates/{tid}")
+async def api_certs_template_delete(competition_id: int, tid: int, request: Request = None):
+    require_admin(request)
+    conn = db.get_db()
+    row = db.rowdict(conn.execute("SELECT * FROM cert_templates WHERE id=? AND competition_id=?",
+                                  (tid, competition_id)).fetchone())
+    if not row:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    try:
+        os.remove(os.path.join(_cert_dir(competition_id), row["fname"]))
+    except OSError:
+        pass
+    conn.execute("DELETE FROM cert_templates WHERE id=?", (tid,))
+    conn.commit()
+    return {"ok": True}
+
+
+@app.post("/api/events/{competition_id}/certs/{ceid}/generate")
+async def api_certs_generate(competition_id: int, ceid: int, request: Request = None):
+    """按顺位生成全部证书 docx：每个选手一份（其姓名在名单开头），名次顺序排列，自动缩字号。
+    生成即标记该场证书已打印（可重复生成覆盖标记）。"""
+    s = require_admin(request)
+    comp = _comp_or_404(competition_id)
+    ev = _event_or_404(ceid)
+    body = await request.json()
+    tid = int(body.get("template_id") or 0)
+    conn = db.get_db()
+    trow = db.rowdict(conn.execute("SELECT * FROM cert_templates WHERE id=? AND competition_id=?",
+                                   (tid, competition_id)).fetchone())
+    if not trow:
+        raise HTTPException(status_code=400, detail="请选择证书模板")
+    tpath = os.path.join(_cert_dir(competition_id), trow["fname"])
+    with open(tpath, "rb") as f:
+        tb = f.read()
+    res = load_results(ceid)
+    if not res or not res.get("overall_results"):
+        raise HTTPException(status_code=400, detail="该场次暂无已计算成绩")
+    conn2 = db.get_db()
+    over = _cert_overrides(conn2, ceid)
+    ranks = sorted(res["overall_results"], key=lambda r: (float(r["rank"]), str(r["competitor_number"])))
+    day = (comp["date"] or "").strip() or time.strftime("%Y-%m-%d")
+    filled, total_copies = [], 0
+    for r0 in ranks:
+        num = str(r0["competitor_number"])
+        rank = int(r0["rank"])
+        names, units = _cert_members_auto(conn2, ev, num)
+        if num in over:
+            names = [x.strip() for x in over[num].split("\n") if x.strip()]
+        if not names:
+            names = [num]
+        for nm in names:
+            listing = [nm] + [x for x in names if x != nm]   # 本人姓名在名单开头
+            mapping = {
+                "{{赛事名称}}": comp["name"],
+                "{{项目名称}}": ev["name"],
+                "{{名次}}": _cn_rank(rank),
+                "{{名次数字}}": str(rank),
+                "{{选手名单}}": "、".join(listing),
+                "{{单位}}": "、".join(units),
+                "{{日期}}": day,
+            }
+            body_i = _docx_body_fill(tb, mapping, name_count=len(listing))
+            filled.append(body_i)
+            total_copies += 1
+    if not filled:
+        raise HTTPException(status_code=400, detail="没有可生成的证书（成绩为空）")
+    out_bytes = _docx_merge(tb, filled)
+    conn.execute("UPDATE events SET cert_printed_at=datetime('now','localtime') WHERE id=?", (ceid,))
+    conn.commit()
+    _audit(_actor_name(s), "cert_print", "event:{0}".format(ceid),
+           "{0} 生成 {1} 份证书（模板 {2}）".format(ev["code"], total_copies, trow["name"]), _client_ip(request))
+    sse.bus.publish(competition_id, "cert_printed", {"event_id": ceid, "copies": total_copies})
+    stamp = time.strftime("%Y%m%d%H%M")
+    return Response(out_bytes,
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": "attachment; filename=certs-{0}-{1}.docx".format(ev["code"], stamp)})
+
+
 # ------------------------------------------------------------------ 用户与角色管理（管理员）
 @app.get("/users", response_class=HTMLResponse)
 async def users_page(request: Request):
@@ -4580,6 +4945,8 @@ async def api_runboard(competition_id: int, request: Request = None):
             "announced": bool(ev["announced"]), "run_seq": ev["run_seq"],
             "scoring_type": ev["scoring_type"], "advancement_count": ev["advancement_count"] or 0,
             "has_next": (ev["project_code"], ev["round"] + 1) in next_rounds,
+            "cert_needed": ev["status"] == "published" and ev["scoring_type"] in ("顺位法", "评分制"),
+            "cert_printed": bool(ev["cert_printed_at"]) if "cert_printed_at" in ev.keys() else False,
             "dances": dances, "roster": roster_list, "checked": checked,
             "judges_total": judges_n, "judges_eff": eff, "judges_assigned_on": assigned_used,
             "submitted_pairs": pairs, "total_pairs": total_pairs,
