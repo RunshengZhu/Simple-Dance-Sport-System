@@ -119,8 +119,8 @@ function renderList() {
       '<td><small>' + esc((r.created_at || '').slice(5, 16)) + '</small></td>' +
       '<td>' +
       '<span style="display:flex;gap:4px">' +
-      (r.status !== 'approved' && r.status !== 'imported' ? '<button class="btn tiny ok" onclick="review([' + r.id + '],\\'approve\\')">通过</button>' : '') +
-      (r.status !== 'rejected' && r.status !== 'imported' ? '<button class="btn tiny danger" onclick="review([' + r.id + '],\\'reject\\')">驳回</button>' : '') +
+      (r.status !== 'approved' && r.status !== 'imported' ? '<button class="btn tiny ok" data-rid="' + r.id + '" data-act="approve">通过</button>' : '') +
+      (r.status !== 'rejected' && r.status !== 'imported' ? '<button class="btn tiny danger" data-rid="' + r.id + '" data-act="reject">驳回</button>' : '') +
       '</span></td></tr>';
   });
   html += '</table>';
@@ -131,6 +131,10 @@ document.getElementById('r-filter-st').onchange = renderList;
 document.getElementById('r-search').oninput = renderList;
 
 var REG_BUSY = false;
+document.getElementById('reg-list').addEventListener('click', function (e) {
+  var b = e.target.closest('button[data-act]');
+  if (b) review([parseInt(b.dataset.rid, 10)], b.dataset.act);
+});
 async function review(ids, action) {
   if (REG_BUSY) return;
   var note = action === 'reject' ? (prompt('驳回原因（选手可见）') || '') : '';

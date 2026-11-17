@@ -1645,20 +1645,18 @@ def _docx_merge(template_bytes, filled_bodies):
 
 
 def _cert_members_auto(conn, ev, number):
-    """自动名单：主报+搭档（去重保序）。集体项目可用 cert_members 覆盖。"""
-    names, units = [], []
-    for r in db.rows(conn.execute(
-            "SELECT name, unit, partner, partner_unit FROM competitors "
-            "WHERE competition_id=? AND project_code=? AND number=?",
-            (ev["competition_id"], ev["project_code"], str(number)))):
-        for nm in (r["name"], r["partner"]):
-            nm = (nm or "").strip()
-            if nm and nm not in names:
-                names.append(nm)
-        for u in (r["unit"], r["partner_unit"]):
-            u = (u or "").strip()
-            if u and u not in units:
-                units.append(u)
+    """自动名单：主报+搭档（去重保序）。归属规则与 _display_names 同：优先本项目行，
+    无则取该背号任意报名行（分组场次 P01Z01 vs 报项 P01A/B/C；单人拆项同理）。
+    集体项目用 cert_members 覆盖。"""
+    rows = db.rows(conn.execute(
+        "SELECT name, unit, partner, partner_unit, project_code FROM competitors "
+        "WHERE competition_id=? AND number=?", (ev["competition_id"], str(number))))
+    if not rows:
+        return [], []
+    chosen = [r for r in rows if r["project_code"] == ev["project_code"]] or rows
+    r0 = chosen[0]
+    names = list(dict.fromkeys([x.strip() for x in (r0["name"], r0["partner"]) if x and x.strip()]))
+    units = list(dict.fromkeys([x.strip() for x in (r0["unit"], r0["partner_unit"]) if x and x.strip()]))
     return names, units
 
 
