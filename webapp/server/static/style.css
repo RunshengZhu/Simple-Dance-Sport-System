@@ -1298,3 +1298,14 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
   .app-nav, .comp-bar, #toast-wrap, #back-top, .btn, .muted .noprint { display: none !important; }
   body.print-view h1 { font-size: 20px; }
 }
+
+/* ================= R142 筹备步骤横幅 ================= */
+.prep-step-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--acc-tint); border-top: 1px solid var(--acc-line);
+  padding: 7px 14px; font-size: .9rem;
+}
+.prep-step-banner .prep-step-tag { background: var(--acc); color: #fff; border-radius: 999px; padding: 2px 10px; font-weight: 700; white-space: nowrap; }
+.prep-step-banner .prep-step-label { font-weight: 700; color: var(--acc-ink); }
+.prep-step-banner .prep-step-links { margin-left: auto; display: flex; gap: 12px; }
+.prep-step-banner a { color: var(--acc-ink); font-weight: 600; }

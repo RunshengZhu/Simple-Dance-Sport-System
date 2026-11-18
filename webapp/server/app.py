@@ -104,13 +104,11 @@ _COMPCID_RE = re.compile(r"^/(api/)?events/(\d+)")
 
 _NAV_GROUPS = [
     ("prep", "筹备工作台", [
-        ("/overview", "赛事信息与向导"),
-        ("/import", "数据导入"),
-        ("/roster", "名单"),
-        ("/schedule?tab=projects", "项目管理"),
-        ("/schedule", "赛程编排"),
-        ("/registrations", "报名管理"),
-        ("/staff-links", "工作人员与直达链接"),
+        ("/overview", "① 赛事信息"),
+        ("/registrations", "② 设项与报名"),
+        ("/roster", "③ 参赛名单"),
+        ("/schedule", "④ 赛程编排"),
+        ("/staff-links", "⑤ 工作人员与裁判"),
     ]),
     ("run", "比赛控制", [
         ("/runboard", "赛程执行总表"),
@@ -150,8 +148,16 @@ def _nav_for(path: str, comp_id: int, query: str = ""):
             cur_g, cur_l = "run", "赛程执行总表"
     items_out = [{"path": base + sp, "label": sl} for _, _, its in _NAV_GROUPS for sp, sl in its]
     cur_items = [{"path": base + sp, "label": sl} for gid, _, its in _NAV_GROUPS if gid == cur_g for sp, sl in its]
+    # R142 筹备步骤指示：按流程顺序给出 当前步/上一步/下一步
+    prep_step = None
+    if cur_g == "prep":
+        prep_items = [it for gid, _, its in _NAV_GROUPS if gid == "prep" for it in its]
+        idx = next((i for i, it in enumerate(prep_items) if it[1] == cur_l), -1)
+        prep_step = {"idx": idx + 1, "total": len(prep_items), "label": cur_l,
+                     "prev": {"path": base + prep_items[idx - 1][0], "label": prep_items[idx - 1][1]} if idx > 0 else None,
+                     "next": {"path": base + prep_items[idx + 1][0], "label": prep_items[idx + 1][1]} if 0 <= idx < len(prep_items) - 1 else None}
     return {"base": base, "groups": _NAV_GROUPS, "cur_group": cur_g, "cur_label": cur_l,
-            "items": items_out, "cur_items": cur_items}
+            "items": items_out, "cur_items": cur_items, "prep_step": prep_step}
 
 _COMPCID_DENY_PREFIXES = ("/api/users", "/api/import/json", "/api/import/db",
                           "/api/export/json", "/api/export/db", "/api/backup")
@@ -1008,6 +1014,12 @@ async def roster_page(request: Request, competition_id: int):
 
 
 @app.get("/events/{competition_id}/import", response_class=HTMLResponse)
+async def import_redirect(competition_id: int):
+    """R142：导入功能已按步骤拆分——选手在「③参赛名单」、裁判在「⑤工作人员」、赛程在「④赛程编排」。"""
+    return RedirectResponse("/events/{0}/roster".format(competition_id), status_code=302)
+
+
+@app.get("/events/{competition_id}/import-old", response_class=HTMLResponse)
 async def import_page(request: Request, competition_id: int):
     require_admin(request)
     return templates.TemplateResponse(request, "import.html", {"request": request, "comp": _comp_or_404(competition_id)})
@@ -4934,6 +4946,33 @@ async def register_page(request: Request, competition_id: int):
         "projects": _reg_proj_list(conn, competition_id), "closed": False})
 
 
+@app.get("/api/events/{competition_id}/import-template/{kind}")
+async def api_import_template(competition_id: int, kind: str, request: Request = None):
+    """R142 各步骤导入模板 CSV（表头 + 示例行）。"""
+    require_admin(request)
+    _comp_or_404(competition_id)
+    T = {
+        "competitors": (["背番号", "姓名", "学校/单位", "项目编号", "选手身份", "搭档姓名", "搭档单位", "搭档身份"],
+                        [["101", "张三", "机械学院", "1", "新生", "李四", "机械学院", "新生"],
+                         ["102", "王五", "机械学院", "1", "新生", "", "", ""]]),
+        "judges": (["裁判ID", "姓名", "单位"], [["J1", "张裁判", "体育部"], ["J2", "李裁判", "体育部"]]),
+        "schedule": (["场次", "项目序号", "项目名称", "轮次", "背番号", "选手姓名", "选手单位", "选手身份",
+                      "搭档姓名", "搭档单位", "搭档身份", "评分类型", "晋级人数", "团体计分", "时间"],
+                     [["1", "1", "新生平四单项", 1, "101", "张三", "机械学院", "新生", "李四", "机械学院", "新生", "Mark制", 6, "standard", ""],
+                      ["2", "1", "新生平四单项", 2, "", "", "", "", "", "", "", "Mark制", 6, "standard", ""]]),
+    }
+    if kind not in T:
+        raise HTTPException(status_code=404, detail="未知模板类型")
+    header, rows = T[kind]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(header)
+    for r0 in rows:
+        w.writerow(r0)
+    return Response(buf.getvalue().encode("utf-8-sig"), media_type="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=template-{0}.csv".format(kind)})
+
+
 @app.post("/api/public/events/{competition_id}/register")
 async def api_register_submit(competition_id: int, request: Request = None):
     """R137 报名提交（公开，免登录）。individual=单条组合；unit=批量（members[]，同一 batch）。"""
@@ -4998,6 +5037,60 @@ async def api_register_submit(competition_id: int, request: Request = None):
     _audit("报名提交", "register_submit", "comp:{0}".format(competition_id),
            "{0} 模式 {1} 条（提交码 {2}）".format(mode, ins, submit_code), _client_ip(request))
     return {"ok": True, "count": ins, "submit_code": submit_code, "problems": problems}
+
+
+# ---------------- R142 设项（项目编号=自然数，筹备期在「设项与报名」维护） ----------------
+@app.post("/api/events/{competition_id}/projects")
+async def api_projects_add(competition_id: int, request: Request = None):
+    s = require_admin(request)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    body = await request.json()
+    name = str(body.get("name") or "").strip()[:60]
+    if not name:
+        raise HTTPException(status_code=400, detail="项目名称必填")
+    conn = db.get_db()
+    existing = {r["code"] for r in db.rows(conn.execute(
+        "SELECT code FROM projects WHERE competition_id=?", (competition_id,)))}
+    code = str(body.get("code") or "").strip()
+    if not code:
+        nxt = 1
+        while str(nxt) in existing:
+            nxt += 1
+        code = str(nxt)   # R137 口径：项目编号=自然数
+    if code in existing:
+        raise HTTPException(status_code=400, detail="项目编号已存在: " + code)
+    if not re.match(r"^[A-Za-z0-9\u4e00-\u9fff-]{1,20}$", code):
+        raise HTTPException(status_code=400, detail="项目编号限 1-20 位字母/数字/汉字/连字符")
+    conn.execute("INSERT INTO projects(competition_id, code, name) VALUES(?,?,?)",
+                 (competition_id, code, name))
+    conn.commit()
+    _audit(_actor_name(s), "project_add", "comp:{0}".format(competition_id),
+           "{0} {1}".format(code, name), _client_ip(request))
+    return {"ok": True, "code": code}
+
+
+@app.delete("/api/events/{competition_id}/projects/{code}")
+async def api_projects_delete(competition_id: int, code: str, request: Request = None):
+    s = require_admin(request)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    conn = db.get_db()
+    used_reg = conn.execute("SELECT COUNT(*) c FROM registrations WHERE competition_id=? AND projects LIKE ?",
+                            (competition_id, "%" + code + "%")).fetchone()["c"]
+    used_comp = conn.execute("SELECT COUNT(*) c FROM competitors WHERE competition_id=? AND project_code=?",
+                             (competition_id, code)).fetchone()["c"]
+    used_ev = conn.execute("SELECT COUNT(*) c FROM events WHERE competition_id=? AND project_code=?",
+                           (competition_id, code)).fetchone()["c"]
+    if used_reg or used_comp or used_ev:
+        raise HTTPException(status_code=400,
+                            detail="项目已被引用（报名 {0}/名单 {1}/场次 {2}）——不能删除".format(used_reg, used_comp, used_ev))
+    conn.execute("DELETE FROM projects WHERE competition_id=? AND code=?", (competition_id, code))
+    conn.commit()
+    _audit(_actor_name(s), "project_delete", "comp:{0}".format(competition_id), code, _client_ip(request))
+    return {"ok": True}
 
 
 @app.get("/api/public/events/{competition_id}/register/status")

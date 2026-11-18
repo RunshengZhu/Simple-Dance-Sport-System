@@ -8,7 +8,17 @@
 <h1>工作人员与直达链接 <span class="muted">{{ comp.name }}</span></h1>
 
 <div class="card">
-  <h2>工作人员账号（检录 / 主持）</h2>
+  <h2>导入裁判（CSV）</h2>
+  <p class="muted" style="margin:4px 0 8px">列：裁判ID（可省略，自动 J1..Jn）、姓名、单位。
+     <a href="/api/events/{{ comp.id }}/import-template/judges" download>下载模板</a></p>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="file" id="f-judges" accept=".csv,.xlsx">
+    <button class="btn" id="go-judges">上传导入</button>
+    <span id="msg-judges" class="muted"></span>
+  </div>
+</div>
+<div class="card">
+  <h2>工作人员账号（检录 / 主持 / 打印）</h2>
   <p class="muted">创建检录长/检录员与主持人账号；裁判无需账号，按「直达链接」分发。</p>
   <div class="grid c2">
     <div>
@@ -73,6 +83,27 @@
 </div>
 {% endblock %}
 {% block scripts %}
+async function doImportJudges() {
+  var f = document.getElementById('f-judges').files[0];
+  var btn = document.getElementById('go-judges');
+  var el = document.getElementById('msg-judges');
+  if (!f) { el.textContent = '请选择 CSV 或 Excel 文件'; el.className = 'err'; return; }
+  el.className = 'muted';
+  await btnFlow(btn, async function () {
+    var buf = await f.arrayBuffer();
+    var b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+    var r = await fetch('/api/events/{{ comp.id }}/imports/file', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({kind: 'judges', data_b64: b64, filename: f.name})});
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    el.textContent = '导入成功：' + data.imported + ' 名裁判';
+    el.className = 'ok-text';
+    setTimeout(softReload, 600);
+    return data;
+  });
+}
+document.getElementById('go-judges').addEventListener('click', doImportJudges);
 function toggleQr(idx) {
   var el = document.getElementById('dl-qr-' + idx);
   if (el) el.hidden = !el.hidden;

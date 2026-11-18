@@ -24,6 +24,16 @@
     <a class="nav-sub-item {{ 'active' if item.label == nav.cur_label }}" href="{{ item.path }}">{{ item.label }}</a>
     {% endfor %}
   </div>
+  {% if nav.prep_step %}
+  <div class="prep-step-banner">
+    <span class="prep-step-tag">筹备第 {{ nav.prep_step.idx }} / {{ nav.prep_step.total }} 步</span>
+    <span class="prep-step-label">{{ nav.prep_step.label }}</span>
+    <span class="prep-step-links">
+      {% if nav.prep_step.prev %}<a href="{{ nav.prep_step.prev.path }}">← 上一步：{{ nav.prep_step.prev.label }}</a>{% endif %}
+      {% if nav.prep_step.next %}<a href="{{ nav.prep_step.next.path }}">下一步：{{ nav.prep_step.next.label }} →</a>{% endif %}
+    </span>
+  </div>
+  {% endif %}
   {% else %}
   <div class="comp-bar-links">
     <a href="/events/{{ comp.id }}/overview" class="{{ 'active' if current == 'overview' }}">总览</a>

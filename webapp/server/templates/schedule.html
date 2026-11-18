@@ -18,6 +18,18 @@
   <button class="btn small secondary" id="gt-sched">赛程编排</button>
 </div>
 <div id="tab-proj">
+<div class="card" id="import-card">
+  <b>导入赛程总表（CSV）</b>
+  <p class="muted" style="margin:4px 0 8px">列：场次、项目序号、项目名称、轮次、背番号、选手姓名、选手单位、选手身份、搭档姓名、搭档单位、搭档身份、评分类型、晋级人数、团体计分、时间。
+     <a href="/api/events/{{ comp.id }}/import-template/schedule" download>下载模板</a>（空背号行 = 待晋级轮，仅建场次不填名单）</p>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="file" id="f-schedule" accept=".csv">
+    <button class="btn" id="go-schedule">导入并替换全部场次</button>
+    <button class="btn secondary" id="gen-auto">按报项生成默认赛程</button>
+    <span id="msg-schedule" class="muted"></span>
+  </div>
+  <div id="rep-schedule"></div>
+</div>
 <div class="card">
   <h2>统一生成配置（应用到全部项目）</h2>
   <p class="muted">参数含义：项目人数上限（超限拆成多个项目，名称带 A/B 组标，各自独立名次）；每场人数上限
@@ -59,10 +71,10 @@
 {% if not tree %}
 <div class="card">
   <h2>三步开始</h2>
-  <p>1.「导入」页上传选手 / 裁判 / 赛程三份 CSV；<br>
+  <p>1. 在上方导入赛程总表（或在「② 设项与报名」设项、收集报名后转正名单）；<br>
      2. 回到本页编排场次（可添加、调整比赛顺序，支持防连场自动排序）；<br>
      3. 进入场次控制台「开启评分」。</p>
-  <p><a class="btn" href="/events/{{ comp.id }}/import">前往导入</a>　<a class="btn secondary" href="#event-form">手工添加单场</a></p>
+  <p><a class="btn secondary" href="#event-form">手工添加单场</a></p>
 </div>
 {% endif %}
 
@@ -179,6 +191,43 @@
 </div>
 {% endblock %}
 {% block scripts %}
+async function doImportSchedule() {
+  var f = document.getElementById('f-schedule').files[0];
+  var btn = document.getElementById('go-schedule');
+  var el = document.getElementById('msg-schedule');
+  var box = document.getElementById('rep-schedule');
+  if (!f) { el.textContent = '请选择 CSV 文件'; el.className = 'err'; return; }
+  el.className = 'muted';
+  await btnFlow(btn, async function () {
+    var buf = await f.arrayBuffer();
+    var b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+    var r = await fetch('/api/events/{{ comp.id }}/imports/file', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({kind: 'schedule', data_b64: b64, filename: f.name})});
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    el.textContent = '导入成功：' + data.imported + ' 场';
+    el.className = 'ok-text';
+    var problems = data.problems || [];
+    box.innerHTML = problems.length
+      ? '<p class="err">校验报告：' + problems.length + ' 条</p><table><tr><th>#</th><th>问题</th></tr>' +
+        problems.map(function (p0, i) { return '<tr><td>' + (i+1) + '</td><td>' + p0 + '</td></tr>'; }).join('') + '</table>'
+      : '<p class="ok-text">校验报告：无问题 ✓</p>';
+    setTimeout(softReload, 600);
+    return data;
+  });
+}
+document.getElementById('go-schedule').addEventListener('click', doImportSchedule);
+document.getElementById('gen-auto').addEventListener('click', async function () {
+  var btn = this;
+  if (!confirm('按当前报项生成默认赛程？已有待赛场次将被重建（已开场/已发布场次不受影响时才允许）。')) return;
+  try {
+    var r = await btnFlow(btn, function () {
+      return api('POST', '/api/events/{{ comp.id }}/schedule/auto', {replace: true});
+    }, function (res) { return '已生成 ' + res.created + ' 场默认赛程'; });
+    setTimeout(softReload, 800);
+  } catch (e) { /* btnFlow 已 toast */ }
+});
 var treeData = {{ tree_json | safe }};
 var editingCode = null;
 /* R77 数据与材料：按单位导出赛程表 */

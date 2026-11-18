@@ -1,14 +1,24 @@
 {% extends "base.html" %}
 {% from "_comp_bar.html" import bar with context %}
 {% block cid %}{{ comp.id }}{% endblock %}
-{% block title %}报名管理 · {{ comp.name }}{% endblock %}
+{% block title %}设项与报名 · {{ comp.name }}{% endblock %}
 {% block nav %}{% endblock %}
 {% block content %}
 {{ bar(comp, 'registrations') }}
-<h1>报名管理 <span class="muted">{{ comp.name }}</span></h1>
+<h1>设项与报名 <span class="muted">{{ comp.name }}</span></h1>
+
+<div class="card" id="proj-card">
+  <b>① 设项（项目编号自动按自然数分配）</b>
+  <p class="muted" style="margin:4px 0 8px">先设项目 → 开放报名 → 选手在报名页的项目卡片上勾选。项目编号供报名与名单引用，赛程编排按项目生成场次。</p>
+  <div id="proj-list" style="margin:6px 0">加载中…</div>
+  <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+    <div><label>项目名称</label><input id="pj-name" placeholder="如：新生平四单项"></div>
+    <button class="btn small" id="pj-add">添加项目</button>
+  </div>
+</div>
 
 <div class="card" id="reg-settings">
-  <b>报名设置</b>
+  <b>② 报名设置</b>
   <div class="reg-grid">
     <div><label class="switch-line"><input type="checkbox" id="s-open"> <b>开放报名</b></label></div>
     <div><label class="switch-line"><input type="checkbox" id="s-mode-individual"> 个人报名</label></div>
@@ -50,9 +60,11 @@ var CID = {{ comp.id }};
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
   return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
 var DATA = null;
+var REG_BUSY = false;
 
 async function load() {
   DATA = await api('GET', '/api/events/' + CID + '/registrations');
+  renderProjects();
   var s = DATA.settings;
   document.getElementById('s-open').checked = !!s.open;
   document.getElementById('s-mode-individual').checked = s.modes.indexOf('individual') > -1;
@@ -62,6 +74,40 @@ async function load() {
   renderList();
 }
 
+/* ① 设项：列表 / 添加 / 删除（项目编号自然数自动分配） */
+function renderProjects() {
+  var box = document.getElementById('proj-list');
+  var html = '<table><tr><th>项目编号</th><th>项目名称</th><th>报名数</th><th></th></tr>';
+  DATA.projects.forEach(function (p0) {
+    var n = DATA.stats[p0.code] || 0;
+    html += '<tr><td><b>' + esc(p0.code) + '</b></td><td>' + esc(p0.name) + '</td><td>' + n + '</td>' +
+      '<td><button class="btn tiny danger" data-pcode="' + esc(p0.code) + '">删除</button></td></tr>';
+  });
+  html += '</table>';
+  if (!DATA.projects.length) html = '<div class="muted">尚未设项——添加第一个项目。</div>';
+  box.innerHTML = html;
+  box.querySelectorAll('button[data-pcode]').forEach(function (b) {
+    b.onclick = async function () {
+      if (!confirm('删除项目 ' + b.dataset.pcode + '？')) return;
+      try { await api('DELETE', '/api/events/' + CID + '/projects/' + encodeURIComponent(b.dataset.pcode)); load(); }
+      catch (e) { toast(e.message, 'err'); }
+    };
+  });
+}
+document.getElementById('pj-add').onclick = async function () {
+  var name = document.getElementById('pj-name').value.trim();
+  if (!name) { toast('请填写项目名称', 'err'); return; }
+  if (REG_BUSY) return;
+  REG_BUSY = true;
+  try {
+    await api('POST', '/api/events/' + CID + '/projects', {name: name});
+    document.getElementById('pj-name').value = '';
+    toast('已添加项目', 'ok'); load();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { REG_BUSY = false; }
+};
+
+/* ② 报名设置 */
 document.getElementById('s-save').onclick = async function () {
   if (REG_BUSY) return;
   var modes = [];
@@ -84,9 +130,9 @@ document.getElementById('s-save').onclick = async function () {
 
 function renderStats() {
   var parts = [];
-  DATA.projects.forEach(function (p) {
-    var n = DATA.stats[p.code] || 0;
-    parts.push('<span class="rb-metric"><span class="rb-k">' + esc(p.name) + '</span><span class="rb-v">' + n + '</span></span>');
+  DATA.projects.forEach(function (p0) {
+    var n = DATA.stats[p0.code] || 0;
+    parts.push('<span class="rb-metric"><span class="rb-k">' + esc(p0.name) + '</span><span class="rb-v">' + n + '</span></span>');
   });
   document.getElementById('reg-stats-body').innerHTML = parts.join(' ') || '暂无报名';
 }
@@ -130,7 +176,6 @@ function renderList() {
 document.getElementById('r-filter-st').onchange = renderList;
 document.getElementById('r-search').oninput = renderList;
 
-var REG_BUSY = false;
 document.getElementById('reg-list').addEventListener('click', function (e) {
   var b = e.target.closest('button[data-act]');
   if (b) review([parseInt(b.dataset.rid, 10)], b.dataset.act);

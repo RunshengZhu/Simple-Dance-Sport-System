@@ -2,11 +2,14 @@
 # -*- coding: utf-8 -*-
 """R141 证书 v2（背景+文本框）与公示打印台回归。"""
 import os
+import sys
 import tempfile
 
-_TMP = tempfile.mkdtemp(prefix="dsh-certv2-")
-os.environ["DSPORT_DB"] = os.path.join(_TMP, "test.db")
-os.environ["DSPORT_FILES_DIR"] = os.path.join(_TMP, "files")
+# 合并运行时（pytest 多模块共享 server.app）沿用首个模块的隔离库；单跑本模块时独立建库
+if "server.app" not in sys.modules:
+    _TMP = tempfile.mkdtemp(prefix="dsh-certv2-")
+    os.environ["DSPORT_DB"] = os.path.join(_TMP, "test.db")
+    os.environ["DSPORT_FILES_DIR"] = os.path.join(_TMP, "files")
 
 import asyncio  # noqa: E402
 import base64  # noqa: E402
@@ -64,15 +67,17 @@ def env():
         assert req("POST", "/api/events/%d/imports/%s" % (cid, kind), content=body, role="admin").status_code == 200
     for j in ("J1", "J2", "J3"):
         _login(j, {"role": "judge", "judge_id": j})
-    assert req("POST", "/api/competition-events/1/open",
+    ceid = req("GET", "/api/public/events/%d/schedule" % cid).json()["events"][0]["id"]
+    assert req("POST", "/api/competition-events/%d/open" % ceid,
                json={"roster": ["101", "102", "103", "104"]}, role="admin").status_code == 200
-    req("POST", "/api/competition-events/1/checkin", json={"numbers": ["101", "102", "103", "104"], "state": True}, role="admin")
+    req("POST", "/api/competition-events/%d/checkin" % ceid,
+        json={"numbers": ["101", "102", "103", "104"], "state": True}, role="admin")
     for j in ("J1", "J2", "J3"):
-        r = req("PUT", "/api/judge/competition-events/1/dances/平四/sheet",
+        r = req("PUT", "/api/judge/competition-events/%d/dances/平四/sheet" % ceid,
                 json={"values": {"101": "1", "102": "2", "103": "3", "104": "4"}}, role=j)
         assert r.status_code == 200
-    assert req("POST", "/api/competition-events/1/publish", json={}, role="admin").status_code == 200
-    return {"cid": cid}
+    assert req("POST", "/api/competition-events/%d/publish" % ceid, json={}, role="admin").status_code == 200
+    return {"cid": cid, "ceid": ceid}
 
 
 def _png_b64():
@@ -88,7 +93,7 @@ def test_printer_role_and_desk(env):
     _login("printer", {"role": "printer", "username": "printer1", "password": "print123", "competition_id": env["cid"]})
     r = req("GET", "/print", role="printer")
     assert r.status_code == 200 and "公示打印台" in r.text and "平四决赛" in r.text
-    r = req("GET", "/events/%d/print/view/1" % env["cid"], role="printer")
+    r = req("GET", "/events/%d/print/view/%d" % (env["cid"], env["ceid"]), role="printer")
     assert r.status_code == 200 and "决赛名次表" in r.text and "选手101" in r.text
     # 打印员无权开赛
     r = req("POST", "/api/competition-events/1/open", json={"roster": ["101"]}, role="printer")
@@ -118,7 +123,7 @@ def test_cert_design_and_generate_v2(env):
                   "fields": fields}, role="admin")
     assert r.status_code == 400
     # 生成：4 名选手 4 页，逐页名次/姓名断言
-    r = req("POST", "/api/events/%d/certs/1/generate-v2" % cid, json={"design_id": did}, role="admin")
+    r = req("POST", "/api/events/%d/certs/%d/generate-v2" % (cid, env["ceid"]), json={"design_id": did}, role="admin")
     assert r.status_code == 200 and r.content[:4] == b"%PDF"
     rd = PdfReader(io.BytesIO(r.content))
     assert len(rd.pages) == 4
@@ -128,8 +133,8 @@ def test_cert_design_and_generate_v2(env):
     assert "第四名" in texts[3] and "选手104" in texts[3]
     # 生成即标记已打印
     d = req("GET", "/api/events/%d/runboard" % cid, role="admin").json()
-    ev0 = [e for e in d["events"] if e["id"] == 1][0]
+    ev0 = [e for e in d["events"] if e["id"] == env["ceid"]][0]
     assert ev0["cert_printed"] is True
     # 证书页渲染（设计器）
-    html = req("GET", "/events/%d/certs/1" % cid, role="admin").text
+    html = req("GET", "/events/%d/certs/%d" % (cid, env["ceid"]), role="admin").text
     assert "cert-canvas" in html and "field-layer" in html

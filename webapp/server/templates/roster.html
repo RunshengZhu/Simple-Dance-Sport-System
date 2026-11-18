@@ -7,6 +7,17 @@
 {% block content %}
 {{ bar(comp, 'roster') }}
 <h1>名单 <span class="muted">{{ entries | length }} 条报项 · {{ judges | length }} 名裁判</span></h1>
+<div class="card" id="import-card">
+  <b>导入选手（报名总表 CSV / Excel）</b>
+  <p class="muted" style="margin:4px 0 8px">列：背番号、姓名、学校/单位、项目编号（可多行同号=报多项）、选手身份、搭档姓名、搭档单位、搭档身份。
+     <a href="/api/events/{{ comp.id }}/import-template/competitors" download>下载模板</a></p>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="file" id="f-competitors" accept=".csv,.xlsx">
+    <button class="btn" id="go-competitors">上传导入（覆盖更新）</button>
+    <span id="msg-competitors" class="muted"></span>
+  </div>
+  <div id="rep-competitors"></div>
+</div>
 <div class="card">
   <span class="roster-tabs">
     <a class="roster-tab active" href="#parts-view" onclick="rbView('parts');return false">参赛名单</a>
@@ -35,7 +46,7 @@
   </table></div>
 </div>
 {% endfor %}
-{% if not participants %}<div class="card"><p class="muted">尚未编排场次——参赛名单在「场次总表导入」后生成。</p></div>{% endif %}
+{% if not participants %}<div class="card"><p class="muted">尚未编排场次——到「④ 赛程编排」添加场次或导入赛程总表后生成。</p></div>{% endif %}
 </div>
 <div id="view-entries" style="display:none">
 
@@ -56,7 +67,7 @@
 </div>
 {% endfor %}
 {% if not entries %}
-<div class="card"><p class="muted">暂无报项数据——到「导入」页上传报名总表（CSV/Excel），保存后自动生成默认赛程。</p></div>
+<div class="card"><p class="muted">暂无报项数据——在本页上方「导入选手」上传报名总表（CSV/Excel）。</p></div>
 {% endif %}
 
 <div class="card" id="judges">
@@ -68,7 +79,7 @@
     <tr><td><b>{{ j.code }}</b></td><td>{{ j.name }}</td><td class="hm">{{ j.unit or "—" }}</td></tr>
     {% endfor %}
   </table>
-  {% else %}<p class="muted">尚未导入裁判——到「导入」页上传（姓名必填、单位可选、编号自动分配）。</p>{% endif %}
+  {% else %}<p class="muted">尚未导入裁判——到「⑤ 工作人员与裁判」页上传（姓名必填、编号自动分配）。</p>{% endif %}
 </div>
 </div>
 <div id="view-teams" style="display:none">
@@ -92,12 +103,39 @@
       {% endfor %}
       {% if not teams %}<tr><td colspan="4" class="muted">暂无集体队伍（T 编号选手即集体队伍）</td></tr>{% endif %}
     </table>
-    <p class="muted">队伍通过「报项导入」以 T 编号建立（项目编号,项目名称,背番号=T 编号,队名填选手姓名列,单位）。</p>
+    <p class="muted">队伍通过「报名总表导入」以 T 编号建立（项目编号,项目名称,背番号=T 编号,队名填选手姓名列,单位）。</p>
   </div>
 </div>
 </div>
 {% endblock %}
 {% block scripts %}
+async function doImportCompetitors() {
+  var f = document.getElementById('f-competitors').files[0];
+  var btn = document.getElementById('go-competitors');
+  var el = document.getElementById('msg-competitors');
+  var box = document.getElementById('rep-competitors');
+  if (!f) { el.textContent = '请选择 CSV 或 Excel 文件'; el.className = 'err'; return; }
+  el.className = 'muted';
+  await btnFlow(btn, async function () {
+    var buf = await f.arrayBuffer();
+    var b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+    var r = await fetch('/api/events/{{ comp.id }}/imports/file', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({kind: 'competitors', data_b64: b64, filename: f.name})});
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+    el.textContent = '导入成功：' + data.imported + ' 条';
+    el.className = 'ok-text';
+    var problems = data.problems || [];
+    box.innerHTML = problems.length
+      ? '<p class="err">校验报告：' + problems.length + ' 条</p><table><tr><th>#</th><th>问题</th></tr>' +
+        problems.map(function (p0, i) { return '<tr><td>' + (i+1) + '</td><td>' + p0 + '</td></tr>'; }).join('') + '</table>'
+      : '<p class="ok-text">校验报告：无问题 ✓</p>';
+    setTimeout(softReload, 600);
+    return data;
+  });
+}
+document.getElementById('go-competitors').addEventListener('click', doImportCompetitors);
 function rbView(v) {
   ['parts', 'entries', 'teams'].forEach(function (k) {
     var el = document.getElementById('view-' + k);
