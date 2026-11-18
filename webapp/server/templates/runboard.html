@@ -19,6 +19,7 @@
     </select>
     <input id="rb-search" placeholder="搜场序/名称" class="rb-filter">
     <button class="btn" id="rb-publish-all">一键发布全部</button>
+    <a class="btn secondary" href="/print" target="_blank">🖨 公示打印台</a>
     <button class="btn small" id="dbg-toggle" title="调试工具：一键生成裁判评分 / 代打浮层">🐞 调试</button>
   </span>
 </div>
@@ -103,8 +104,7 @@ function render() {
     ['published', 'calculated', 'scoring', 'pending'].map(function (s) {
       return stName(s) + ' ' + (by[s] || 0);
     }).join(' · ') + ' · 裁判 ' + DATA.judges_total + ' 名' +
-    (certPending.length ? ' · <span class="tag warn">🏅 ' + certPending.length + ' 场证书未打印（' +
-      certPending.map(function (e) { return '第' + (e.run_seq || '—') + '场'; }).join('、') + '）——请打印后交由工作人员按名次整理</span>' : '');
+    (certPending.length ? ' · <span class="tag warn">🏅 ' + certPending.length + ' 场证书待打印——见「公示打印台」</span>' : '');
   // 行卡
   var box = document.getElementById('board');
   var html = '';
@@ -125,15 +125,11 @@ function render() {
       actions += '<button class="btn small secondary" onclick="if(confirm(\'关闭评分将回到开场前状态，确认？\'))act(' + e.id + ',\'close\')">关闭评分</button>';
     }
     if (e.status === 'scoring') actions += '<button class="btn small danger" onclick="act(' + e.id + ',\'return\')">退回</button>';
-    if (e.status === 'calculated' || e.status === 'published') {
-      var pdfType = (e.scoring_type === 'Mark制' && !e.name.includes('决赛')) ? 'mark' : 'rank';
-      var pdfLabel = pdfType === 'mark' ? '导出Mark明细表' : '导出名次表';
-      actions += '<a class="btn small secondary" href="/api/competition-events/' + e.id + '/export/pdf?type=' + pdfType + '" download>' + pdfLabel + '</a>';
-    }
+    if (e.status === 'published' && e.cert_needed) actions += '<a class="btn small secondary" href="/events/' + CID + '/print/view/' + e.id + '" target="_blank">🖨 公示表</a>';
     if (e.status === 'calculated') actions += '<button class="btn small" onclick="act(' + e.id + ',\'publish\')">发布</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'unpublish\')">撤回</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'announce\')">' + (e.announced ? '取消播报' : '播报') + '</button>';
-    if (e.cert_needed) actions += '<a class="btn small" href="/events/' + CID + '/certs/' + e.id + '">🏅 证书</a>';
+
     if (DEBUG && e.status !== 'published') actions += '<button class="btn small warn" onclick="debugGenerate(' + e.id + ')">⚡生成评分</button>';
     if (e.advancement_count > 0 && e.has_next && (e.status === 'calculated' || e.status === 'published'))
       actions += '<a class="btn small" href="/events/' + CID + '/advancement?project=' + encodeURIComponent(e.project) + '&round=' + e.round + '&event=' + e.id + '">晋级确认</a>';
@@ -148,8 +144,7 @@ function render() {
       '<span class="rb-seq">第' + seq + '场</span>' +
       '<span class="rb-main" onclick="toggleDetail(' + e.id + ')">' +
       '<span class="rb-name">' + esc(e.name) + '</span>' + stTag(e.status) +
-      (e.cert_needed && !e.cert_printed ? '<span class="tag warn">🏅 证书未打印</span>' : '') +
-      (e.cert_needed && e.cert_printed ? '<span class="tag ok">🏅 证书已打印</span>' : '') +
+
       '<span class="ev-code-mini" title="系统内部编号（仅管理页显示）">' + esc(e.code) + '</span>' +
       '</span>' +
       '<span class="rb-actions" onclick="event.stopPropagation()">' + actions +

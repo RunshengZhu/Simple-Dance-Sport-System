@@ -60,6 +60,15 @@ CREATE TABLE IF NOT EXISTS registrations (
     review_note TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_reg_comp ON registrations(competition_id, status);
+CREATE TABLE IF NOT EXISTS cert_designs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    competition_id INTEGER NOT NULL REFERENCES competitions(id),
+    name TEXT DEFAULT '',
+    bg_type TEXT DEFAULT 'none',               -- R141：none / pdf / image
+    bg_fname TEXT DEFAULT '',
+    fields TEXT DEFAULT '[]',                  -- 文本框 JSON [{type,text,x,y,size,align,bold}]
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
 CREATE TABLE IF NOT EXISTS cert_templates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     competition_id INTEGER NOT NULL REFERENCES competitions(id),

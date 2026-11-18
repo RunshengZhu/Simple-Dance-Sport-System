@@ -176,7 +176,7 @@ async def compadmin_scope(request: Request, call_next):
                 if ca_ce:
                     if ca_ce["comp_id"] != ev_cid:
                         return JSONResponse({"detail": "赛事管理员仅可操作自己的赛事"}, status_code=403)
-                elif s["role"] in ("host", "marshal", "judge"):
+                elif s["role"] in ("host", "marshal", "judge", "printer"):
                     eff = s.get("comp_id") or (_active_competition() or {}).get("id")
                     if eff != ev_cid:
                         return JSONResponse({"detail": "该场次不属于您所登录的赛事"}, status_code=403)
@@ -379,8 +379,8 @@ def require_staff(request: Request, competition_id: int = None):
             return s
         if not ca:
             return s   # R85：总管理员可代行检录/播报（一人多角的最小实现；compadmin 仍限本赛）
-    if not s or s["role"] not in ("host", "marshal"):
-        raise HTTPException(status_code=401, detail="需要主持人或检录员登录")
+    if not s or s["role"] not in ("host", "marshal", "printer"):
+        raise HTTPException(status_code=401, detail="需要主持人、检录员或打印员登录")
     return s
 
 
@@ -443,7 +443,7 @@ async def api_login(request: Request):
                 login_failures_window(ip).append(time.time())
                 raise HTTPException(status_code=403, detail="口令错误")
             conn.execute("INSERT INTO sessions(token, role) VALUES(?, 'admin')", (token,))
-    elif role in ("host", "marshal"):
+    elif role in ("host", "marshal", "printer"):
         # 分角色账号制：用户名 + 口令，账号由管理员在「用户管理」页创建/停用
         username = str(body.get("username") or "").strip() or role   # 留空 = 默认账号（host/marshal）
         password = str(body.get("password") or "")
@@ -763,7 +763,7 @@ async def api_setup_status(competition_id: int, request: Request = None):
     comp = _comp_or_404(competition_id)
     conn = db.get_db()
     staff = db.rows(conn.execute(
-        "SELECT username, display_name, role FROM users WHERE role IN ('host','marshal') ORDER BY role, username"))
+        "SELECT username, display_name, role FROM users WHERE role IN ('host','marshal','printer') ORDER BY role, username"))
     evs = db.rows(conn.execute(
         "SELECT status, published FROM events WHERE competition_id=?", (competition_id,)))
     first_ev = db.rowdict(conn.execute(
@@ -827,7 +827,7 @@ async def direct_login(competition_id: int, role: str, username: str, token: str
         conn.execute("INSERT INTO sessions(token, role, user_id, comp_id) VALUES(?, ?, ?, ?)",
                      (token_new, role, u["id"], competition_id))
         conn.commit()
-        resp = RedirectResponse("/staff", status_code=302)
+        resp = RedirectResponse("/print" if role == "printer" else "/staff", status_code=302)
     elif role == "compadmin":   # 赛事管理员账号（users.role=compadmin，会话角色记 admin）
         u = db.rowdict(conn.execute(
             "SELECT id FROM users WHERE username=? AND role='compadmin' AND active=1 AND comp_id=?",
@@ -1830,6 +1830,347 @@ async def api_certs_generate(competition_id: int, ceid: int, request: Request = 
                     headers={"Content-Disposition": "attachment; filename=certs-{0}-{1}.docx".format(ev["code"], stamp)})
 
 
+# ------------------------------------------------------------------ R141 公示打印台（打印员角色）
+@app.get("/print", response_class=HTMLResponse)
+async def print_desk(request: Request):
+    """R141 公示打印台：打印员角色主页——只展示各场次的发布/打印情况与打印入口。"""
+    s = require_staff(request, _current_competition(request).get("id") if _current_competition(request) else None)
+    comp = _current_competition(request)
+    conn = db.get_db()
+    items = []
+    if comp:
+        evs = db.rows(conn.execute(
+            "SELECT id, code, name, project_code, round, scoring_type, status, published, announced, run_seq, "
+            "advancement_count, cert_printed_at FROM events WHERE competition_id=? "
+            "ORDER BY COALESCE(run_seq, 9999), round, project_code, code", (comp["id"],)))
+        next_rounds = {(r["project_code"], r["round"]) for r in db.rows(conn.execute(
+            "SELECT DISTINCT project_code, round FROM events WHERE competition_id=?", (comp["id"],)))}
+        for ev in evs:
+            ev = dict(ev)
+            ev["is_final"] = (ev["project_code"], ev["round"] + 1) not in next_rounds
+            ev["cert_needed"] = ev["status"] == "published" and ev["scoring_type"] in ("顺位法", "评分制")
+            items.append(ev)
+    return templates.TemplateResponse(request, "print.html", {
+        "request": request, "comp": comp, "items": items, "who": s.get("display_name") or s["role"]})
+
+
+@app.get("/events/{competition_id}/print/view/{ceid}", response_class=HTMLResponse)
+async def print_view_page(request: Request, competition_id: int, ceid: int):
+    """公示/打印视图：已发布成绩的打印友好页（非决赛=晋级结果表；决赛=名次表），打开即自动打印。"""
+    s = require_staff(request, competition_id)
+    comp = _comp_or_404(competition_id)
+    ev = _event_or_404(ceid)
+    conn = db.get_db()
+    res = load_results(ceid)
+    rows = (res or {}).get("overall_results", [])
+    nb = _display_names(conn, competition_id, ev["project_code"])
+    next_rounds = {(r["project_code"], r["round"]) for r in db.rows(conn.execute(
+        "SELECT DISTINCT project_code, round FROM events WHERE competition_id=?", (competition_id,)))}
+    is_final = (ev["project_code"], ev["round"] + 1) not in next_rounds
+    items = []
+    for r0 in rows:
+        num = str(r0["competitor_number"])
+        names, units = _cert_members_auto(conn, ev, num)
+        items.append({"rank": r0["rank"], "number": num, "names": "、".join(names) or num,
+                      "unit": "、".join(units), "total": r0.get("total_score"),
+                      "adv": bool(r0.get("advancement_status"))})
+    return templates.TemplateResponse(request, "print_view.html", {
+        "request": request, "comp": comp, "ev": ev, "items": items, "names": nb,
+        "is_final": is_final, "adv": ev["advancement_count"] or 0,
+        "now": time.strftime("%Y-%m-%d %H:%M")})
+
+
+# ------------------------------------------------------------------ R141 证书 v2：背景 + 文本框（设计器/生成）
+_CERT_PRESETS = [
+    {"key": "std4", "name": "标准四行（背景已印选手姓名/组别/名次/比赛日期栏）",
+     "fields": [
+         {"type": "name", "x": 43.0, "y": 54.5, "size": 16, "align": "left", "bold": False},
+         {"type": "project", "x": 43.0, "y": 61.5, "size": 16, "align": "left", "bold": False},
+         {"type": "rank_cn", "x": 43.0, "y": 68.5, "size": 16, "align": "left", "bold": False},
+         {"type": "date", "x": 47.0, "y": 75.5, "size": 14, "align": "left", "bold": False},
+     ]},
+    {"key": "big3", "name": "简洁三行（选手姓名/名次/比赛日期）",
+     "fields": [
+         {"type": "name", "x": 40.0, "y": 52.0, "size": 20, "align": "center", "bold": True},
+         {"type": "rank_cn", "x": 40.0, "y": 62.0, "size": 18, "align": "center", "bold": False},
+         {"type": "date", "x": 40.0, "y": 72.0, "size": 14, "align": "center", "bold": False},
+     ]},
+]
+
+FIELD_TYPES = [
+    ("name", "选手姓名（每位选手一份，本人姓名）"),
+    ("names_all", "全体选手名单（本人姓名开头）"),
+    ("project", "项目名称（组别）"),
+    ("rank_cn", "名次（中文：第一名）"),
+    ("rank_num", "名次（数字）"),
+    ("date", "比赛日期"),
+    ("comp", "赛事名称"),
+    ("unit", "单位"),
+    ("custom", "固定文本"),
+]
+
+
+def _cert_design_dir(competition_id):
+    base = os.path.dirname(db.DEFAULT_DB)
+    d = os.path.join(base, CERT_DIR_NAME, "design-%d" % competition_id)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+@app.get("/api/events/{competition_id}/certs/designs")
+async def api_cert_designs_list(competition_id: int, request: Request = None):
+    require_admin(request)
+    conn = db.get_db()
+    rows = [dict(r) for r in db.rows(conn.execute(
+        "SELECT id, name, bg_type, fields, created_at FROM cert_designs WHERE competition_id=? ORDER BY id DESC",
+        (competition_id,)))]
+    return {"designs": rows, "presets": _CERT_PRESETS, "field_types": FIELD_TYPES}
+
+
+def _cert_design_or_404(competition_id, design_id):
+    row = db.rowdict(db.get_db().execute(
+        "SELECT * FROM cert_designs WHERE id=? AND competition_id=?", (design_id, competition_id)).fetchone())
+    if not row:
+        raise HTTPException(status_code=404, detail="证书设计不存在")
+    return row
+
+
+@app.post("/api/events/{competition_id}/certs/designs")
+async def api_cert_designs_save(competition_id: int, request: Request = None):
+    """创建/更新证书设计：{id?, name, bg_type, bg_b64?, fields:[...]}。背景支持 PDF/图片。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    body = await request.json()
+    name = str(body.get("name") or "").strip()[:60] or "证书设计"
+    bg_type = str(body.get("bg_type") or "none")
+    if bg_type not in ("none", "pdf", "image"):
+        raise HTTPException(status_code=400, detail="背景类型须为 none/pdf/image")
+    fields = body.get("fields") or []
+    clean = []
+    for f in fields:
+        try:
+            clean.append({"type": str(f.get("type") or "custom"), "text": str(f.get("text") or "")[:60],
+                          "x": float(f.get("x") or 10), "y": float(f.get("y") or 10),
+                          "size": max(6, min(60, float(f.get("size") or 16))),
+                          "align": f.get("align") if f.get("align") in ("left", "center", "right") else "left",
+                          "bold": bool(f.get("bold"))})
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="文本框参数无效")
+    conn = db.get_db()
+    did = body.get("id")
+    bg_fname = None
+    if bg_type != "none":
+        b64 = str(body.get("bg_b64") or "")
+        if b64:
+            import base64 as _b64
+            data = _b64.b64decode(b64)
+            if len(data) > 30 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="背景文件过大（>30MB）")
+            if bg_type == "pdf" and not (data[:4] == b"%PDF"):
+                raise HTTPException(status_code=400, detail="不是有效的 PDF 文件")
+            if bg_type == "image":
+                try:
+                    from PIL import Image as _PILImage
+                    _PILImage.open(io.BytesIO(data)).verify()
+                except Exception:
+                    raise HTTPException(status_code=400, detail="不是有效的图片文件")
+            bg_fname = "bg%d-%s" % (int(time.time()), secrets.token_hex(4)) + (".pdf" if bg_type == "pdf" else ".img")
+            with open(os.path.join(_cert_design_dir(competition_id), bg_fname), "wb") as f:
+                f.write(data)
+    if did:
+        row = _cert_design_or_404(competition_id, int(did))
+        if bg_fname:
+            conn.execute("UPDATE cert_designs SET bg_type=?, bg_fname=? WHERE id=?",
+                         (bg_type, bg_fname, row["id"]))
+        conn.execute("UPDATE cert_designs SET name=?, fields=? WHERE id=?",
+                     (name, json.dumps(clean, ensure_ascii=False), row["id"]))
+        conn.commit()
+        return {"ok": True, "id": row["id"]}
+    cur = conn.execute("INSERT INTO cert_designs(competition_id, name, bg_type, bg_fname, fields) VALUES(?,?,?,?,?)",
+                       (competition_id, name, bg_type, bg_fname or "",
+                        json.dumps(clean, ensure_ascii=False)))
+    conn.commit()
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.delete("/api/events/{competition_id}/certs/designs/{design_id}")
+async def api_cert_designs_delete(competition_id: int, design_id: int, request: Request = None):
+    require_admin(request)
+    row = _cert_design_or_404(competition_id, design_id)
+    conn = db.get_db()
+    if row["bg_fname"]:
+        try:
+            os.remove(os.path.join(_cert_design_dir(competition_id), row["bg_fname"]))
+        except OSError:
+            pass
+    conn.execute("DELETE FROM cert_designs WHERE id=?", (design_id,))
+    conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/events/{competition_id}/certs/designs/{design_id}/bg")
+async def api_cert_designs_bg(competition_id: int, design_id: int, request: Request = None):
+    """背景文件预览（pdf/image）。"""
+    require_admin(request)
+    row = _cert_design_or_404(competition_id, design_id)
+    if row["bg_type"] == "none" or not row["bg_fname"]:
+        raise HTTPException(status_code=404, detail="无背景")
+    path = os.path.join(_cert_design_dir(competition_id), row["bg_fname"])
+    with open(path, "rb") as f:
+        data = f.read()
+    mtype = "application/pdf" if row["bg_type"] == "pdf" else "image/png"
+    return Response(data, media_type=mtype)
+
+
+def _reportlab_font():
+    """注册中文字体（复用既有候选路径）。"""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    candidates = [
+        os.path.expanduser("~/.fonts/wqy-zenhei.ttc"),
+        os.path.expanduser("~/fonts/wqy-zenhei.ttc"),
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/System/Library/Fonts/PingFang.ttc",            # macOS 本地开发
+        "/System/Library/Fonts/STHeiti Light.ttc",       # macOS 本地开发
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                pdfmetrics.registerFont(TTFont("chinese", p, subfontIndex=0))
+                return "chinese"
+            except Exception:
+                continue
+    return "Helvetica"
+
+
+def _field_value(f, ev, comp, names, unit, rank, day):
+    t = f.get("type")
+    if t == "name":
+        return names[0] if names else ""
+    if t == "names_all":
+        return "、".join(names)
+    if t == "project":
+        return ev["name"]
+    if t == "rank_cn":
+        return _cn_rank(rank)
+    if t == "rank_num":
+        return str(rank)
+    if t == "date":
+        return day
+    if t == "comp":
+        return comp["name"]
+    if t == "unit":
+        return unit
+    if t == "custom":
+        return f.get("text") or ""
+    return ""
+
+
+def _cert_pages_meta(conn, ev, comp, over, ceid):
+    """按名次展开 → [(背号, 名次, [本人开头的名单]), ...]"""
+    res = load_results(ceid)
+    if not res or not res.get("overall_results"):
+        raise HTTPException(status_code=400, detail="该场次暂无已计算成绩")
+    ranks = sorted(res["overall_results"], key=lambda r: (float(r["rank"]), str(r["competitor_number"])))
+    day = (comp["date"] or "").strip() or time.strftime("%Y-%m-%d")
+    pages = []
+    for r0 in ranks:
+        num = str(r0["competitor_number"])
+        rank = int(r0["rank"])
+        names, units = _cert_members_auto(conn, ev, num)
+        if num in over:
+            names = [x.strip() for x in over[num].split("\n") if x.strip()]
+        if not names:
+            names = [num]
+        unit = "、".join(units)
+        for nm in names:
+            pages.append((num, rank, [nm] + [x for x in names if x != nm], unit, day))
+    return pages
+
+
+def _cert_draw_page(cv, fields, ev, comp, num, rank, names, unit, day, pw, ph, font="chinese"):
+    for f in fields:
+        names_f = [names[0]] if f.get("type") == "name" else names
+        val = _field_value(f, ev, comp, names_f, unit, rank, day)
+        size = float(f.get("size") or 16)
+        x = float(f.get("x") or 0) / 100.0 * pw
+        y = ph - float(f.get("y") or 0) / 100.0 * ph   # y 为顶部百分比
+        align = f.get("align") or "left"
+        cv.setFont(font, size)
+        cv.setFillColorRGB(0, 0, 0)
+        if align == "center":
+            cv.drawCentredString(x, y, val)
+        elif align == "right":
+            cv.drawRightString(x, y, val)
+        else:
+            cv.drawString(x, y, val)
+
+
+@app.post("/api/events/{competition_id}/certs/{ceid}/generate-v2")
+async def api_certs_generate_v2(competition_id: int, ceid: int, request: Request = None):
+    """证书 v2 生成：背景（PDF/图片）+ 文本框按坐标填充。输出单一 PDF（每位选手一页，按名次排序）。"""
+    s = require_admin(request)
+    comp = _comp_or_404(competition_id)
+    ev = _event_or_404(ceid)
+    body = await request.json()
+    design = _cert_design_or_404(competition_id, int(body.get("design_id") or 0))
+    fields = json.loads(design["fields"] or "[]")
+    if not fields:
+        raise HTTPException(status_code=400, detail="该设计没有文本框——请先在编辑器中添加")
+    conn = db.get_db()
+    over = _cert_overrides(conn, ceid)
+    pages = _cert_pages_meta(conn, ev, comp, over, ceid)
+
+    from reportlab.pdfgen import canvas as rl_canvas
+    from pypdf import PdfReader as _PdfReader, PdfWriter as _PdfWriter
+
+    font = _reportlab_font()
+    writer = _PdfWriter()
+    bg_reader = None
+    bg_img = None
+    bg_path = None
+    bg_type = design["bg_type"]
+    if bg_type != "none" and design["bg_fname"]:
+        bg_path = os.path.join(_cert_design_dir(competition_id), design["bg_fname"])
+    if bg_type == "pdf" and bg_path:
+        bg_reader = _PdfReader(bg_path)
+        box = bg_reader.pages[0].mediabox
+        pw, ph = float(box.width), float(box.height)
+    elif bg_type == "image" and bg_path:
+        from PIL import Image as _PILImage
+        im = _PILImage.open(bg_path)
+        pw, ph = 595.0, 595.0 * im.size[1] / max(1, im.size[0])
+        bg_img = bg_path
+    for (num, rank, names, unit, day) in pages:
+        buf = io.BytesIO()
+        cv = rl_canvas.Canvas(buf, pagesize=(pw, ph))
+        if bg_img:
+            cv.drawImage(bg_img, 0, 0, width=pw, height=ph)
+        _cert_draw_page(cv, fields, ev, comp, num, rank, names, unit, day, pw, ph, font)
+        cv.showPage()
+        cv.save()
+        page_reader = _PdfReader(io.BytesIO(buf.getvalue()))
+        if bg_reader is not None:
+            base_page = bg_reader.pages[0]
+            base_page.merge_page(page_reader.pages[0])
+            writer.add_page(base_page)
+        else:
+            writer.add_page(page_reader.pages[0])
+
+    out = io.BytesIO()
+    writer.write(out)
+    out_bytes = out.getvalue()
+
+    conn.execute("UPDATE events SET cert_printed_at=datetime('now','localtime') WHERE id=?", (ceid,))
+    conn.commit()
+    _audit(_actor_name(s), "cert_print_v2", "event:{0}".format(ceid),
+           "{0} 生成 {1} 份证书（设计 {2}）".format(ev["code"], len(pages), design["name"]), _client_ip(request))
+    sse.bus.publish(competition_id, "cert_printed", {"event_id": ceid, "copies": len(pages)})
+    stamp = time.strftime("%Y%m%d%H%M")
+    return Response(out_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename=certs-{0}-{1}.pdf".format(ev["code"], stamp)})
+
+
 # ------------------------------------------------------------------ 用户与角色管理（管理员）
 @app.get("/users", response_class=HTMLResponse)
 async def users_page(request: Request):
@@ -1842,7 +2183,7 @@ async def api_users_list(request: Request = None):
     require_admin(request)
     rows = db.rows(db.get_db().execute(
         "SELECT id, username, role, display_name, active, created_at FROM users "
-        "WHERE role IN ('host','marshal') ORDER BY role, username"))
+        "WHERE role IN ('host','marshal','printer') ORDER BY role, username"))
     return {"users": rows}
 
 
@@ -1864,7 +2205,7 @@ async def api_users_create(request: Request = None):
     if len(username) > 64 or len(display_name) > 64:
         raise HTTPException(status_code=400, detail="用户名/显示名最长 64 字符")
     comp_id = body.get("competition_id")
-    if role not in ("host", "marshal", "compadmin"):
+    if role not in ("host", "marshal", "compadmin", "printer"):
         raise HTTPException(status_code=400, detail="角色须为 host / marshal / compadmin")
     if _compadmin(request) and role == "compadmin":
         raise HTTPException(status_code=403, detail="赛事管理员不可创建赛事管理员账号")
@@ -1912,7 +2253,7 @@ async def api_users_password(user_id: int, request: Request = None):
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="口令至少 6 位")
     conn = db.get_db()
-    cur = conn.execute("UPDATE users SET pw_hash=?, pw_plain=? WHERE id=? AND role IN ('host','marshal')",
+    cur = conn.execute("UPDATE users SET pw_hash=?, pw_plain=? WHERE id=? AND role IN ('host','marshal','printer')",
                        (_hash_pw(password), password, user_id))
     conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))   # 重置口令即踢下线
     conn.commit()
@@ -1935,7 +2276,7 @@ async def api_users_active(user_id: int, request: Request = None):
         raise HTTPException(status_code=400, detail="请求体须为 JSON")
     state = 1 if body.get("active") else 0
     conn = db.get_db()
-    cur = conn.execute("UPDATE users SET active=? WHERE id=? AND role IN ('host','marshal')",
+    cur = conn.execute("UPDATE users SET active=? WHERE id=? AND role IN ('host','marshal','printer')",
                        (state, user_id))
     if not cur.rowcount:
         raise HTTPException(status_code=404, detail="账号不存在")
@@ -5103,7 +5444,7 @@ async def staff_links_page(competition_id: int, request: Request = None):
     links = []
     for u in db.rows(conn.execute(
             "SELECT username, display_name, role FROM users WHERE active=1 AND "
-            "((role='compadmin' AND comp_id=?) OR (role IN ('marshal','host') AND (comp_id IS NULL OR comp_id=?))) "
+            "((role='compadmin' AND comp_id=?) OR (role IN ('marshal','host','printer') AND (comp_id IS NULL OR comp_id=?))) "
             "ORDER BY role, username",
             (competition_id, competition_id))):
         links.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
@@ -5122,7 +5463,7 @@ async def staff_links_page(competition_id: int, request: Request = None):
         for l in links:
             l["qr"] = ""
     staff = db.rows(conn.execute(
-        "SELECT username, display_name, role, active, created_at FROM users WHERE role IN ('host','marshal') ORDER BY role, username"))
+        "SELECT username, display_name, role, active, created_at FROM users WHERE role IN ('host','marshal','printer') ORDER BY role, username"))
     return templates.TemplateResponse(request, "staff_links.html", {
         "request": request, "comp": comp, "links": links, "staff": staff})
 

@@ -8,32 +8,51 @@
 <h1>荣誉证书 <span class="muted">{{ ev.name }}</span>
   {% if ev.cert_printed_at %}<span class="tag ok">已打印（{{ ev.cert_printed_at }}）</span>
   {% else %}<span class="tag warn">未打印</span>{% endif %}</h1>
-<p class="muted">按名次顺序生成，<b>每位选手一份证书</b>（该选手姓名排在名单开头）。支持单人/双人/集体项目；集体项目请核对并编辑名单后生成。</p>
+<p class="muted">按名次顺序生成，<b>每位选手一份证书</b>（本人姓名在选手姓名栏）。支持上传证书背景（PDF/图片，如已印制的空白证书），在编辑器中摆放文本框，生成时自动填充选手/项目/名次。</p>
 
 <div class="card">
-  <b>证书模板</b>
-  <div id="tmpl-list" style="margin:8px 0">加载中…</div>
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <input id="t-name" placeholder="模板名称（如：荣誉证书A4）" style="max-width:220px">
-    <input type="file" id="t-file" accept=".docx">
-    <button class="btn small" id="t-upload">上传模板</button>
-    <button class="btn small danger" id="t-del">删除选中</button>
+  <b>① 证书设计（背景 + 文本框）</b>
+  <div id="design-list" style="margin:8px 0">加载中…</div>
+  <div class="reg-grid">
+    <div><label>设计名称</label><input id="d-name" placeholder="如：荣誉证书A4"></div>
+    <div><label>背景文件（PDF/图片，可选）</label><input type="file" id="d-bg" accept=".pdf,.png,.jpg,.jpeg"></div>
+    <div><label>内置预设</label>
+      <select id="d-preset"><option value="">选择预设布局…</option></select>
+    </div>
   </div>
-  <p class="muted" style="margin:8px 0 0">模板为 Word 文档（<b>仅支持 .docx</b>，旧版 .doc 请先另存为 .docx），在正文中使用占位符：
-  {% for ph in ["{{赛事名称}}","{{项目名称}}","{{名次}}","{{名次数字}}","{{选手名单}}","{{单位}}","{{日期}}"] %}
-    <code>{{ ph }}</code>{% if not loop.last %}、{% endif %}{% endfor %}。
-  生成时自动按名次填充；<b>{{选手名单}}</b> 为该组合全部选手（本人姓名在开头），人数多时自动缩小字号。</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn small" id="d-new">新建设计</button>
+    <button class="btn small" id="d-save">保存设计</button>
+    <button class="btn small danger" id="d-del">删除选中</button>
+  </div>
+  <p class="muted" style="margin:6px 0 0">PDF 背景在编辑器中以示意页呈现（白页），生成 PDF 后即为真实背景——可先生成一次校对文本框位置再微调。</p>
 </div>
 
 <div class="card">
-  <b>获奖名单与成员核对</b> <span class="muted">点击成员可编辑（每行一个姓名；集体项目在此录入全部成员）</span>
+  <b>② 编辑器（拖拽摆放文本框）</b>
+  <div class="cert-editor">
+    <div class="cert-canvas" id="cert-canvas">
+      <div id="canvas-bg" class="canvas-bg">背景示意（未上传）</div>
+      <div id="field-layer"></div>
+    </div>
+    <div class="cert-fieldlist">
+      <div id="field-props">
+        <p class="muted">点击文本框进行编辑；拖拽调整位置。</p>
+      </div>
+      <button class="btn small secondary" id="f-add">＋ 添加文本框</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <b>③ 获奖名单核对</b> <span class="muted">每行一个姓名（集体项目在此录入全部成员；第一位领证者自动排在开头）</span>
   <div id="ranks"><div class="muted">加载中…</div></div>
 </div>
 
 <div class="card" id="gen-card">
-  <b>生成与打印</b>
-  <p class="muted" style="margin:6px 0">按名次顺序生成单一 Word 文档（每份证书一页），打开后直接打印即可。</p>
-  <button class="btn big" id="gen-btn">🏅 生成全部证书（docx）</button>
+  <b>④ 生成与打印</b>
+  <p class="muted" style="margin:6px 0">按名次顺序生成单一 PDF（每位选手一页，文本打印在背景预留空位上），打开后直接打印即可。</p>
+  <button class="btn big" id="gen-btn">🖨 生成全部证书（PDF）</button>
   <span id="gen-msg" class="muted"></span>
 </div>
 {% endblock %}
@@ -42,36 +61,212 @@ var CID = {{ comp.id }}, CEID = {{ ev.id }};
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
   return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
 var DATA = null;
+var FIELD_TYPES = [];
+var FIELD_LABEL = {};
+var design = {id: 0, name: "", bg_type: "none", bg_url: "", fields: []};
+var selIdx = -1, PW = 595, PH = 842;
 
 async function load() {
   DATA = await api('GET', '/api/events/' + CID + '/certs/' + CEID);
-  renderTemplates();
+  var dl = await api('GET', '/api/events/' + CID + '/certs/designs');
+  FIELD_TYPES = dl.field_types;
+  FIELD_TYPES.forEach(function (t) { FIELD_LABEL[t[0]] = t[1].split('（')[0]; });
+  var box = document.getElementById('d-preset');
+  box.innerHTML = '<option value="">选择预设布局…</option>';
+  dl.presets.forEach(function (p0) {
+    var o = document.createElement('option');
+    o.value = p0.key; o.textContent = p0.name; o.dataset.fields = JSON.stringify(p0.fields);
+    box.appendChild(o);
+  });
+  if (dl.designs.length && design.id === 0) loadDesign(dl.designs[0]);
+  else renderDesignList(dl.designs);
   renderRanks();
 }
 
-function renderTemplates() {
-  var box = document.getElementById('tmpl-list');
-  if (!DATA.templates.length) {
-    box.innerHTML = '<div class="muted">尚未上传模板——请先上传 docx 证书模板。</div>';
-    return;
-  }
+function renderDesignList(designs) {
+  var box = document.getElementById('design-list');
+  if (!designs.length) { box.innerHTML = '<div class="muted">暂无设计——新建或从预设开始。</div>'; return; }
   var html = '';
-  DATA.templates.forEach(function (t, i) {
+  designs.forEach(function (d0) {
     html += '<label class="switch-line" style="display:inline-flex;margin-right:16px">' +
-      '<input type="radio" name="tmpl" value="' + t.id + '"' + (i === 0 ? ' checked' : '') + '> ' +
-      esc(t.name) + ' <small class="muted">（' + esc((t.created_at || '').slice(0, 10)) + '）</small></label>';
+      '<input type="radio" name="design" value="' + d0.id + '"' + (d0.id === design.id ? ' checked' : '') + '> ' +
+      esc(d0.name) + ' <small class="muted">（' + esc((d0.created_at || '').slice(0, 10)) + '）</small></label>';
   });
   box.innerHTML = html;
+  box.querySelectorAll('input[name="design"]').forEach(function (r) {
+    r.onchange = function () { openDesign(parseInt(r.value, 10), designs); };
+  });
 }
-function pickedTemplate() {
-  var r = document.querySelector('input[name="tmpl"]:checked');
-  return r ? parseInt(r.value, 10) : 0;
+function openDesign(id, designs) {
+  var d0 = designs.filter(function (x) { return x.id === id; })[0];
+  if (!d0) return;
+  design = {id: d0.id, name: d0.name, bg_type: d0.bg_type, bg_url: d0.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + d0.id + '/bg' : '', fields: JSON.parse(d0.fields || '[]')};
+  document.getElementById('d-name').value = design.name;
+  selIdx = -1;
+  renderEditor();
+}
+function loadDesign(id) {
+  fetch('/api/events/' + CID + '/certs/designs').then(function (r) { return r.json(); }).then(function (dl) {
+    openDesign(id, dl.designs);
+    renderDesignList(dl.designs);
+  });
 }
 
+function renderEditor() {
+  var bg = document.getElementById('canvas-bg');
+  var cv = document.getElementById('cert-canvas');
+  if (design.bg_type === 'image' && design.bg_url) {
+    bg.innerHTML = '';
+    var img = document.createElement('img');
+    img.src = design.bg_url; img.style.width = '100%'; img.style.display = 'block';
+    img.onload = function () { fitCanvas(img.naturalWidth, img.naturalHeight); layoutFields(); };
+    bg.appendChild(img);
+  } else {
+    bg.innerHTML = design.bg_type === 'pdf' ? 'PDF 背景（示意页）' : '背景示意（未上传）';
+    fitCanvas(595, 842);
+  }
+  layoutFields();
+  renderProps();
+}
+function fitCanvas(w, h) {
+  var cv = document.getElementById('cert-canvas');
+  PH = h; PW = w;
+  cv.style.height = Math.round(cv.clientWidth * h / w) + 'px';
+}
+function layoutFields() {
+  var layer = document.getElementById('field-layer');
+  layer.innerHTML = '';
+  var cv = document.getElementById('cert-canvas');
+  var W = cv.clientWidth;
+  var scale = W / PW;
+  design.fields.forEach(function (f, i) {
+    var d = document.createElement('div');
+    d.className = 'field-box' + (i === selIdx ? ' sel' : '');
+    d.style.left = f.x + '%'; d.style.top = f.y + '%';
+    d.style.fontSize = (f.size * scale * 0.72) + 'px';
+    if (f.align === 'center') d.style.transform = 'translateX(-50%)';
+    if (f.align === 'right') d.style.transform = 'translateX(-100%)';
+    d.textContent = previewText(f);
+    d.dataset.idx = i;
+    layer.appendChild(d);
+  });
+}
+function previewText(f) {
+  return f.type === 'custom' ? (f.text || '固定文本') : (FIELD_LABEL[f.type] || f.type);
+}
+function renderProps() {
+  var box = document.getElementById('field-props');
+  if (selIdx < 0 || !design.fields[selIdx]) { box.innerHTML = '<p class="muted">点击文本框进行编辑；拖拽调整位置。</p>'; return; }
+  var f = design.fields[selIdx];
+  var opts = FIELD_TYPES.map(function (t) {
+    return '<option value="' + t[0] + '"' + (f.type === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>';
+  }).join('');
+  box.innerHTML =
+    '<label>内容类型</label><select id="p-type">' + opts + '</select>' +
+    (f.type === 'custom' ? '<label>固定文本</label><input id="p-text" value="' + esc(f.text || '') + '">' : '') +
+    '<div class="reg-grid"><div><label>字号 pt</label><input id="p-size" type="number" value="' + f.size + '"></div>' +
+    '<div><label>对齐</label><select id="p-align">' +
+    ['left|左对齐', 'center|居中', 'right|右对齐'].map(function (a) {
+      var p0 = a.split('|');
+      return '<option value="' + p0[0] + '"' + (f.align === p0[0] ? ' selected' : '') + '>' + p0[1] + '</option>';
+    }).join('') + '</select></div></div>' +
+    '<label class="switch-line"><input type="checkbox" id="p-bold"' + (f.bold ? ' checked' : '') + '> 加粗</label>' +
+    '<p class="muted">位置：x=' + f.x.toFixed(1) + '% y=' + f.y.toFixed(1) + '%（拖拽调整）</p>' +
+    '<button class="btn small danger" id="p-del">删除此文本框</button>';
+  document.getElementById('p-type').onchange = function () { f.type = this.value; if (f.type === 'custom' && !f.text) f.text = '文本'; sync(); };
+  var pt = document.getElementById('p-text');
+  if (pt) pt.oninput = function () { f.text = this.value; sync(); };
+  document.getElementById('p-size').oninput = function () { f.size = parseFloat(this.value) || 16; sync(); };
+  document.getElementById('p-align').onchange = function () { f.align = this.value; sync(); };
+  document.getElementById('p-bold').onchange = function () { f.bold = this.checked; sync(); };
+  document.getElementById('p-del').onclick = function () {
+    design.fields.splice(selIdx, 1); selIdx = -1; renderEditor();
+  };
+  function sync() { layoutFields(); renderProps(); }
+}
+
+/* 文本框拖拽 + 选中 */
+var fl = document.getElementById('field-layer');
+var drag = null;
+fl.addEventListener('pointerdown', function (e) {
+  var box = e.target.closest('.field-box');
+  if (!box) return;
+  selIdx = parseInt(box.dataset.idx, 10);
+  renderProps();
+  var f = design.fields[selIdx];
+  drag = { idx: selIdx, x: e.clientX, y: e.clientY, ox: f.x, oy: f.y, moved: false };
+  e.preventDefault();
+});
+document.addEventListener('pointermove', function (e) {
+  if (!drag) return;
+  var cv = document.getElementById('cert-canvas');
+  var r = cv.getBoundingClientRect();
+  var f = design.fields[drag.idx];
+  if (!drag.moved && Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) return;
+  drag.moved = true;
+  f.x = Math.max(0, Math.min(100, drag.ox + (e.clientX - drag.x) / r.width * 100));
+  f.y = Math.max(0, Math.min(100, drag.oy + (e.clientY - drag.y) / r.height * 100));
+  layoutFields();
+});
+document.addEventListener('pointerup', function (e) {
+  if (drag && drag.moved) renderProps();
+  drag = null;
+});
+fl.addEventListener('click', function (e) {
+  var box = e.target.closest('.field-box');
+  if (box && !design.fields[parseInt(box.dataset.idx, 10)]) return;
+});
+
+/* 设计动作 */
+document.getElementById('d-new').onclick = function () {
+  design = {id: 0, name: '证书设计 ' + new Date().toISOString().slice(5, 10), bg_type: 'none', bg_url: '', fields: []};
+  selIdx = -1;
+  document.getElementById('d-name').value = design.name;
+  renderEditor(); renderDesignList([]);
+};
+document.getElementById('d-preset').onchange = function () {
+  var o = this.selectedOptions[0];
+  if (!o || !o.dataset.fields) return;
+  design.fields = JSON.parse(o.dataset.fields).map(function (f) { return Object.assign({}, f); });
+  renderEditor();
+};
+document.getElementById('d-save').onclick = async function () {
+  var btn = this; btn.disabled = true;
+  try {
+    var b64 = '';
+    var f = document.getElementById('d-bg').files[0];
+    design.name = document.getElementById('d-name').value.trim() || design.name;
+    if (f) {
+      design.bg_type = f.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
+      b64 = await new Promise(function (res) {
+        var rd = new FileReader();
+        rd.onload = function () { res(rd.result.split(',')[1]); };
+        rd.readAsDataURL(f);
+      });
+    }
+    var r = await api('POST', '/api/events/' + CID + '/certs/designs', {
+      id: design.id, name: design.name, bg_type: design.bg_type, bg_b64: b64, fields: design.fields
+    });
+    design.id = r.id;
+    design.bg_url = design.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + design.id + '/bg?v=' + Date.now() : '';
+    toast('设计已保存', 'ok');
+    loadDesign(design.id);
+    document.getElementById('d-bg').value = '';
+  } catch (e) { toast(e.message, 'err'); }
+  btn.disabled = false;
+};
+document.getElementById('d-del').onclick = async function () {
+  if (!design.id) { toast('尚未保存的设计可直接新建覆盖', 'err'); return; }
+  if (!confirm('删除该设计？')) return;
+  try { await api('DELETE', '/api/events/' + CID + '/certs/designs/' + design.id); design = {id: 0, name: '', bg_type: 'none', bg_url: '', fields: []}; selIdx = -1; load(); }
+  catch (e) { toast(e.message, 'err'); }
+};
+
+/* 获奖名单编辑 */
 function renderRanks() {
   var box = document.getElementById('ranks');
   if (!DATA.ranks.length) { box.innerHTML = '<div class="muted">暂无成绩——请先发布该场次。</div>'; return; }
-  var html = '<table><tr><th>名次</th><th>背号</th><th>证书名单（每行一位，第一位领证者）</th><th>单位</th></tr>';
+  var html = '<table><tr><th>名次</th><th>背号</th><th>证书名单（每行一位）</th><th>单位</th></tr>';
   DATA.ranks.forEach(function (r) {
     html += '<tr data-num="' + esc(r.number) + '">' +
       '<td><b>' + esc(r.rank) + '</b></td><td><b>' + esc(r.number) + '</b></td>' +
@@ -79,60 +274,39 @@ function renderRanks() {
       (r.override ? '<small class="muted">已手动编辑</small>' : '') + '</td>' +
       '<td class="muted">' + esc(r.unit || '—') + '</td></tr>';
   });
-  html += '</table>';
   box.innerHTML = html;
 }
-
-async function saveMember(num, input) {
-  await api('POST', '/api/events/' + CID + '/certs/' + CEID + '/members', {number: num, members: input.value});
-  input.style.borderColor = 'var(--acc)';
-  setTimeout(function () { input.style.borderColor = ''; }, 1200);
-}
 document.getElementById('ranks').addEventListener('change', function (e) {
-  if (e.target.classList.contains('cm-input')) saveMember(e.target.dataset.num, e.target);
+  if (e.target.classList.contains('cm-input')) {
+    api('POST', '/api/events/' + CID + '/certs/' + CEID + '/members',
+        {number: e.target.dataset.num, members: e.target.value}).then(function () {
+      e.target.style.borderColor = 'var(--acc)';
+      setTimeout(function () { e.target.style.borderColor = ''; }, 1200);
+    }).catch(function (err) { toast(err.message, 'err'); });
+  }
 });
 
-document.getElementById('t-upload').onclick = async function () {
-  var f = document.getElementById('t-file').files[0];
-  if (!f) { toast('请选择 docx 文件', 'err'); return; }
-  var b64 = await new Promise(function (res) {
-    var rd = new FileReader();
-    rd.onload = function () { res(rd.result.split(',')[1]); };
-    rd.readAsDataURL(f);
-  });
-  try {
-    await api('POST', '/api/events/' + CID + '/certs/templates', {name: document.getElementById('t-name').value.trim() || f.name.replace(/\.docx$/i, ''), b64: b64});
-    toast('模板已上传', 'ok'); load();
-  } catch (e) { toast(e.message, 'err'); }
-};
-document.getElementById('t-del').onclick = async function () {
-  var r = document.querySelector('input[name="tmpl"]:checked');
-  if (!r) { toast('请先选中模板', 'err'); return; }
-  if (!confirm('删除该模板？')) return;
-  try { await api('DELETE', '/api/events/' + CID + '/certs/templates/' + r.value); load(); }
-  catch (e) { toast(e.message, 'err'); }
-};
-
+/* 生成 v2 */
 document.getElementById('gen-btn').onclick = async function () {
   var btn = this, msg = document.getElementById('gen-msg');
-  if (!pickedTemplate()) { toast('请先选择/上传模板', 'err'); return; }
+  if (!design.id) { toast('请先保存证书设计', 'err'); return; }
   btn.disabled = true; msg.textContent = '生成中…';
   try {
-    var resp = await fetch('/api/events/' + CID + '/certs/' + CEID + '/generate', {
+    var resp = await fetch('/api/events/' + CID + '/certs/' + CEID + '/generate-v2', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({template_id: pickedTemplate()})
+      body: JSON.stringify({design_id: design.id})
     });
     if (!resp.ok) {
-      var d = await resp.json().catch(function () { return {}; });
-      throw new Error(d.detail || ('HTTP ' + resp.status));
+      var d0 = await resp.json().catch(function () { return {}; });
+      throw new Error(d0.detail || ('HTTP ' + resp.status));
     }
     var blob = await resp.blob();
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'certs-' + CEID + '.docx';
+    a.download = 'certs-' + CEID + '.pdf';
     document.body.appendChild(a); a.click(); a.remove();
-    msg.textContent = '已生成并标记为已打印——请打开文档打印，并提醒工作人员按名次整理证书。';
-    toast('已生成 ' + DATA.ranks.length + ' 个名次的证书文档', 'ok');
+    msg.textContent = '已生成 PDF 并标记为已打印——请按名次整理证书。';
+    toast('证书 PDF 已生成', 'ok');
     load();
   } catch (e) { msg.textContent = ''; toast(e.message, 'err'); }
   btn.disabled = false;

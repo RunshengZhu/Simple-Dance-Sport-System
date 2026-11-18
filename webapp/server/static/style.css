@@ -1282,3 +1282,19 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 }
 @keyframes btnSpin { to { transform: rotate(360deg); } }
 .toast { max-width: min(92vw, 460px); }
+
+/* ================= R141 证书设计器 + 公示打印台 ================= */
+.cert-editor { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.cert-canvas { position: relative; flex: 0 0 340px; max-width: 100%; border: 1px solid var(--line-strong); background: #fff; aspect-ratio: 595/842; }
+.cert-canvas .canvas-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--hint); font-size: .85rem; overflow: hidden; }
+#field-layer { position: absolute; inset: 0; }
+.field-box { position: absolute; border: 1px dashed #999; padding: 2px 4px; color: #222; cursor: grab; white-space: nowrap; background: rgba(255,255,255,.6); }
+.field-box.sel { border: 2px solid var(--acc); background: rgba(255,255,255,.85); z-index: 5; }
+.cert-fieldlist { flex: 1 1 240px; min-width: 220px; }
+.cert-fieldlist label { display: block; font-size: .85rem; color: var(--ink-soft); margin: 8px 0 2px; }
+.print-view table { width: 100%; border-collapse: collapse; }
+.print-view th, .print-view td { border: 1px solid #333; padding: 10px 8px; font-size: 1.1rem; }
+@media print {
+  .app-nav, .comp-bar, #toast-wrap, #back-top, .btn, .muted .noprint { display: none !important; }
+  body.print-view h1 { font-size: 20px; }
+}
