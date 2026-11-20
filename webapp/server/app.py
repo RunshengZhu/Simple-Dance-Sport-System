@@ -956,12 +956,16 @@ async def overview_page(request: Request, competition_id: int):
     if not actions:
         actions.append({"urgent": False, "text": "暂无待办——全部场次已发布",
                         "href": f"/events/{competition_id}/results", "btn": "看结果"})
+    cert_design_events = db.rows(conn.execute(
+        "SELECT id, name FROM events WHERE competition_id=? AND status='published' AND scoring_type IN ('顺位法','评分制') "
+        "ORDER BY COALESCE(run_seq, 9999) LIMIT 1", (competition_id,)))
     return templates.TemplateResponse(request, "overview.html", {
         "request": request, "comp": comp, "phase": phase, "checklist": checklist, "actions": actions,
         "stats": {"competitors": n_comp, "judges": n_judge, "units": n_unit, "events": len(evs),
                   "pending": by["pending"], "scoring": by["scoring"], "calculated": by["calculated"],
                   "published": by["published"]},
-        "next_ev": next_ev, "setup_done": bool(comp["setup_done"])})
+        "next_ev": next_ev, "setup_done": bool(comp["setup_done"]),
+        "cert_design_events": cert_design_events})
 
 
 @app.get("/events/{competition_id}/roster", response_class=HTMLResponse)

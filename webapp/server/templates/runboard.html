@@ -125,7 +125,8 @@ function render() {
       actions += '<button class="btn small secondary" onclick="if(confirm(\'关闭评分将回到开场前状态，确认？\'))act(' + e.id + ',\'close\')">关闭评分</button>';
     }
     if (e.status === 'scoring') actions += '<button class="btn small danger" onclick="act(' + e.id + ',\'return\')">退回</button>';
-    if (e.status === 'published' && e.cert_needed) actions += '<a class="btn small secondary" href="/events/' + CID + '/print/view/' + e.id + '" target="_blank">🖨 公示表</a>';
+    if (e.status === 'published' && e.cert_needed) actions += '<a class="btn small secondary" href="/events/' + CID + '/print/view/' + e.id + '" target="_blank">🖨 公示表</a>' +
+      '<a class="btn small secondary" href="/events/' + CID + '/certs/' + e.id + '" target="_blank">🏅 证书</a>';
     if (e.status === 'calculated') actions += '<button class="btn small" onclick="act(' + e.id + ',\'publish\')">发布</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'unpublish\')">撤回</button>';
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'announce\')">' + (e.announced ? '取消播报' : '播报') + '</button>';

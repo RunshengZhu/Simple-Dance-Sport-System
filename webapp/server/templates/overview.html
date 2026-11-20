@@ -11,7 +11,10 @@
 <div class="card" id="print-out-card">
   <b>🖨 公示与打印</b>
   <p class="muted" style="margin:4px 0 8px">打印职责已集中至「公示打印台」（公示打印员角色专属页）：公示结果表（含非决赛晋级结果表/决赛名次表）与荣誉证书。</p>
-  <p><a class="btn small" href="/print" target="_blank">打开公示打印台 →</a></p>
+  <p>
+    <a class="btn small" href="/print" target="_blank">公示打印台 →</a>
+    {% if cert_design_events %}<a class="btn small secondary" href="/events/{{ comp.id }}/certs/{{ cert_design_events[0].id }}" target="_blank">🏅 证书设计（{{ cert_design_events[0].name }}）→</a>{% endif %}
+  </p>
 </div>
 
 {% if not setup_done and phase in ("筹备中", "待开赛") %}
