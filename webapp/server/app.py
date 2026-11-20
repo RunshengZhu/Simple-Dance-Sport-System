@@ -1995,6 +1995,17 @@ async def api_cert_designs_save(competition_id: int, request: Request = None):
             bg_fname = "bg%d-%s" % (int(time.time()), secrets.token_hex(4)) + (".pdf" if bg_type == "pdf" else ".img")
             with open(os.path.join(_cert_design_dir(competition_id), bg_fname), "wb") as f:
                 f.write(data)
+            if bg_type == "pdf":
+                # R144 PDF 背景 → 栅格化首页 PNG，编辑器 WYSIWYG 预览（零客户端依赖）
+                try:
+                    import pymupdf as _pm
+                    _doc0 = _pm.open(stream=data, filetype="pdf")
+                    _pix = _doc0[0].get_pixmap(dpi=110)
+                    with open(os.path.join(_cert_design_dir(competition_id), bg_fname + ".preview.png"), "wb") as f:
+                        f.write(_pix.tobytes("png"))
+                    _doc0.close()
+                except Exception:
+                    pass   # 栅格化失败不阻断上传——编辑器回退示意页
     if did:
         row = _cert_design_or_404(competition_id, int(did))
         if bg_fname:
@@ -2034,6 +2045,12 @@ async def api_cert_designs_bg(competition_id: int, design_id: int, request: Requ
     if row["bg_type"] == "none" or not row["bg_fname"]:
         raise HTTPException(status_code=404, detail="无背景")
     path = os.path.join(_cert_design_dir(competition_id), row["bg_fname"])
+    preview = request.query_params.get("preview") == "1"
+    ppath = path + ".preview.png"
+    if preview and row["bg_type"] == "pdf" and os.path.exists(ppath):
+        with open(ppath, "rb") as f:
+            data = f.read()
+        return Response(data, media_type="image/png")
     with open(path, "rb") as f:
         data = f.read()
     mtype = "application/pdf" if row["bg_type"] == "pdf" else "image/png"
@@ -2169,7 +2186,10 @@ async def api_certs_generate_v2(competition_id: int, ceid: int, request: Request
         cv.save()
         page_reader = _PdfReader(io.BytesIO(buf.getvalue()))
         if bg_reader is not None:
-            base_page = bg_reader.pages[0]
+            # R144：每页用「新读取」的背景页——pypdf 的 merge_page 会原页累积，
+            # 复用同一对象会把前面所有证书的文本叠到后续页（实测 2/3/4 页全显示第 1 名）
+            fresh = _PdfReader(bg_path)
+            base_page = fresh.pages[0]
             base_page.merge_page(page_reader.pages[0])
             writer.add_page(base_page)
         else:

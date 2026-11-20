@@ -25,7 +25,7 @@
     <button class="btn small" id="d-save">保存设计</button>
     <button class="btn small danger" id="d-del">删除选中</button>
   </div>
-  <p class="muted" style="margin:6px 0 0">PDF 背景在编辑器中以示意页呈现（白页），生成 PDF 后即为真实背景——可先生成一次校对文本框位置再微调。</p>
+  <p class="muted" style="margin:6px 0 0">上传 PDF/图片背景后，编辑器按<b>真实背景</b>呈现——拖拽文本框对准预留空位即可；生成的 PDF 文本将精确落位。PDF 预览为首页栅格图（110dpi）。</p>
 </div>
 
 <div class="card">
@@ -100,7 +100,9 @@ function renderDesignList(designs) {
 function openDesign(id, designs) {
   var d0 = designs.filter(function (x) { return x.id === id; })[0];
   if (!d0) return;
-  design = {id: d0.id, name: d0.name, bg_type: d0.bg_type, bg_url: d0.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + d0.id + '/bg' : '', fields: JSON.parse(d0.fields || '[]')};
+  design = {id: d0.id, name: d0.name, bg_type: d0.bg_type,
+            bg_url: d0.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + d0.id + '/bg' + (d0.bg_type === 'pdf' ? '?preview=1' : '') : '',
+            fields: JSON.parse(d0.fields || '[]')};
   document.getElementById('d-name').value = design.name;
   selIdx = -1;
   renderEditor();
@@ -115,14 +117,14 @@ function loadDesign(id) {
 function renderEditor() {
   var bg = document.getElementById('canvas-bg');
   var cv = document.getElementById('cert-canvas');
-  if (design.bg_type === 'image' && design.bg_url) {
+  if (design.bg_url) {
     bg.innerHTML = '';
     var img = document.createElement('img');
     img.src = design.bg_url; img.style.width = '100%'; img.style.display = 'block';
     img.onload = function () { fitCanvas(img.naturalWidth, img.naturalHeight); layoutFields(); };
     bg.appendChild(img);
   } else {
-    bg.innerHTML = design.bg_type === 'pdf' ? 'PDF 背景（示意页）' : '背景示意（未上传）';
+    bg.innerHTML = '背景示意（未上传）';
     fitCanvas(595, 842);
   }
   layoutFields();
@@ -248,7 +250,7 @@ document.getElementById('d-save').onclick = async function () {
       id: design.id, name: design.name, bg_type: design.bg_type, bg_b64: b64, fields: design.fields
     });
     design.id = r.id;
-    design.bg_url = design.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + design.id + '/bg?v=' + Date.now() : '';
+    design.bg_url = design.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + design.id + '/bg?v=' + Date.now() + (design.bg_type === 'pdf' ? '&preview=1' : '') : '';
     toast('设计已保存', 'ok');
     loadDesign(design.id);
     document.getElementById('d-bg').value = '';
