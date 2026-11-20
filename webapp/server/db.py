@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS registrations (
     contact_name TEXT DEFAULT '',              -- 联系人
     contact_phone TEXT DEFAULT '',             -- 联系电话
     name TEXT DEFAULT '',                      -- 选手（主报）姓名
+    gender TEXT DEFAULT '',                    -- R143：性别（男/女）
     unit_self TEXT DEFAULT '',                 -- 选手单位（个人模式可与批次单位不同）
     role TEXT DEFAULT '',                      -- 选手身份（新生/老生等）
     partner TEXT DEFAULT '',                   -- 搭档姓名
@@ -204,6 +205,10 @@ def init_db():
     ev_cols0 = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
     if "cert_printed_at" not in ev_cols0:
         conn.execute("ALTER TABLE events ADD COLUMN cert_printed_at TEXT DEFAULT ''")   # R139：证书打印时间（空=未打印）
+    if "registrations" in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+        reg_cols = {r[1] for r in conn.execute("PRAGMA table_info(registrations)")}
+        if "gender" not in reg_cols:
+            conn.execute("ALTER TABLE registrations ADD COLUMN gender TEXT DEFAULT ''")   # R143：性别
     user_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     if "pw_plain" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN pw_plain TEXT DEFAULT ''")   # R76c：口令留档（设置/重置时同步记录，供口令表导出；与直达链接同库同等保护）

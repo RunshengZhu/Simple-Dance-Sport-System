@@ -80,7 +80,8 @@ function addMember() {
   var d = el('div', 'card member-row');
   d.innerHTML = '<div class="reg-grid">' +
     '<div><label>姓名 *</label><input class="m-name" placeholder="选手姓名"></div>' +
-    '<div><label>单位</label><input class="m-unit" placeholder="与上方单位相同可不填"></div>' +
+    '<div><label>性别 *</label><select class="m-gender"><option value="">请选择</option><option value="男">男</option><option value="女">女</option></select></div>' +
+    '<div><label>单位（选填）</label><input class="m-unit" placeholder="与上方单位相同可不填"></div>' +
     '<div><label>身份</label><input class="m-role" placeholder="如：新生 / 老生"></div>' +
     '<div><label>搭档姓名</label><input class="m-partner" placeholder="无搭档可不填"></div>' +
     '<div><label>搭档单位</label><input class="m-punit"></div>' +
@@ -125,7 +126,10 @@ document.getElementById('reg-submit').onclick = async function () {
     var name = row.querySelector('.m-name').value.trim();
     var projs = pickedProjects(row);
     if (!name || !projs.length) { okForm = false; }
+    var gender = row.querySelector('.m-gender').value;
+    if (!gender) okForm = false;
     members.push({ name: name,
+      gender: gender,
       unit: row.querySelector('.m-unit').value.trim(),
       role: row.querySelector('.m-role').value.trim(),
       partner: row.querySelector('.m-partner').value.trim(),
@@ -133,7 +137,7 @@ document.getElementById('reg-submit').onclick = async function () {
       partner_role: row.querySelector('.m-prole').value.trim(),
       projects: projs });
   });
-  if (!okForm) { msg.className = 'err'; msg.textContent = '请补全成员姓名与报名项目'; return; }
+  if (!okForm) { msg.className = 'err'; msg.textContent = '请补全成员姓名、性别与报名项目'; return; }
   btn.disabled = true;
   try {
     var r = await api('POST', '/api/public/events/' + CID + '/register', {

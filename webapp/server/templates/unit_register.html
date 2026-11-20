@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}单位报名 · {{ unit }}{% endblock %}
+{% block nav %}<span>{{ comp.name }} · {{ unit }}</span>{% endblock %}
+{% block content %}
+<h1>{{ unit }} <span class="muted">单位报名</span></h1>
+{% if closed %}
+<div class="card"><p class="muted">报名尚未开放或单位报名模式未启用。请联系赛事方。</p></div>
+{% else %}
+<p class="muted">以 <b>{{ unit }}</b> 名义报名。可直接在下方添加报项，或上传报项 CSV（去重规则：同姓名+同搭档重复提交时自动合并项目）。</p>
+
+<div class="card">
+  <b>① 联系人（首次提交后自动记忆）</b>
+  <div class="reg-grid">
+    <div><label>联系人 *</label><input id="c-name" value="{{ contact.contact_name }}" placeholder="姓名"></div>
+    <div><label>联系电话 *</label><input id="c-phone" value="{{ contact.contact_phone }}" inputmode="tel"></div>
+  </div>
+</div>
+
+<div class="card">
+  <b>② 添加报项</b>
+  <div id="members"></div>
+  <button class="btn secondary" id="add-member">＋ 添加一名选手</button>
+  <div style="margin-top:10px"><button class="btn" id="reg-submit">提交报项</button>
+  <span id="reg-msg" class="muted"></span></div>
+</div>
+
+<div class="card">
+  <b>③ 或上传报项 CSV</b>
+  <p class="muted" style="margin:4px 0 8px">列：姓名、性别（男/女）、身份、搭档姓名、搭档单位、搭档身份，再加项目编号列（列头写项目编号如 1、2，行内填 1 表示报该项目）。</p>
+  <input type="file" id="u-csv" accept=".csv">
+  <button class="btn" id="u-go">上传导入（同姓名自动合并项目）</button>
+  <span id="u-msg" class="muted"></span>
+</div>
+
+<div class="card">
+  <b>本单位已提交报项（{{ entries|length }} 条）</b>
+  <table>
+    <tr><th>姓名</th><th>性别</th><th>身份</th><th>搭档</th><th>项目</th><th>状态</th></tr>
+    {% for e in entries %}
+    <tr>
+      <td><b>{{ e.name }}</b></td><td>{{ e.gender or "—" }}</td><td>{{ e.role or "—" }}</td>
+      <td>{{ e.partner or "—" }}</td>
+      <td>{{ e.projects }}</td>
+      <td>{% if e.status == "pending" %}待审核{% elif e.status == "approved" %}<span class="ok">已通过</span>{% elif e.status == "rejected" %}未通过{% if e.review_note %}（{{ e.review_note }}）{% endif %}{% elif e.status == "imported" %}<span class="ok">已编入名单</span>{% else %}{{ e.status }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+    {% if not entries %}<tr><td colspan="6" class="muted">暂无报项——请在上方添加。</td></tr>{% endif %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+var CID = {{ comp.id }}, UNIT = {{ unit | tojson }}, TOKEN = {{ token | tojson }};
+var PROJECTS = {{ projects | tojson }};
+var APIBASE = '/api/public/events/' + CID + '/unit-register/' + encodeURIComponent(UNIT) + '/' + encodeURIComponent(TOKEN);
+function el(tag, cls, html) { var d = document.createElement(tag); d.className = cls || ''; if (html !== undefined) d.innerHTML = html; return d; }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+  return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+function projChips() {
+  var box = el('div', 'proj-chips');
+  PROJECTS.forEach(function (p) {
+    var b = el('button', 'proj-chip', esc(p.name));
+    b.type = 'button'; b.dataset.code = p.code;
+    b.onclick = function () { b.classList.toggle('on'); };
+    box.appendChild(b);
+  });
+  return box;
+}
+function pickedProjects(root) {
+  return Array.prototype.map.call(root.querySelectorAll('.proj-chip.on'), function (b) { return b.dataset.code; });
+}
+function addMember() {
+  var d = el('div', 'card member-row');
+  d.innerHTML = '<div class="reg-grid">' +
+    '<div><label>姓名 *</label><input class="m-name"></div>' +
+    '<div><label>性别 *</label><select class="m-gender"><option value="">请选择</option><option value="男">男</option><option value="女">女</option></select></div>' +
+    '<div><label>身份</label><input class="m-role" placeholder="如：新生"></div>' +
+    '<div><label>搭档姓名</label><input class="m-partner"></div>' +
+    '<div><label>搭档单位</label><input class="m-punit"></div>' +
+    '<div><label>搭档身份</label><input class="m-prole"></div>' +
+    '</div><label class="muted">报名项目 *</label>';
+  d.appendChild(projChips());
+  var rm = el('button', 'btn small danger', '移除');
+  rm.type = 'button';
+  rm.onclick = function () { d.remove(); };
+  d.appendChild(rm);
+  document.getElementById('members').appendChild(d);
+}
+document.getElementById('add-member').onclick = addMember;
+addMember();
+document.getElementById('reg-submit').onclick = async function () {
+  var btn = this, msg = document.getElementById('reg-msg');
+  msg.textContent = '';
+  var members = [], okForm = true;
+  document.querySelectorAll('.member-row').forEach(function (row) {
+    var name = row.querySelector('.m-name').value.trim();
+    var gender = row.querySelector('.m-gender').value;
+    var projs = pickedProjects(row);
+    if (!name || !gender || !projs.length) okForm = false;
+    members.push({ name: name, gender: gender,
+      role: row.querySelector('.m-role').value.trim(),
+      partner: row.querySelector('.m-partner').value.trim(),
+      partner_unit: row.querySelector('.m-punit').value.trim(),
+      partner_role: row.querySelector('.m-prole').value.trim(),
+      projects: projs });
+  });
+  if (!document.getElementById('c-name').value.trim() || !document.getElementById('c-phone').value.trim()) {
+    msg.className = 'err'; msg.textContent = '请填写联系人与联系电话'; return;
+  }
+  if (!okForm) { msg.className = 'err'; msg.textContent = '请补全成员姓名、性别与报名项目'; return; }
+  await btnFlow(btn, async function () {
+    var r = await api('POST', APIBASE, {
+      contact_name: document.getElementById('c-name').value.trim(),
+      contact_phone: document.getElementById('c-phone').value.trim(),
+      members: members
+    });
+    var t = '提交成功：新增 ' + r.added + ' 条，合并更新 ' + r.updated + ' 条';
+    if (r.problems && r.problems.length) t += '；问题：' + r.problems.join('；');
+    toast(t, 'ok', 4500);
+    setTimeout(softReload, 900);
+    return r;
+  });
+};
+document.getElementById('u-go').onclick = async function () {
+  var f = document.getElementById('u-csv').files[0];
+  var btn = this, el0 = document.getElementById('u-msg');
+  if (!f) { el0.textContent = '请选择 CSV 文件'; return; }
+  el0.textContent = '';
+  await btnFlow(btn, async function () {
+    var r = await fetch(APIBASE + '/import', {
+      method: 'POST', headers: {'Content-Type': 'text/csv'},
+      body: await f.text()
+    });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    var t = '导入成功：新增 ' + d.added + ' 条，合并更新 ' + d.updated + ' 条';
+    if (d.problems && d.problems.length) t += '；问题：' + d.problems.join('；');
+    el0.textContent = t;
+    setTimeout(softReload, 1200);
+    return d;
+  });
+};
+{% endblock %}

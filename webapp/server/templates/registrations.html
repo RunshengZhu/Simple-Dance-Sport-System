@@ -35,6 +35,42 @@
   <b>各项目报名统计</b> <span id="reg-stats-body" class="muted">加载中…</span>
 </div>
 
+<div class="card" id="entry-card">
+  <b>③ 报名入口（二维码与直达链接）</b>
+  <p class="muted" style="margin:4px 0 8px">公开入口面向个人报名；单位报名走「单位管理员链接」——每个单位一个链接，免登录，打开即以该单位名义填报（可上传报项 CSV 或直接添加）。</p>
+  <div class="entry-row">
+    <img id="entry-qr" alt="公开报名二维码" style="width:120px;height:120px;border:1px solid var(--line-strong);border-radius:8px">
+    <div style="flex:1;min-width:220px">
+      <label>公开报名链接</label>
+      <input id="entry-public" readonly onclick="this.select()">
+      <p class="muted" style="margin:4px 0 0">右键二维码可复制/保存，供海报印刷；链接可直接发到社交群。</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
+    <div><label>为以下单位生成管理员链接</label><input id="u-new" placeholder="输入单位全称"></div>
+    <button class="btn small" id="u-gen">生成链接</button>
+  </div>
+  <div id="unit-links" style="margin-top:8px"></div>
+</div>
+
+<div class="card" id="entry-card">
+  <b>③ 报名入口（二维码与直达链接）</b>
+  <p class="muted" style="margin:4px 0 8px">公开入口面向个人报名；单位报名走「单位管理员链接」——每个单位一个链接，免登录，打开即以该单位名义填报（可上传报项 CSV 或直接添加）。</p>
+  <div class="entry-row">
+    <img id="entry-qr" alt="公开报名二维码" style="width:120px;height:120px;border:1px solid var(--line-strong);border-radius:8px">
+    <div style="flex:1;min-width:220px">
+      <label>公开报名链接</label>
+      <input id="entry-public" readonly onclick="this.select()">
+      <p class="muted" style="margin:4px 0 0">右键二维码可复制/保存，供海报印刷；链接可直接发到社交群。</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
+    <div><label>为以下单位生成管理员链接</label><input id="u-new" placeholder="输入单位全称"></div>
+    <button class="btn small" id="u-gen">生成链接</button>
+  </div>
+  <div id="unit-links" style="margin-top:8px"></div>
+</div>
+
 <div class="card">
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <b>报名明细</b>
@@ -65,6 +101,8 @@ var REG_BUSY = false;
 async function load() {
   DATA = await api('GET', '/api/events/' + CID + '/registrations');
   renderProjects();
+  renderEntryLinks();
+  renderEntryLinks();
   var s = DATA.settings;
   document.getElementById('s-open').checked = !!s.open;
   document.getElementById('s-mode-individual').checked = s.modes.indexOf('individual') > -1;
@@ -75,6 +113,61 @@ async function load() {
 }
 
 /* ① 设项：列表 / 添加 / 删除（项目编号自然数自动分配） */
+async function renderEntryLinks() {
+  try {
+    var d = await api('GET', '/api/events/' + CID + '/registrations/entry-links');
+    document.getElementById('entry-qr').src = d.public_qr || '';
+    document.getElementById('entry-public').value = d.public_url;
+    var box = document.getElementById('unit-links');
+    if (!d.unit_links.length) { box.innerHTML = '<div class="muted">尚无单位管理员链接——在上方输入单位名称生成。</div>'; return; }
+    var html = '<table><tr><th>单位</th><th>已报条目</th><th>管理员链接</th></tr>';
+    d.unit_links.forEach(function (u) {
+      html += '<tr><td><b>' + esc(u.unit) + '</b></td><td>' + u.count + '</td>' +
+        '<td><input readonly value="' + esc(u.url) + '" onclick="this.select()" style="width:100%"></td></tr>';
+    });
+    box.innerHTML = html + '</table>';
+  } catch (e) { /* 忽略入口加载失败 */ }
+}
+document.getElementById('u-gen').onclick = async function () {
+  var unit = document.getElementById('u-new').value.trim();
+  if (!unit) { toast('请输入单位名称', 'err'); return; }
+  try {
+    var r = await api('POST', '/api/events/' + CID + '/registrations/unit-links', {unit: unit});
+    var box = document.getElementById('unit-links');
+    var row = '<div class="ok-text">已生成「' + esc(unit) + '」管理员链接（复制发给该单位）：</div>' +
+      '<input readonly value="' + esc(r.url) + '" onclick="this.select()" style="width:100%;margin:4px 0">';
+    box.insertAdjacentHTML('afterbegin', row);
+    copyText(r.url, '链接已复制');
+    load();
+  } catch (e) { toast(e.message, 'err'); }
+};
+async function renderEntryLinks() {
+  try {
+    var d = await api('GET', '/api/events/' + CID + '/registrations/entry-links');
+    document.getElementById('entry-qr').src = d.public_qr || '';
+    document.getElementById('entry-public').value = d.public_url;
+    var box = document.getElementById('unit-links');
+    if (!d.unit_links.length) { box.innerHTML = '<div class="muted">尚无单位管理员链接——在上方输入单位名称生成。</div>'; return; }
+    var html = '<table><tr><th>单位</th><th>已报条目</th><th>管理员链接</th></tr>';
+    d.unit_links.forEach(function (u) {
+      html += '<tr><td><b>' + esc(u.unit) + '</b></td><td>' + u.count + '</td>' +
+        '<td><input readonly value="' + esc(u.url) + '" onclick="this.select()" style="width:100%"></td></tr>';
+    });
+    box.innerHTML = html + '</table>';
+  } catch (e) { /* 忽略入口加载失败 */ }
+}
+document.getElementById('u-gen').onclick = async function () {
+  var unit = document.getElementById('u-new').value.trim();
+  if (!unit) { toast('请输入单位名称', 'err'); return; }
+  try {
+    var r = await api('POST', '/api/events/' + CID + '/registrations/unit-links', {unit: unit});
+    var row = '<div class="ok-text">已生成「' + esc(unit) + '」管理员链接（复制发给该单位）：</div>' +
+      '<input readonly value="' + esc(r.url) + '" onclick="this.select()" style="width:100%;margin:4px 0">';
+    document.getElementById('unit-links').insertAdjacentHTML('afterbegin', row);
+    copyText(r.url, '链接已复制');
+    load();
+  } catch (e) { toast(e.message, 'err'); }
+};
 function renderProjects() {
   var box = document.getElementById('proj-list');
   var html = '<table><tr><th>项目编号</th><th>项目名称</th><th>报名数</th><th></th></tr>';

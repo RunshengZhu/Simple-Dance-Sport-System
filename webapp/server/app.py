@@ -591,9 +591,11 @@ def _project_names(conn, competition_id: int):
 
 def _public_comp_or_404(competition_id, request=None):
     """R135 公开侧赛事获取：调试专用赛（is_debug）仅总管理员可访问，其余一律 404
-    （公开页面 / 公开 API 统一走本入口，防止调试赛真实选手数据外泄）。"""
+    （公开页面 / 公开 API 统一走本入口，防止调试赛真实选手数据外泄）。
+    R143 例外：试用赛（is_trial）经显式 ?comp= 链接可访问——报名/查询入口是显式链接打开
+    （非枚举面），且试用赛本身面向练习公开。"""
     c = _comp_or_404(competition_id)
-    if c.get("is_debug"):
+    if c.get("is_debug") and not c.get("is_trial"):
         s = _session(request)
         if not (s and s.get("role") == "admin" and not s.get("user_id")):
             raise HTTPException(status_code=404, detail="赛事不存在")
@@ -4993,7 +4995,7 @@ async def api_register_submit(competition_id: int, request: Request = None):
     members = body.get("members") or []
     if mode == "individual" and not members:
         # 兼容顶层字段形态：单个成员直接平铺在 body 上
-        members = [{k: body.get(k) for k in ("name", "unit", "role", "partner", "partner_unit", "partner_role", "projects")}]
+        members = [{k: body.get(k) for k in ("name", "gender", "unit", "role", "partner", "partner_unit", "partner_role", "projects")}]
     if not isinstance(members, list) or not members:
         raise HTTPException(status_code=400, detail="缺少报名成员")
     contact_name = str(body.get("contact_name") or "").strip()
@@ -5002,28 +5004,55 @@ async def api_register_submit(competition_id: int, request: Request = None):
     note = str(body.get("note") or "").strip()[:300]
     if mode == "individual" and not contact_phone:
         raise HTTPException(status_code=400, detail="请填写联系电话")
+    if mode == "individual" and not contact_name:
+        contact_name = next((str(m.get("name") or "").strip() for m in members if str(m.get("name") or "").strip()), "")
     if mode == "unit" and (not unit or not contact_name or not contact_phone):
         raise HTTPException(status_code=400, detail="单位报名需填写单位名称、联系人与联系电话")
     batch_id = secrets.token_hex(8)
     submit_code = "BM" + secrets.token_hex(3).upper()
-    ins, problems = 0, []
+    ins, problems, seen = 0, [], set()
     for m in members:
         name = str(m.get("name") or "").strip()
+        gender = str(m.get("gender") or "").strip()
         if not name:
             problems.append("存在未填写姓名的成员"); continue
+        if gender not in ("男", "女"):
+            problems.append("%s 性别必填（男/女）" % name); continue
         projs = [str(x).strip() for x in (m.get("projects") or [])]
         bad = [x for x in projs if x not in proj_codes]
         if not projs:
             problems.append("%s 未选择项目" % name); continue
         if bad:
             problems.append("%s 项目无效: %s" % (name, ",".join(bad[:3]))); continue
+        # R143 去重：同赛事+同姓名+同联系方式（个人）→ 项目集合并更新（保留审核状态），否则新入库
+        dedup_key = (name, contact_phone) if mode == "individual" else (name, str(m.get("partner") or "").strip())
+        if dedup_key in seen:
+            problems.append("%s 本次提交内重复，已合并处理" % name); continue
+        seen.add(dedup_key)
+        existing = None
+        if mode == "individual":
+            existing = db.rowdict(conn.execute(
+                "SELECT id, projects FROM registrations WHERE competition_id=? AND name=? "
+                "AND COALESCE(contact_phone,'')=? ORDER BY id LIMIT 1",
+                (competition_id, name, contact_phone)).fetchone())
+        if existing:
+            merged = list(dict.fromkeys(
+                [p for p in (existing["projects"] or "").split(",") if p] + projs))
+            conn.execute("UPDATE registrations SET gender=?, role=?, partner=?, partner_unit=?, partner_role=?, "
+                         "projects=?, note=? WHERE id=?",
+                         (gender, str(m.get("role") or "").strip()[:20],
+                          str(m.get("partner") or "").strip(), str(m.get("partner_unit") or "").strip(),
+                          str(m.get("partner_role") or "").strip()[:20],
+                          ",".join(merged), note, existing["id"]))
+            ins += 1
+            continue
         conn.execute(
             "INSERT INTO registrations(competition_id, mode, batch_id, unit, contact_name, contact_phone, "
-            "name, unit_self, role, partner, partner_unit, partner_role, projects, note, submit_code) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "name, gender, unit_self, role, partner, partner_unit, partner_role, projects, note, submit_code) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (competition_id, mode, batch_id,
              unit or str(m.get("unit") or "").strip(), contact_name, contact_phone,
-             name, str(m.get("unit") or "").strip(),
+             name, gender, str(m.get("unit") or "").strip(),
              str(m.get("role") or "").strip()[:20],
              str(m.get("partner") or "").strip(),
              str(m.get("partner_unit") or "").strip(),
@@ -5109,6 +5138,211 @@ async def api_register_status(competition_id: int, request: Request = None, code
          "projects": [p for p in (r["projects"] or "").split(",") if p],
          "status": r["status"], "status_label": st_map.get(r["status"], r["status"]),
          "review_note": r["review_note"], "created_at": r["created_at"]} for r in rows]}
+
+
+# ---------------- R143 报名入口体系：公开二维码 + 单位管理员链接（免登录 HMAC） ----------------
+def _unit_link(conn, competition_id: int, unit: str) -> str:
+    """单位管理员直达链接：HMAC 签名（单位名），点开即以该单位名义填报。"""
+    token = _sign_direct(conn, "unitmgr", unit, competition_id)
+    return "/competitions/{0}/unit-register/{1}/{2}".format(
+        competition_id, urllib.parse.quote(unit, safe=""), token)
+
+
+def _check_unit_link(conn, competition_id: int, unit: str, token: str) -> bool:
+    return _check_direct(conn, competition_id, "unitmgr", unit, token)
+
+
+def _reg_unit_dedup_upsert(conn, competition_id: int, unit: str, m: dict,
+                           contact_name: str, contact_phone: str):
+    """R143 标准入库+去重：同赛事+单位报名+同姓名+同搭档 → 更新（项目集合并、字段刷新、保留审核状态）；
+    否则新入库。返回 (added, updated, problem)。"""
+    name = str(m.get("name") or "").strip()
+    gender = str(m.get("gender") or "").strip()
+    projs = [str(x).strip() for x in (m.get("projects") or [])]
+    partner = str(m.get("partner") or "").strip()
+    if not name:
+        return 0, 0, "存在未填写姓名的成员"
+    if gender not in ("男", "女"):
+        return 0, 0, "%s 性别必填（男/女）" % name
+    if not projs:
+        return 0, 0, "%s 未选择项目" % name
+    proj_codes = {r["code"] for r in db.rows(conn.execute(
+        "SELECT code FROM projects WHERE competition_id=?", (competition_id,)))}
+    bad = [x for x in projs if x not in proj_codes]
+    if bad:
+        return 0, 0, "%s 项目无效: %s" % (name, ",".join(bad[:3]))
+    existing = db.rowdict(conn.execute(
+        "SELECT id, projects FROM registrations WHERE competition_id=? AND mode='unit' AND unit=? "
+        "AND name=? AND COALESCE(partner,'')=? ORDER BY id LIMIT 1",
+        (competition_id, unit, name, partner)).fetchone())
+    if existing:
+        merged = list(dict.fromkeys(
+            [p for p in (existing["projects"] or "").split(",") if p] + projs))
+        conn.execute("UPDATE registrations SET gender=?, role=?, partner_unit=?, partner_role=?, projects=?, "
+                     "contact_name=?, contact_phone=? WHERE id=?",
+                     (gender, str(m.get("role") or "").strip()[:20],
+                      str(m.get("partner_unit") or "").strip(), str(m.get("partner_role") or "").strip()[:20],
+                      ",".join(merged), contact_name, contact_phone, existing["id"]))
+        return 0, 1, ""
+    batch_id = secrets.token_hex(8)
+    sc = "BM" + secrets.token_hex(3).upper()
+    conn.execute(
+        "INSERT INTO registrations(competition_id, mode, batch_id, unit, contact_name, contact_phone, "
+        "name, gender, role, partner, partner_unit, partner_role, projects, submit_code) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (competition_id, "unit", batch_id, unit, contact_name, contact_phone,
+         name, gender, str(m.get("role") or "").strip()[:20], partner,
+         str(m.get("partner_unit") or "").strip(), str(m.get("partner_role") or "").strip()[:20],
+         ",".join(projs), sc))
+    return 1, 0, ""
+
+
+@app.get("/api/events/{competition_id}/registrations/entry-links")
+async def api_reg_entry_links(competition_id: int, request: Request = None):
+    """R143 报名入口：公开页链接+二维码（data URI PNG）+ 单位管理员链接列表。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    pub = "/competitions/{0}/register".format(competition_id)
+    try:
+        import segno
+        buf0 = io.BytesIO()
+        segno.make(_abs_url(request, pub), error="m").save(buf0, kind="png", scale=6, border=2)
+        qr = "data:image/png;base64," + base64.b64encode(buf0.getvalue()).decode()
+    except ImportError:
+        qr = ""
+    units = []
+    for r in db.rows(conn.execute(
+            "SELECT DISTINCT unit FROM registrations WHERE competition_id=? AND mode='unit' AND unit!='' ORDER BY unit",
+            (competition_id,))):
+        u = r["unit"]
+        units.append({"unit": u,
+                      "url": _abs_url(request, _unit_link(conn, competition_id, u)),
+                      "count": conn.execute("SELECT COUNT(*) c FROM registrations WHERE competition_id=? AND unit=?",
+                                            (competition_id, u)).fetchone()["c"]})
+    return {"public_url": _abs_url(request, pub), "public_qr": qr, "unit_links": units}
+
+
+@app.post("/api/events/{competition_id}/registrations/unit-links")
+async def api_reg_unit_link_create(competition_id: int, request: Request = None):
+    """为指定单位生成管理员链接（无需该单位已提交过报名）。"""
+    require_admin(request)
+    body = await request.json()
+    unit = str(body.get("unit") or "").strip()[:60]
+    if not unit:
+        raise HTTPException(status_code=400, detail="单位名称必填")
+    conn = db.get_db()
+    return {"ok": True, "unit": unit, "url": _abs_url(request, _unit_link(conn, competition_id, unit))}
+
+
+@app.get("/competitions/{competition_id}/unit-register/{unit}/{token}", response_class=HTMLResponse)
+async def unit_register_page(request: Request, competition_id: int, unit: str, token: str):
+    """R143 单位管理员报名页（免登录，HMAC 校验）：以该单位名义直接添加报项或上传报项 CSV。"""
+    conn = db.get_db()
+    comp = _public_comp_or_404(competition_id, request)
+    if not comp or not _check_unit_link(conn, competition_id, unit, token):
+        raise HTTPException(status_code=403, detail="单位报名链接无效（赛事未开放或链接已失效）")
+    st = _reg_settings(comp)
+    closed = not (st["open"] and "unit" in st["modes"])
+    entries, contact = [], {"contact_name": "", "contact_phone": ""}
+    if not closed:
+        entries = [dict(e) for e in db.rows(conn.execute(
+            "SELECT id, name, gender, role, partner, partner_unit, partner_role, projects, status, review_note "
+            "FROM registrations WHERE competition_id=? AND unit=? AND mode='unit' ORDER BY id", (competition_id, unit)))]
+        c0 = db.rowdict(conn.execute(
+            "SELECT contact_name, contact_phone FROM registrations WHERE competition_id=? AND unit=? AND mode='unit' "
+            "ORDER BY id DESC LIMIT 1", (competition_id, unit)).fetchone())
+        if c0:
+            contact = {"contact_name": c0["contact_name"] or "", "contact_phone": c0["contact_phone"] or ""}
+    return templates.TemplateResponse(request, "unit_register.html", {
+        "request": request, "comp": comp, "unit": unit, "token": token,
+        "projects": [] if closed else _reg_proj_list(conn, competition_id),
+        "closed": closed, "entries": entries, "contact": contact})
+
+
+@app.post("/api/public/events/{competition_id}/unit-register/{unit}/{token}")
+async def api_unit_register_submit(competition_id: int, unit: str, token: str, request: Request = None):
+    """单位管理员提交报项：{contact_name, contact_phone, members:[{name,gender,role,partner,…,projects}]}。
+    去重：同赛事+单位报名+同姓名+同搭档已存在 → 项目集合并/字段刷新（保留审核状态）。"""
+    conn = db.get_db()
+    comp = _public_comp_or_404(competition_id, request)
+    if not comp or not _check_unit_link(conn, competition_id, unit, token):
+        raise HTTPException(status_code=403, detail="单位报名链接无效")
+    st = _reg_settings(comp)
+    if not st["open"] or "unit" not in st["modes"]:
+        raise HTTPException(status_code=400, detail="报名未开放")
+    body = await request.json()
+    contact_name = str(body.get("contact_name") or "").strip()
+    contact_phone = str(body.get("contact_phone") or "").strip()
+    if not contact_name or not contact_phone:
+        raise HTTPException(status_code=400, detail="请填写联系人与联系电话")
+    members = body.get("members") or []
+    if not isinstance(members, list) or not members:
+        raise HTTPException(status_code=400, detail="缺少报项成员")
+    added, updated, problems = 0, 0, []
+    for m in members:
+        a, u0, problem = _reg_unit_dedup_upsert(conn, competition_id, unit, m, contact_name, contact_phone)
+        added += a; updated += u0
+        if problem:
+            problems.append(problem)
+    if added == 0 and updated == 0 and problems:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail="；".join(problems[:3]))
+    conn.commit()
+    _audit("单位管理员（%s）" % unit, "unit_register", "comp:{0}".format(competition_id),
+           "新增 {0} 更新 {1}".format(added, updated), _client_ip(request))
+    sse.bus.publish(competition_id, "schedule_changed",
+                    {"unit_register": {"unit": unit, "added": added, "updated": updated}})
+    return {"ok": True, "added": added, "updated": updated, "problems": problems}
+
+
+@app.post("/api/public/events/{competition_id}/unit-register/{unit}/{token}/import")
+async def api_unit_register_import(competition_id: int, unit: str, token: str, request: Request = None):
+    """单位管理员上传报项 CSV：列（姓名,性别,身份,搭档姓名,搭档单位,搭档身份,项目编号…）。
+    项目编号列头写项目编号（如 1、2），行内该列填 1 即报该项目。"""
+    conn = db.get_db()
+    comp = _public_comp_or_404(competition_id, request)
+    if not comp or not _check_unit_link(conn, competition_id, unit, token):
+        raise HTTPException(status_code=403, detail="单位报名链接无效")
+    st = _reg_settings(comp)
+    if not st["open"] or "unit" not in st["modes"]:
+        raise HTTPException(status_code=400, detail="报名未开放")
+    raw = await request.body()
+    header, data_rows = _read_csv_body(raw)
+    h = {name.strip(): i for i, name in enumerate(header)}
+    for c0 in ("姓名", "性别"):
+        if c0 not in h:
+            raise HTTPException(status_code=400, detail="缺少列: " + c0)
+    fixed = ("姓名", "性别", "身份", "搭档姓名", "搭档单位", "搭档身份")
+    proj_cols = [c0 for c0 in h if c0 not in fixed]
+    members, problems = [], []
+    for r in data_rows:
+        def get(c0):
+            return (r[h[c0]].strip() if h.get(c0) is not None and h[c0] < len(r) else "")
+        name = get("姓名")
+        if not name:
+            continue
+        projs = [c0 for c0 in proj_cols if get(c0)]
+        members.append({"name": name, "gender": get("性别"), "role": get("身份"),
+                        "partner": get("搭档姓名"), "partner_unit": get("搭档单位"),
+                        "partner_role": get("搭档身份"), "projects": projs})
+    contact_row = db.rowdict(conn.execute(
+        "SELECT contact_name, contact_phone FROM registrations WHERE competition_id=? AND unit=? AND mode='unit' "
+        "ORDER BY id DESC LIMIT 1", (competition_id, unit)).fetchone())
+    contact_name = (contact_row or {}).get("contact_name") or (unit + "管理员")
+    contact_phone = (contact_row or {}).get("contact_phone") or "—"
+    added, updated = 0, 0
+    for m in members:
+        a, u0, problem = _reg_unit_dedup_upsert(conn, competition_id, unit, m, contact_name, contact_phone)
+        added += a; updated += u0
+        if problem:
+            problems.append(problem)
+    conn.commit()
+    _audit("单位管理员（%s）" % unit, "unit_register_import", "comp:{0}".format(competition_id),
+           "CSV 新增 {0} 更新 {1}".format(added, updated), _client_ip(request))
+    sse.bus.publish(competition_id, "schedule_changed",
+                    {"unit_register": {"unit": unit, "added": added, "updated": updated}})
+    return {"ok": True, "added": added, "updated": updated, "problems": problems[:10], "total": len(members)}
 
 
 @app.get("/events/{competition_id}/registrations", response_class=HTMLResponse)

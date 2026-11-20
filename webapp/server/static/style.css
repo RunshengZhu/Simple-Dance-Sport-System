@@ -1309,3 +1309,5 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .prep-step-banner .prep-step-label { font-weight: 700; color: var(--acc-ink); }
 .prep-step-banner .prep-step-links { margin-left: auto; display: flex; gap: 12px; }
 .prep-step-banner a { color: var(--acc-ink); font-weight: 600; }
+.entry-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.entry-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
