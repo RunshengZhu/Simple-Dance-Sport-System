@@ -3,6 +3,8 @@
 """R142 全动线纯 WebUI E2E：建赛→设项→报名(含异常)→审核转正→赛程→评分→晋级→决赛→证书→打印台。
 使用新生赛（comp21）数据子集，覆盖已知异常场景。前置：SQL 已建 E2E 赛（is_debug=1）+ 预置会话。"""
 import json, os, sys, time, zipfile, io as _io, base64, csv
+import json
+import os
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("E2E_BASE", "https://dancetkt.com")
@@ -67,9 +69,19 @@ def main():
         pa.set_input_files("#f-schedule", "/tmp/e2e_r142/schedule.csv")
         pa.locator("#go-schedule").click(); pa.wait_for_timeout(2500)
         m = pa.locator("#msg-schedule").text_content() or ""
-        log("错误" not in m, "P4 导入赛程", m[:50])
+        log("错误" not in m, "P4 导入赛程 R1A/R1B", m[:50])
+        # 添加 R2A/R2B/R3/R4（空名单）
+        for code, name, rnd, typ, adv in [("P01Z01-R2A","平四复赛A",2,"MARK",6),("P01Z01-R2B","平四复赛B",2,"MARK",6),
+                                           ("P01Z01-R3","平四半决赛",3,"MARK",8),("P01Z01-R4","平四决赛",4,"SKATING",8)]:
+            pa.goto(BASE + "/events/%d/schedule?tab=projects" % CID)
+            pa.wait_for_timeout(1200); skip_onb(pa)
+            pa.fill("#f-code", code); pa.fill("#f-name", name)
+            pa.fill("#f-project", "1"); pa.fill("#f-round", str(rnd))
+            pa.fill("#f-dances", "平四"); pa.select_option("#f-type", typ)
+            pa.fill("#f-adv", str(adv))
+            pa.locator("#save-btn").click(); pa.wait_for_timeout(1800)
         n_events = pa.evaluate("fetch('/api/events/%d/runboard').then(r=>r.json()).then(d=>d.events.length)" % CID)
-        log(n_events >= 6, "六场结构齐备", "events=%d" % n_events)
+        log(n_events == 6, "六场结构齐备", "events=%d" % n_events)
         shot(pa, "01-import")
         
         # ===== Phase 2: 设项（自然数编号） =====
