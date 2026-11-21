@@ -2253,12 +2253,11 @@ async def api_certs_generate_v2(competition_id: int, ceid: int, request: Request
         cv.save()
         page_reader = _PdfReader(io.BytesIO(buf.getvalue()))
         if bg_reader is not None:
-            # R144：每页用「新读取」的背景页——pypdf 的 merge_page 会原页累积，
-            # 复用同一对象会把前面所有证书的文本叠到后续页（实测 2/3/4 页全显示第 1 名）
-            fresh = _PdfReader(bg_path)
-            base_page = fresh.pages[0]
-            base_page.merge_page(page_reader.pages[0])
-            writer.add_page(base_page)
+            # R145c：pypdf 7.x 需在 writer 内操作——每页建子 writer 承载背景副本，合并 overlay 后转交主 writer
+            sub = _PdfWriter()
+            sub.add_page(bg_reader.pages[0])
+            sub.pages[0].merge_page(page_reader.pages[0])
+            writer.add_page(sub.pages[0])
         else:
             writer.add_page(page_reader.pages[0])
 
