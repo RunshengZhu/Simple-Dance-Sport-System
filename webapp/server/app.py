@@ -109,6 +109,7 @@ _NAV_GROUPS = [
         ("/roster", "③ 参赛名单"),
         ("/schedule", "④ 赛程编排"),
         ("/staff-links", "⑤ 工作人员与裁判"),
+        ("/cert-design", "⑥ 荣誉证书设计"),
     ]),
     ("run", "比赛控制", [
         ("/runboard", "赛程执行总表"),
@@ -1683,13 +1684,233 @@ def _cert_overrides(conn, ceid):
         "SELECT number, members FROM cert_members WHERE event_id=?", (ceid,)))}
 
 
+@app.get("/events/{competition_id}/cert-design", response_class=HTMLResponse)
+async def cert_design_page(request: Request, competition_id: int):
+    """R145 筹备阶段：证书设计管理（背景 + 文本框布局，赛事级——一个赛事的证书模板一致）。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    return templates.TemplateResponse(request, "cert_designs.html", {
+        "request": request, "comp": comp})
+
+
 @app.get("/events/{competition_id}/certs/{ceid}", response_class=HTMLResponse)
 async def certs_page(request: Request, competition_id: int, ceid: int):
+    """R145 场次证书页：选设计 + 核对名单 + 生成（设计在筹备阶段「⑥ 荣誉证书设计」维护）。"""
     require_admin(request)
     comp = _comp_or_404(competition_id)
     ev = _event_or_404(ceid)
+    conn = db.get_db()
+    designs = [dict(r) for r in conn.execute(
+        "SELECT id, name, bg_type, fields, created_at FROM cert_designs WHERE competition_id=? ORDER BY id DESC",
+        (competition_id,))]
     return templates.TemplateResponse(request, "certs.html", {
-        "request": request, "comp": comp, "ev": ev})
+        "request": request, "comp": comp, "ev": ev, "designs": designs})
+
+
+@app.get("/api/events/{competition_id}/certs/designs")
+async def api_cert_designs_list(competition_id: int, request: Request = None):
+    require_admin(request)
+    conn = db.get_db()
+    rows = [dict(r) for r in db.rows(conn.execute(
+        "SELECT id, name, bg_type, fields, created_at FROM cert_designs WHERE competition_id=? ORDER BY id DESC",
+        (competition_id,)))]
+    return {"designs": rows, "presets": _CERT_PRESETS, "field_types": FIELD_TYPES}
+
+
+def _cert_design_or_404(competition_id, design_id):
+    row = db.rowdict(db.get_db().execute(
+        "SELECT * FROM cert_designs WHERE id=? AND competition_id=?", (design_id, competition_id)).fetchone())
+    if not row:
+        raise HTTPException(status_code=404, detail="证书设计不存在")
+    return row
+
+
+@app.post("/api/events/{competition_id}/certs/designs")
+async def api_cert_designs_save(competition_id: int, request: Request = None):
+    """创建/更新证书设计：{id?, name, bg_type, bg_b64?, fields:[...]}。背景支持 PDF/图片。"""
+    require_admin(request)
+    comp = _comp_or_404(competition_id)
+    body = await request.json()
+    name = str(body.get("name") or "").strip()[:60] or "证书设计"
+    bg_type = str(body.get("bg_type") or "none")
+    if bg_type not in ("none", "pdf", "image"):
+        raise HTTPException(status_code=400, detail="背景类型须为 none/pdf/image")
+    fields = body.get("fields") or []
+    clean = []
+    for f in fields:
+        try:
+            clean.append({"type": str(f.get("type") or "custom"), "text": str(f.get("text") or "")[:60],
+                          "x": float(f.get("x") or 10), "y": float(f.get("y") or 10),
+                          "size": max(6, min(60, float(f.get("size") or 16))),
+                          "align": f.get("align") if f.get("align") in ("left", "center", "right") else "left",
+                          "bold": bool(f.get("bold"))})
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="文本框参数无效")
+    conn = db.get_db()
+    did = body.get("id")
+    bg_fname = None
+    if bg_type != "none":
+        b64 = str(body.get("bg_b64") or "")
+        if b64:
+            import base64 as _b64
+            data = _b64.b64decode(b64)
+            if len(data) > 30 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="背景文件过大（>30MB）")
+            if bg_type == "pdf" and not (data[:4] == b"%PDF"):
+                raise HTTPException(status_code=400, detail="不是有效的 PDF 文件")
+            if bg_type == "image":
+                try:
+                    from PIL import Image as _PILImage
+                    _PILImage.open(io.BytesIO(data)).verify()
+                except Exception:
+                    raise HTTPException(status_code=400, detail="不是有效的图片文件")
+            bg_fname = "bg%d-%s" % (int(time.time()), secrets.token_hex(4)) + (".pdf" if bg_type == "pdf" else ".img")
+            with open(os.path.join(_cert_design_dir(competition_id), bg_fname), "wb") as f:
+                f.write(data)
+            if bg_type == "pdf":
+                # R144 PDF 背景 → 栅格化首页 PNG，编辑器 WYSIWYG 预览（零客户端依赖）
+                try:
+                    import pymupdf as _pm
+                    _doc0 = _pm.open(stream=data, filetype="pdf")
+                    _pix = _doc0[0].get_pixmap(dpi=110)
+                    with open(os.path.join(_cert_design_dir(competition_id), bg_fname + ".preview.png"), "wb") as f:
+                        f.write(_pix.tobytes("png"))
+                    _doc0.close()
+                except Exception:
+                    pass   # 栅格化失败不阻断上传——编辑器回退示意页
+    if did:
+        row = _cert_design_or_404(competition_id, int(did))
+        if bg_fname:
+            conn.execute("UPDATE cert_designs SET bg_type=?, bg_fname=? WHERE id=?",
+                         (bg_type, bg_fname, row["id"]))
+        conn.execute("UPDATE cert_designs SET name=?, fields=? WHERE id=?",
+                     (name, json.dumps(clean, ensure_ascii=False), row["id"]))
+        conn.commit()
+        return {"ok": True, "id": row["id"]}
+    cur = conn.execute("INSERT INTO cert_designs(competition_id, name, bg_type, bg_fname, fields) VALUES(?,?,?,?,?)",
+                       (competition_id, name, bg_type, bg_fname or "",
+                        json.dumps(clean, ensure_ascii=False)))
+    conn.commit()
+    return {"ok": True, "id": cur.lastrowid}
+
+
+@app.delete("/api/events/{competition_id}/certs/designs/{design_id}")
+async def api_cert_designs_delete(competition_id: int, design_id: int, request: Request = None):
+    require_admin(request)
+    row = _cert_design_or_404(competition_id, design_id)
+    conn = db.get_db()
+    if row["bg_fname"]:
+        try:
+            os.remove(os.path.join(_cert_design_dir(competition_id), row["bg_fname"]))
+        except OSError:
+            pass
+    conn.execute("DELETE FROM cert_designs WHERE id=?", (design_id,))
+    conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/events/{competition_id}/certs/designs/{design_id}/bg")
+async def api_cert_designs_bg(competition_id: int, design_id: int, request: Request = None):
+    """背景文件预览（pdf/image）。"""
+    require_admin(request)
+    row = _cert_design_or_404(competition_id, design_id)
+    if row["bg_type"] == "none" or not row["bg_fname"]:
+        raise HTTPException(status_code=404, detail="无背景")
+    path = os.path.join(_cert_design_dir(competition_id), row["bg_fname"])
+    preview = request.query_params.get("preview") == "1"
+    ppath = path + ".preview.png"
+    if preview and row["bg_type"] == "pdf" and os.path.exists(ppath):
+        with open(ppath, "rb") as f:
+            data = f.read()
+        return Response(data, media_type="image/png")
+    with open(path, "rb") as f:
+        data = f.read()
+    mtype = "application/pdf" if row["bg_type"] == "pdf" else "image/png"
+    return Response(data, media_type=mtype)
+
+
+def _reportlab_font():
+    """注册中文字体（复用既有候选路径）。"""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    candidates = [
+        os.path.expanduser("~/.fonts/wqy-zenhei.ttc"),
+        os.path.expanduser("~/fonts/wqy-zenhei.ttc"),
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/System/Library/Fonts/PingFang.ttc",            # macOS 本地开发
+        "/System/Library/Fonts/STHeiti Light.ttc",       # macOS 本地开发
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                pdfmetrics.registerFont(TTFont("chinese", p, subfontIndex=0))
+                return "chinese"
+            except Exception:
+                continue
+    return "Helvetica"
+
+
+def _field_value(f, ev, comp, names, unit, rank, day):
+    t = f.get("type")
+    if t == "name":
+        return names[0] if names else ""
+    if t == "names_all":
+        return "、".join(names)
+    if t == "project":
+        return ev["name"]
+    if t == "rank_cn":
+        return _cn_rank(rank)
+    if t == "rank_num":
+        return str(rank)
+    if t == "date":
+        return day
+    if t == "comp":
+        return comp["name"]
+    if t == "unit":
+        return unit
+    if t == "custom":
+        return f.get("text") or ""
+    return ""
+
+
+def _cert_pages_meta(conn, ev, comp, over, ceid):
+    """按名次展开 → [(背号, 名次, [本人开头的名单]), ...]"""
+    res = load_results(ceid)
+    if not res or not res.get("overall_results"):
+        raise HTTPException(status_code=400, detail="该场次暂无已计算成绩")
+    ranks = sorted(res["overall_results"], key=lambda r: (float(r["rank"]), str(r["competitor_number"])))
+    day = (comp["date"] or "").strip() or time.strftime("%Y-%m-%d")
+    pages = []
+    for r0 in ranks:
+        num = str(r0["competitor_number"])
+        rank = int(r0["rank"])
+        names, units = _cert_members_auto(conn, ev, num)
+        if num in over:
+            names = [x.strip() for x in over[num].split("\n") if x.strip()]
+        if not names:
+            names = [num]
+        unit = "、".join(units)
+        for nm in names:
+            pages.append((num, rank, [nm] + [x for x in names if x != nm], unit, day))
+    return pages
+
+
+def _cert_draw_page(cv, fields, ev, comp, num, rank, names, unit, day, pw, ph, font="chinese"):
+    for f in fields:
+        names_f = [names[0]] if f.get("type") == "name" else names
+        val = _field_value(f, ev, comp, names_f, unit, rank, day)
+        size = float(f.get("size") or 16)
+        x = float(f.get("x") or 0) / 100.0 * pw
+        y = ph - float(f.get("y") or 0) / 100.0 * ph   # y 为顶部百分比
+        align = f.get("align") or "left"
+        cv.setFont(font, size)
+        cv.setFillColorRGB(0, 0, 0)
+        if align == "center":
+            cv.drawCentredString(x, y, val)
+        elif align == "right":
+            cv.drawRightString(x, y, val)
+        else:
+            cv.drawString(x, y, val)
 
 
 @app.get("/api/events/{competition_id}/certs/{ceid}")
@@ -1933,212 +2154,6 @@ def _cert_design_dir(competition_id):
     d = os.path.join(base, CERT_DIR_NAME, "design-%d" % competition_id)
     os.makedirs(d, exist_ok=True)
     return d
-
-
-@app.get("/api/events/{competition_id}/certs/designs")
-async def api_cert_designs_list(competition_id: int, request: Request = None):
-    require_admin(request)
-    conn = db.get_db()
-    rows = [dict(r) for r in db.rows(conn.execute(
-        "SELECT id, name, bg_type, fields, created_at FROM cert_designs WHERE competition_id=? ORDER BY id DESC",
-        (competition_id,)))]
-    return {"designs": rows, "presets": _CERT_PRESETS, "field_types": FIELD_TYPES}
-
-
-def _cert_design_or_404(competition_id, design_id):
-    row = db.rowdict(db.get_db().execute(
-        "SELECT * FROM cert_designs WHERE id=? AND competition_id=?", (design_id, competition_id)).fetchone())
-    if not row:
-        raise HTTPException(status_code=404, detail="证书设计不存在")
-    return row
-
-
-@app.post("/api/events/{competition_id}/certs/designs")
-async def api_cert_designs_save(competition_id: int, request: Request = None):
-    """创建/更新证书设计：{id?, name, bg_type, bg_b64?, fields:[...]}。背景支持 PDF/图片。"""
-    require_admin(request)
-    comp = _comp_or_404(competition_id)
-    body = await request.json()
-    name = str(body.get("name") or "").strip()[:60] or "证书设计"
-    bg_type = str(body.get("bg_type") or "none")
-    if bg_type not in ("none", "pdf", "image"):
-        raise HTTPException(status_code=400, detail="背景类型须为 none/pdf/image")
-    fields = body.get("fields") or []
-    clean = []
-    for f in fields:
-        try:
-            clean.append({"type": str(f.get("type") or "custom"), "text": str(f.get("text") or "")[:60],
-                          "x": float(f.get("x") or 10), "y": float(f.get("y") or 10),
-                          "size": max(6, min(60, float(f.get("size") or 16))),
-                          "align": f.get("align") if f.get("align") in ("left", "center", "right") else "left",
-                          "bold": bool(f.get("bold"))})
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="文本框参数无效")
-    conn = db.get_db()
-    did = body.get("id")
-    bg_fname = None
-    if bg_type != "none":
-        b64 = str(body.get("bg_b64") or "")
-        if b64:
-            import base64 as _b64
-            data = _b64.b64decode(b64)
-            if len(data) > 30 * 1024 * 1024:
-                raise HTTPException(status_code=400, detail="背景文件过大（>30MB）")
-            if bg_type == "pdf" and not (data[:4] == b"%PDF"):
-                raise HTTPException(status_code=400, detail="不是有效的 PDF 文件")
-            if bg_type == "image":
-                try:
-                    from PIL import Image as _PILImage
-                    _PILImage.open(io.BytesIO(data)).verify()
-                except Exception:
-                    raise HTTPException(status_code=400, detail="不是有效的图片文件")
-            bg_fname = "bg%d-%s" % (int(time.time()), secrets.token_hex(4)) + (".pdf" if bg_type == "pdf" else ".img")
-            with open(os.path.join(_cert_design_dir(competition_id), bg_fname), "wb") as f:
-                f.write(data)
-            if bg_type == "pdf":
-                # R144 PDF 背景 → 栅格化首页 PNG，编辑器 WYSIWYG 预览（零客户端依赖）
-                try:
-                    import pymupdf as _pm
-                    _doc0 = _pm.open(stream=data, filetype="pdf")
-                    _pix = _doc0[0].get_pixmap(dpi=110)
-                    with open(os.path.join(_cert_design_dir(competition_id), bg_fname + ".preview.png"), "wb") as f:
-                        f.write(_pix.tobytes("png"))
-                    _doc0.close()
-                except Exception:
-                    pass   # 栅格化失败不阻断上传——编辑器回退示意页
-    if did:
-        row = _cert_design_or_404(competition_id, int(did))
-        if bg_fname:
-            conn.execute("UPDATE cert_designs SET bg_type=?, bg_fname=? WHERE id=?",
-                         (bg_type, bg_fname, row["id"]))
-        conn.execute("UPDATE cert_designs SET name=?, fields=? WHERE id=?",
-                     (name, json.dumps(clean, ensure_ascii=False), row["id"]))
-        conn.commit()
-        return {"ok": True, "id": row["id"]}
-    cur = conn.execute("INSERT INTO cert_designs(competition_id, name, bg_type, bg_fname, fields) VALUES(?,?,?,?,?)",
-                       (competition_id, name, bg_type, bg_fname or "",
-                        json.dumps(clean, ensure_ascii=False)))
-    conn.commit()
-    return {"ok": True, "id": cur.lastrowid}
-
-
-@app.delete("/api/events/{competition_id}/certs/designs/{design_id}")
-async def api_cert_designs_delete(competition_id: int, design_id: int, request: Request = None):
-    require_admin(request)
-    row = _cert_design_or_404(competition_id, design_id)
-    conn = db.get_db()
-    if row["bg_fname"]:
-        try:
-            os.remove(os.path.join(_cert_design_dir(competition_id), row["bg_fname"]))
-        except OSError:
-            pass
-    conn.execute("DELETE FROM cert_designs WHERE id=?", (design_id,))
-    conn.commit()
-    return {"ok": True}
-
-
-@app.get("/api/events/{competition_id}/certs/designs/{design_id}/bg")
-async def api_cert_designs_bg(competition_id: int, design_id: int, request: Request = None):
-    """背景文件预览（pdf/image）。"""
-    require_admin(request)
-    row = _cert_design_or_404(competition_id, design_id)
-    if row["bg_type"] == "none" or not row["bg_fname"]:
-        raise HTTPException(status_code=404, detail="无背景")
-    path = os.path.join(_cert_design_dir(competition_id), row["bg_fname"])
-    preview = request.query_params.get("preview") == "1"
-    ppath = path + ".preview.png"
-    if preview and row["bg_type"] == "pdf" and os.path.exists(ppath):
-        with open(ppath, "rb") as f:
-            data = f.read()
-        return Response(data, media_type="image/png")
-    with open(path, "rb") as f:
-        data = f.read()
-    mtype = "application/pdf" if row["bg_type"] == "pdf" else "image/png"
-    return Response(data, media_type=mtype)
-
-
-def _reportlab_font():
-    """注册中文字体（复用既有候选路径）。"""
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    candidates = [
-        os.path.expanduser("~/.fonts/wqy-zenhei.ttc"),
-        os.path.expanduser("~/fonts/wqy-zenhei.ttc"),
-        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-        "/System/Library/Fonts/PingFang.ttc",            # macOS 本地开发
-        "/System/Library/Fonts/STHeiti Light.ttc",       # macOS 本地开发
-    ]
-    for p in candidates:
-        if os.path.exists(p):
-            try:
-                pdfmetrics.registerFont(TTFont("chinese", p, subfontIndex=0))
-                return "chinese"
-            except Exception:
-                continue
-    return "Helvetica"
-
-
-def _field_value(f, ev, comp, names, unit, rank, day):
-    t = f.get("type")
-    if t == "name":
-        return names[0] if names else ""
-    if t == "names_all":
-        return "、".join(names)
-    if t == "project":
-        return ev["name"]
-    if t == "rank_cn":
-        return _cn_rank(rank)
-    if t == "rank_num":
-        return str(rank)
-    if t == "date":
-        return day
-    if t == "comp":
-        return comp["name"]
-    if t == "unit":
-        return unit
-    if t == "custom":
-        return f.get("text") or ""
-    return ""
-
-
-def _cert_pages_meta(conn, ev, comp, over, ceid):
-    """按名次展开 → [(背号, 名次, [本人开头的名单]), ...]"""
-    res = load_results(ceid)
-    if not res or not res.get("overall_results"):
-        raise HTTPException(status_code=400, detail="该场次暂无已计算成绩")
-    ranks = sorted(res["overall_results"], key=lambda r: (float(r["rank"]), str(r["competitor_number"])))
-    day = (comp["date"] or "").strip() or time.strftime("%Y-%m-%d")
-    pages = []
-    for r0 in ranks:
-        num = str(r0["competitor_number"])
-        rank = int(r0["rank"])
-        names, units = _cert_members_auto(conn, ev, num)
-        if num in over:
-            names = [x.strip() for x in over[num].split("\n") if x.strip()]
-        if not names:
-            names = [num]
-        unit = "、".join(units)
-        for nm in names:
-            pages.append((num, rank, [nm] + [x for x in names if x != nm], unit, day))
-    return pages
-
-
-def _cert_draw_page(cv, fields, ev, comp, num, rank, names, unit, day, pw, ph, font="chinese"):
-    for f in fields:
-        names_f = [names[0]] if f.get("type") == "name" else names
-        val = _field_value(f, ev, comp, names_f, unit, rank, day)
-        size = float(f.get("size") or 16)
-        x = float(f.get("x") or 0) / 100.0 * pw
-        y = ph - float(f.get("y") or 0) / 100.0 * ph   # y 为顶部百分比
-        align = f.get("align") or "left"
-        cv.setFont(font, size)
-        cv.setFillColorRGB(0, 0, 0)
-        if align == "center":
-            cv.drawCentredString(x, y, val)
-        elif align == "right":
-            cv.drawRightString(x, y, val)
-        else:
-            cv.drawString(x, y, val)
 
 
 @app.post("/api/events/{competition_id}/certs/{ceid}/generate-v2")

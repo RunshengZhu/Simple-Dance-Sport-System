@@ -76,16 +76,19 @@ def env():
     sched = ('场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手\n'
              'P01-R1,平四决赛,P01Z01,1,平四,SKATING,4,"101,102,103,104"\n').encode("utf-8")
     req("POST", "/api/events/%d/imports/schedule" % cid, content=sched, role="admin")
-    req("POST", "/api/competition-events/1/open", json={"roster": ["101", "102", "103", "104"]}, role="admin")
-    req("POST", "/api/competition-events/1/checkin", json={"numbers": ["101", "102", "103", "104"], "state": True}, role="admin")
+    ceid = req("GET", "/api/public/events/%d/schedule" % cid).json()["events"][0]["id"]
+    req("POST", "/api/competition-events/%d/open" % ceid,
+        json={"roster": ["101", "102", "103", "104"]}, role="admin")
+    req("POST", "/api/competition-events/%d/checkin" % ceid,
+        json={"numbers": ["101", "102", "103", "104"], "state": True}, role="admin")
     for j in ("J1", "J2", "J3"):
         _login(j, {"role": "judge", "judge_id": j})   # 裁判登录（库导入后）
     for j in ("J1", "J2", "J3"):
-        r = req("PUT", "/api/judge/competition-events/1/dances/平四/sheet",
+        r = req("PUT", "/api/judge/competition-events/%d/dances/平四/sheet" % ceid,
                 json={"values": {"101": "1", "102": "2", "103": "3", "104": "4"}}, role=j)
         assert r.status_code == 200
-    assert req("POST", "/api/competition-events/1/publish", json={}, role="admin").status_code == 200
-    return {"cid": cid}
+    assert req("POST", "/api/competition-events/%d/publish" % ceid, json={}, role="admin").status_code == 200
+    return {"cid": cid, "ceid": ceid}
 
 
 def test_pdf_background_upload_preview_and_generate(env):
@@ -105,7 +108,7 @@ def test_pdf_background_upload_preview_and_generate(env):
     r = req("GET", "/api/events/%d/certs/designs/%d/bg?preview=1" % (cid, did), role="admin")
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     # 生成：4 名选手 4 页，页面尺寸继承背景，文本逐页轮转且互不串页
-    r = req("POST", "/api/events/%d/certs/1/generate-v2" % cid, json={"design_id": did}, role="admin")
+    r = req("POST", "/api/events/%d/certs/%d/generate-v2" % (cid, env["ceid"]), json={"design_id": did}, role="admin")
     assert r.status_code == 200 and r.content[:4] == b"%PDF"
     rd = PdfReader(io.BytesIO(r.content))
     assert len(rd.pages) == 4
@@ -118,4 +121,4 @@ def test_pdf_background_upload_preview_and_generate(env):
     assert "选手101" not in texts[1]   # 无串页
     # 生成即标记已打印
     d = req("GET", "/api/events/%d/runboard" % cid, role="admin").json()
-    assert [e for e in d["events"] if e["id"] == 1][0]["cert_printed"] is True
+    assert [e for e in d["events"] if e["id"] == env["ceid"]][0]["cert_printed"] is True

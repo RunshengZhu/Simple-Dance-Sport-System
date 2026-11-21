@@ -137,4 +137,6 @@ def test_cert_design_and_generate_v2(env):
     assert ev0["cert_printed"] is True
     # 证书页渲染（设计器）
     html = req("GET", "/events/%d/certs/%d" % (cid, env["ceid"]), role="admin").text
-    assert "cert-canvas" in html and "field-layer" in html
+    assert "选择证书设计" in html
+    html2 = req("GET", "/events/%d/cert-design" % cid, role="admin").text
+    assert "cert-canvas" in html2 and "field-layer" in html2
