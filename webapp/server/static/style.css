@@ -1311,3 +1311,14 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .prep-step-banner a { color: var(--acc-ink); font-weight: 600; }
 .entry-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 .entry-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+
+/* R145 证书设计器浮层 */
+.ed-box { position: absolute; border: 1.5px dashed #c33; padding: 2px 4px; color: #333; cursor: grab; white-space: nowrap; background: rgba(255,255,255,.65); user-select: none; }
+.ed-box.sel { border: 2px solid var(--acc); background: rgba(255,255,255,.9); z-index: 5; }
+.ed-box.dragging { cursor: grabbing; opacity: .8; }
+.ed-frow { display: flex; align-items: center; gap: 6px; padding: 4px 0; cursor: pointer; }
+.ed-frow.sel { background: var(--acc-tint); border-radius: 6px; }
+.ed-frow .ed-fnum { font-weight: 800; min-width: 20px; color: var(--acc-ink); }
+.ed-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cert-designer .ed-panel label { display: block; font-size: .85rem; color: var(--ink-soft); margin: 8px 0 2px; }
+.cert-designer .ed-panel input, .cert-designer .ed-panel select { width: 100%; padding: 8px; border: 1px solid var(--line-strong); border-radius: 8px; }

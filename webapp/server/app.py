@@ -290,8 +290,9 @@ async def visit_count(request: Request, call_next):
                     "ON CONFLICT(slug, day) DO UPDATE SET n = n + 1",
                     (slug, time.strftime("%Y-%m-%d")))
                 conn.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("uvicorn.error").warning("cert bg rasterize failed: %s", e)
     return resp
 
 
@@ -1776,8 +1777,9 @@ async def api_cert_designs_save(competition_id: int, request: Request = None):
                     with open(os.path.join(_cert_design_dir(competition_id), bg_fname + ".preview.png"), "wb") as f:
                         f.write(_pix.tobytes("png"))
                     _doc0.close()
-                except Exception:
-                    pass   # 栅格化失败不阻断上传——编辑器回退示意页
+                except Exception as e:
+                    import logging
+                    logging.getLogger("uvicorn.error").warning("cert bg rasterize failed: %s", e)   # 失败可见（不再静默）
     if did:
         row = _cert_design_or_404(competition_id, int(did))
         if bg_fname:
@@ -1809,6 +1811,46 @@ async def api_cert_designs_delete(competition_id: int, design_id: int, request: 
     return {"ok": True}
 
 
+@app.post("/api/events/{competition_id}/certs/designs/{design_id}/regen-preview")
+async def api_cert_design_regen_preview(competition_id: int, design_id: int, request: Request = None):
+    """R144b：为 PDF 背景按需重新生成预览 PNG（历史设计预览缺失时用）。"""
+    require_admin(request)
+    row = _cert_design_or_404(competition_id, design_id)
+    if row["bg_type"] != "pdf" or not row["bg_fname"]:
+        raise HTTPException(status_code=400, detail="该设计不是 PDF 背景")
+    path = os.path.join(_cert_design_dir(competition_id), row["bg_fname"])
+    try:
+        import pymupdf as _pm
+        doc0 = _pm.open(path)
+        pix = doc0[0].get_pixmap(dpi=110)
+        with open(path + ".preview.png", "wb") as f:
+            f.write(pix.tobytes("png"))
+        doc0.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="栅格化失败: " + str(e))
+    return {"ok": True}
+
+
+@app.post("/api/events/{competition_id}/certs/designs/{design_id}/regen-preview")
+async def api_cert_design_regen_preview(competition_id: int, design_id: int, request: Request = None):
+    """R144b：为 PDF 背景按需重新生成预览 PNG。"""
+    require_admin(request)
+    row = _cert_design_or_404(competition_id, design_id)
+    if row["bg_type"] != "pdf" or not row["bg_fname"]:
+        raise HTTPException(status_code=400, detail="该设计不是 PDF 背景")
+    path = os.path.join(_cert_design_dir(competition_id), row["bg_fname"])
+    try:
+        import pymupdf as _pm
+        doc0 = _pm.open(path)
+        pix = doc0[0].get_pixmap(dpi=110)
+        with open(path + ".preview.png", "wb") as f:
+            f.write(pix.tobytes("png"))
+        doc0.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="栅格化失败: " + str(e))
+    return {"ok": True}
+
+
 @app.get("/api/events/{competition_id}/certs/designs/{design_id}/bg")
 async def api_cert_designs_bg(competition_id: int, design_id: int, request: Request = None):
     """背景文件预览（pdf/image）。"""
@@ -1819,10 +1861,17 @@ async def api_cert_designs_bg(competition_id: int, design_id: int, request: Requ
     path = os.path.join(_cert_design_dir(competition_id), row["bg_fname"])
     preview = request.query_params.get("preview") == "1"
     ppath = path + ".preview.png"
-    if preview and row["bg_type"] == "pdf" and os.path.exists(ppath):
-        with open(ppath, "rb") as f:
-            data = f.read()
-        return Response(data, media_type="image/png")
+    if row["bg_type"] == "pdf" and (preview or not os.path.exists(ppath)):
+        # R144b：PDF 预览图缺失时按需栅格化（pymupdf）
+        try:
+            import pymupdf as _pm
+            doc0 = _pm.open(path)
+            pix = doc0[0].get_pixmap(dpi=110)
+            with open(ppath, "wb") as f:
+                f.write(pix.tobytes("png"))
+            doc0.close()
+        except Exception:
+            pass
     with open(path, "rb") as f:
         data = f.read()
     mtype = "application/pdf" if row["bg_type"] == "pdf" else "image/png"
