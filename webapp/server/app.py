@@ -1872,6 +1872,9 @@ async def api_cert_designs_bg(competition_id: int, design_id: int, request: Requ
             doc0.close()
         except Exception:
             pass
+        if os.path.exists(ppath):
+            with open(ppath, "rb") as f:
+                return Response(f.read(), media_type="image/png")   # R145b preview=1 → 栅格图
     with open(path, "rb") as f:
         data = f.read()
     mtype = "application/pdf" if row["bg_type"] == "pdf" else "image/png"
