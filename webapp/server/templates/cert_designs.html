@@ -52,6 +52,7 @@
     </div>
   </div>
 </div>
+<script src="/static/interact.min.js"></script>
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id }};
@@ -276,8 +277,7 @@ document.getElementById('d-new').onclick = function () {
   design = {id: 0, name: '证书设计 ' + new Date().toISOString().slice(5, 10), bg_type: 'none', bg_url: '', fields: []};
   selIdx = -1;
   document.getElementById('d-name').value = design.name;
-  openEditor();
-  renderDesignList([]);
+  renderDesignList([]);   // R146：不再自动打开编辑器（浮层遮住底下的保存按钮）
 };
 document.getElementById('d-preset').onchange = function () {
   var o = this.selectedOptions[0];
