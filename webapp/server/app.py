@@ -1947,22 +1947,76 @@ def _cert_pages_meta(conn, ev, comp, over, ceid):
     return pages
 
 
+def _fit_text_size(text, font_name, font_size, max_width):
+    """R145d：测量文本宽度，超出 max_width 时逐步缩小字号直到适配或到下限。"""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    w = stringWidth(text, font_name, font_size)
+    if w <= max_width:
+        return font_size
+    while font_size > 6:
+        font_size -= 0.5
+        if stringWidth(text, font_name, font_size) <= max_width:
+            return font_size
+    return 6.0
+
+
+def _wrap_names(names, font_name, font_size, max_width):
+    """R145d 多人名单自动换行：按宽度约束拆为多行（每行尽量满，不拆单人名）。"""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    lines, cur = [], ""
+    for nm in names:
+        sep = "、" if cur else ""
+        candidate = cur + sep + nm
+        if stringWidth(candidate, font_name, font_size) <= max_width:
+            cur = candidate
+        else:
+            if cur:
+                lines.append(cur)
+            cur = nm
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def _cert_draw_page(cv, fields, ev, comp, num, rank, names, unit, day, pw, ph, font="chinese"):
     for f in fields:
         names_f = [names[0]] if f.get("type") == "name" else names
         val = _field_value(f, ev, comp, names_f, unit, rank, day)
         size = float(f.get("size") or 16)
         x = float(f.get("x") or 0) / 100.0 * pw
-        y = ph - float(f.get("y") or 0) / 100.0 * ph   # y 为顶部百分比
+        y_top = float(f.get("y") or 0) / 100.0 * ph
+        w_px = float(f.get("w") or 30) / 100.0 * pw
         align = f.get("align") or "left"
-        cv.setFont(font, size)
         cv.setFillColorRGB(0, 0, 0)
-        if align == "center":
-            cv.drawCentredString(x, y, val)
-        elif align == "right":
-            cv.drawRightString(x, y, val)
+        f_type = f.get("type") or ""
+
+        if f_type == "names_all" or (f_type == "name" and len(names) > 1 and f.get("multi")):
+            # 多人名单：自动换行 + 缩字号适配 w 区域
+            fs = size
+            lines = _wrap_names(names, font, fs, w_px)
+            while len(lines) > 3 and fs > 8:
+                fs -= 1
+                lines = _wrap_names(names, font, fs, w_px)
+            line_h = fs * 1.4
+            for li, line in enumerate(lines):
+                ly = y_top - li * line_h
+                cv.setFont(font, fs)
+                if align == "center":
+                    cv.drawCentredString(x + w_px / 2, ly, line)
+                elif align == "right":
+                    cv.drawRightString(x + w_px, ly, line)
+                else:
+                    cv.drawString(x, ly, line)
         else:
-            cv.drawString(x, y, val)
+            # 单行字段：自动缩字号适配 w 区域（R145d 核心改进）
+            fs = _fit_text_size(val, font, size, w_px) if w_px > 0 and val else size
+            cv.setFont(font, fs)
+            if align == "center":
+                cv.drawCentredString(x + w_px / 2, y_top, val)
+            elif align == "right":
+                cv.drawRightString(x + w_px, y_top, val)
+            else:
+                cv.drawString(x, y_top, val)
 
 
 @app.get("/api/events/{competition_id}/certs/{ceid}")

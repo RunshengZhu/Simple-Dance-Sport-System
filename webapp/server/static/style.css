@@ -1322,3 +1322,19 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .ed-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .cert-designer .ed-panel label { display: block; font-size: .85rem; color: var(--ink-soft); margin: 8px 0 2px; }
 .cert-designer .ed-panel input, .cert-designer .ed-panel select { width: 100%; padding: 8px; border: 1px solid var(--line-strong); border-radius: 8px; }
+
+/* R145d 证书设计器（表单+实时预览） */
+.cert-editor { display: flex; gap: 16px; flex-wrap: wrap; }
+.cert-preview { flex: 0 0 380px; max-width: 100%; position: relative; border: 1px solid var(--line-strong); background: #fff; aspect-ratio: 595/842; overflow: hidden; }
+.cert-preview .preview-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--hint); font-size: .85rem; overflow: hidden; }
+.cert-preview .preview-bg img { width: 100%; display: block; }
+#preview-fields { position: absolute; inset: 0; }
+.pf-box { position: absolute; border: 1px dashed rgba(0,0,0,.25); padding: 1px 3px; color: #333; background: rgba(255,255,255,.5); overflow: hidden; line-height: 1.3; }
+.pf-box.sel { border: 2px solid var(--acc); background: rgba(255,255,255,.85); z-index: 5; }
+.ft-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.ft-table th, .ft-table td { border: 1px solid var(--line); padding: 4px 6px; text-align: center; }
+.ft-table input, .ft-table select { width: 100%; min-width: 48px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; font-size: .85rem; }
+.ft-table tr.ft-sel { background: var(--acc-tint); }
+.snap-line { position: absolute; background: var(--acc); z-index: 10; }
+.snap-line.v { width: 1px; top: 0; bottom: 0; }
+.snap-line.h { height: 1px; left: 0; right: 0; }

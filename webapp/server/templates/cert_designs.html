@@ -6,7 +6,7 @@
 {% block content %}
 {{ bar(comp, 'cert-design') }}
 <h1>荣誉证书设计 <span class="muted">{{ comp.name }}</span></h1>
-<p class="muted">上传证书背景（PDF/图片），拖拽文本框对准预留空位。设计为<b>赛事级</b>——全部场次共用同一模板。</p>
+<p class="muted">上传证书背景（PDF/图片），添加文本框并调整位置与字号。生成时系统<b>自动缩放文本</b>以适配文本框宽度——长名单自动换行、其他信息单行缩放。</p>
 
 <div class="card">
   <b>设计管理</b>
@@ -20,39 +20,24 @@
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn small" id="d-new">新建设计</button>
-    <button class="btn small" id="d-save">保存设计</button>
+    <button class="btn small" id="d-save">💾 保存设计</button>
     <button class="btn small danger" id="d-del">删除选中</button>
-  </div>
-  <div style="margin:8px 0">
-    <button class="btn" id="edit-open">✏️ 打开编辑器（全屏浮层）</button>
-    <span class="muted">拖拽文本框、右侧面板调属性。</span>
   </div>
 </div>
 
-<div id="ed-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100">
-  <div style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;padding:10px;gap:8px">
-    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--card,#fff);border-radius:10px;padding:8px 14px">
-      <b id="ed-name">编辑器</b>
-      <span style="display:flex;gap:8px">
-        <button class="btn small" onclick="edAdd()">＋文本框</button>
-        <button class="btn small" onclick="edSave()">💾 保存</button>
-        <button class="btn small secondary" onclick="closeEditor()">关闭</button>
-      </span>
-    </div>
-    <div style="flex:1;display:flex;gap:8px;min-height:0">
-      <div id="ed-wrap" style="flex:1;display:flex;align-items:center;justify-content:center;background:#555;border-radius:10px;overflow:auto">
-        <div id="ed-frame" style="position:relative;background:#fff"></div>
-      </div>
-      <div id="ed-panel" style="flex:0 0 240px;background:var(--card,#fff);border-radius:10px;padding:12px;overflow:auto">
-        <b>文本框</b>
-        <div id="ed-fields"></div>
-        <hr style="border:none;border-top:1px solid var(--line,#ddd);margin:10px 0">
-        <div id="ed-props"></div>
-      </div>
-    </div>
+<div class="cert-editor">
+  <div class="cert-preview" id="cert-preview">
+    <div id="preview-bg" class="preview-bg">背景示意（未上传）</div>
+    <div id="preview-fields"></div>
+    <div id="snap-v" class="snap-line v" style="display:none"></div>
+    <div id="snap-h" class="snap-line h" style="display:none"></div>
+  </div>
+  <div class="cert-fields-panel">
+    <b style="display:block;margin-bottom:8px">文本框列表</b>
+    <div id="field-table"></div>
+    <button class="btn small secondary" id="f-add" style="margin-top:8px">＋ 添加文本框</button>
   </div>
 </div>
-<script src="/static/interact.min.js"></script>
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id }};
@@ -61,8 +46,8 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function 
 var FIELD_TYPES = [];
 var FIELD_LABEL = {};
 var design = {id: 0, name: "", bg_type: "none", bg_url: "", fields: []};
-var selIdx = -1, PW = 595, PH = 842;
-var edOpen = false;
+var PW = 595, PH = 842;
+var selectedIdx = -1;
 
 async function load() {
   var dl = await api('GET', '/api/events/' + CID + '/certs/designs');
@@ -77,14 +62,16 @@ async function load() {
   });
   if (dl.designs.length && design.id === 0) adopt(dl.designs[0]);
   renderDesignList(dl.designs);
+  renderPreview(); renderFieldTable();
 }
 
 function adopt(d0) {
   design = {id: d0.id, name: d0.name, bg_type: d0.bg_type,
-            bg_url: d0.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + d0.id + '/bg' + (d0.bg_type === 'pdf' ? '?preview=1' : '') : '',
+            bg_url: d0.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + d0.id + '/bg?preview=1' : '',
             fields: JSON.parse(d0.fields || '[]')};
   document.getElementById('d-name').value = design.name;
-  selIdx = -1;
+  selectedIdx = -1;
+  renderPreview(); renderFieldTable();
 }
 
 function renderDesignList(designs) {
@@ -105,186 +92,103 @@ function renderDesignList(designs) {
   });
 }
 
-function fieldTypeLabel(t) { return FIELD_LABEL[t] || t; }
-
-/* ---- 全屏浮层编辑器 ---- */
-function openEditor() {
-  edOpen = true;
-  document.getElementById('ed-name').textContent = design.name || '（未命名）';
-  selIdx = -1;
-  var ov = document.getElementById('ed-overlay');
-  ov.style.display = 'flex';
-  paintBg();
-  requestAnimationFrame(function () { fitFrame(); renderBoxes(); renderFieldRows(); renderProps(); });
-}
-function closeEditor() { edOpen = false; document.getElementById('ed-overlay').style.display = 'none'; load(); }
-function edSave() {
-  api('POST', '/api/events/' + CID + '/certs/designs', {
-    id: design.id, name: design.name, bg_type: design.bg_type, fields: design.fields
-  }).then(function (r) {
-    design.id = r.id;
-    toast('设计已保存', 'ok');
-  }).catch(function (e) { toast(e.message, 'err'); });
-}
-function paintBg() {
-  var f = document.getElementById('ed-frame');
-  f.innerHTML = '';
-  f.style.background = '#fff';
+/* 实时预览 */
+function renderPreview() {
+  var bg = document.getElementById('preview-bg');
   if (design.bg_url) {
+    bg.innerHTML = '';
     var img = document.createElement('img');
-    img.src = design.bg_url; img.style.width = '100%'; img.style.display = 'block'; img.style.pointerEvents = 'none';
-    f.appendChild(img);
+    img.src = design.bg_url; img.style.width = '100%'; img.style.display = 'block';
+    bg.appendChild(img);
+  } else {
+    bg.innerHTML = '背景示意（未上传）';
   }
+  renderPreviewFields();
 }
-function fitFrame() {
-  var wrap = document.getElementById('ed-wrap');
-  var frame = document.getElementById('ed-frame');
-  var maxW = wrap.clientWidth - 4, maxH = wrap.clientHeight - 4;
-  var ar = PW / PH;
-  var w = Math.min(maxW, maxH * ar);
-  frame.style.width = w + 'px';
-  frame.style.height = (w / ar) + 'px';
-}
-window.addEventListener('resize', function () { if (edOpen) { fitFrame(); layoutBoxes(); } });
-
-function renderBoxes() {
-  var frame = document.getElementById('ed-frame');
-  frame.querySelectorAll('.ed-box').forEach(function (b) { b.remove(); });
+function renderPreviewFields() {
+  var layer = document.getElementById('preview-fields');
+  layer.innerHTML = '';
+  var preview = document.getElementById('cert-preview');
+  var W = preview.clientWidth || 500;
   design.fields.forEach(function (f, i) {
-    var b = document.createElement('div');
-    b.className = 'ed-box'; b.dataset.idx = i;
-    b.style.left = f.x + '%'; b.style.top = f.y + '%';
-    b.textContent = f.type === 'custom' ? (f.text || '文本') : fieldTypeLabel(f.type);
-    frame.appendChild(b);
-  });
-  layoutBoxes();
-}
-function layoutBoxes() {
-  if (!edOpen) return;
-  var frame = document.getElementById('ed-frame');
-  var W = frame.clientWidth || 1, scale = W / PW;
-  design.fields.forEach(function (f, i) {
-    var b = frame.querySelector('.ed-box[data-idx="' + i + '"]');
-    if (!b) return;
-    b.style.fontSize = (f.size * scale * 0.9) + 'px';
-    b.style.fontWeight = f.bold ? '800' : '400';
-    b.classList.toggle('sel', i === selIdx);
-    if (f.align === 'center') b.style.transform = 'translateX(-50%)';
-    else if (f.align === 'right') b.style.transform = 'translateX(-100%)';
-    else b.style.transform = '';
-  });
-  var xy = document.getElementById('ed-xy');
-  if (xy && selIdx >= 0 && design.fields[selIdx]) {
-    var f0 = design.fields[selIdx];
-    xy.textContent = 'x=' + f0.x.toFixed(1) + '% y=' + f0.y.toFixed(1) + '%';
-  }
-}
-function renderFieldRows() {
-  var box = document.getElementById('ed-fields');
-  box.innerHTML = '';
-  design.fields.forEach(function (f, i) {
-    var row = document.createElement('div');
-    row.className = 'ed-frow' + (i === selIdx ? ' sel' : '');
-    row.innerHTML = '<span class="ed-fnum">' + (i + 1) + '</span> ' +
-      '<select class="ed-ftype">' +
-      FIELD_TYPES.map(function (t) { return '<option value="' + t[0] + '"' + (f.type === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>'; }).join('') +
-      '</select>' +
-      '<button class="btn tiny danger ed-fdel" title="删除">×</button>';
-    row.querySelector('.ed-ftype').onchange = function () {
-      f.type = this.value; if (f.type === 'custom' && !f.text) f.text = '文本';
-      renderBoxes(); renderProps();
-    };
-    row.querySelector('.ed-fdel').onclick = function (ev) {
-      ev.stopPropagation();
-      design.fields.splice(i, 1); selIdx = -1;
-      renderBoxes(); renderFieldRows(); renderProps();
-    };
-    row.onclick = function (e) {
-      if (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') return;
-      selIdx = i; renderBoxes(); renderFieldRows(); renderProps();
-    };
-    box.appendChild(row);
+    var d = document.createElement('div');
+    d.className = 'pf-box' + (i === selectedIdx ? ' sel' : '');
+    d.style.left = f.x + '%'; d.style.top = f.y + '%';
+    d.style.width = (f.w || 30) + '%';
+    d.style.fontSize = (f.size * W / PW * 0.85) + 'px';
+    d.style.fontWeight = f.bold ? '800' : '400';
+    d.style.textAlign = f.align || 'left';
+    if (f.type === 'names_all') d.style.whiteSpace = 'normal';
+    else d.style.whiteSpace = 'nowrap';
+    d.textContent = previewLabel(f);
+    d.onclick = function () { selectedIdx = i; renderFieldTable(); renderPreviewFields(); };
+    layer.appendChild(d);
   });
 }
-function renderProps() {
-  var box = document.getElementById('ed-props');
-  if (selIdx < 0 || !design.fields[selIdx]) {
-    box.innerHTML = '<p class="muted" style="margin:0">点击画布上的文本框或在上方列表选择。</p>';
-    return;
-  }
-  var f = design.fields[selIdx];
-  var opts = FIELD_TYPES.map(function (t) {
-    return '<option value="' + t[0] + '"' + (f.type === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>';
-  }).join('');
-  box.innerHTML =
-    '<label>内容类型</label><select id="p-type">' + opts + '</select>' +
-    (f.type === 'custom' ? '<label>固定文本</label><input id="p-text" value="' + esc(f.text || '') + '">' : '') +
-    '<div class="ed-2col"><div><label>字号 pt</label><input id="p-size" type="number" value="' + f.size + '"></div>' +
-    '<div><label>对齐</label><select id="p-align">' +
-    ['left|左对齐', 'center|居中', 'right|右对齐'].map(function (a) {
-      var p0 = a.split('|');
-      return '<option value="' + p0[0] + '"' + (f.align === p0[0] ? ' selected' : '') + '>' + p0[1] + '</option>';
-    }).join('') + '</select></div></div>' +
-    '<label class="switch-line"><input type="checkbox" id="p-bold"' + (f.bold ? ' checked' : '') + '> 加粗</label>';
-  document.getElementById('p-type').onchange = function () {
-    f.type = this.value; if (f.type === 'custom' && !f.text) f.text = '文本';
-    renderBoxes(); renderProps();
-  };
-  var pt = document.getElementById('p-text');
-  if (pt) pt.oninput = function () { f.text = this.value; renderBoxes(); };
-  document.getElementById('p-size').oninput = function () { f.size = parseFloat(this.value) || 16; renderBoxes(); };
-  document.getElementById('p-align').onchange = function () { f.align = this.value; renderBoxes(); };
-  document.getElementById('p-bold').onchange = function () { f.bold = this.checked; renderBoxes(); };
+function previewLabel(f) {
+  if (f.type === 'custom') return f.text || '固定文本';
+  return FIELD_LABEL[f.type] || f.type;
 }
 
-/* interact.js 拖拽 */
-function bindInteract() {
-  interact('.ed-box').draggable({
-    inertia: false,
-    listeners: {
-      start: function (ev) { ev.target.classList.add('dragging'); },
-      move: function (ev) {
-        var idx = parseInt(ev.target.dataset.idx, 10);
-        var f = design.fields[idx];
-        if (!f) return;
-        var frame = document.getElementById('ed-frame');
-        var r = frame.getBoundingClientRect();
-        f.x = Math.max(0, Math.min(100, f.x + ev.dx / r.width * 100));
-        f.y = Math.max(0, Math.min(100, f.y + ev.dy / r.height * 100));
-        ev.target.style.left = f.x + '%';
-        ev.target.style.top = f.y + '%';
-        ev.target.style.transform = '';
-      },
-      end: function () { layoutBoxes(); renderProps(); }
-    }
+/* 字段表格编辑 */
+function renderFieldTable() {
+  var box = document.getElementById('field-table');
+  var html = '<table class="ft-table"><tr>' +
+    '<th>#</th><th>内容类型</th><th>x%</th><th>y%</th><th>宽%</th><th>字号</th><th>对齐</th><th>加粗</th><th></th></tr>';
+  design.fields.forEach(function (f, i) {
+    html += '<tr data-idx="' + i + '" class="' + (i === selectedIdx ? 'ft-sel' : '') + '">' +
+      '<td>' + (i + 1) + '</td>' +
+      '<td><select onchange="updField(' + i + ',\'type\',this.value)">' +
+      FIELD_TYPES.map(function (t) { return '<option value="' + t[0] + '"' + (f.type === t[0] ? ' selected' : '') + '>' + esc(t[1].split('（')[0]) + '</option>'; }).join('') +
+      '</select></td>' +
+      '<td><input type="number" step="0.5" value="' + f.x + '" onchange="updField(' + i + ',\'x\',parseFloat(this.value))" style="width:52px"></td>' +
+      '<td><input type="number" step="0.5" value="' + f.y + '" onchange="updField(' + i + ',\'y\',parseFloat(this.value))" style="width:52px"></td>' +
+      '<td><input type="number" step="1" value="' + (f.w || 30) + '" onchange="updField(' + i + ',\'w\',parseFloat(this.value))" style="width:44px"></td>' +
+      '<td><input type="number" step="1" value="' + f.size + '" onchange="updField(' + i + ',\'size\',parseFloat(this.value))" style="width:44px"></td>' +
+      '<td><select onchange="updField(' + i + ',\'align\',this.value)">' +
+      ['left|左', 'center|中', 'right|右'].map(function (a) {
+        var p0 = a.split('|');
+        return '<option value="' + p0[0] + '"' + (f.align === p0[0] ? ' selected' : '') + '>' + p0[1] + '</option>';
+      }).join('') + '</select></td>' +
+      '<td><input type="checkbox"' + (f.bold ? ' checked' : '') + ' onchange="updField(' + i + ',\'bold\',this.checked)"></td>' +
+      '<td><button class="btn tiny danger" onclick="delField(' + i + ')">删</button></td></tr>';
   });
+  html += '</table>';
+  if (!design.fields.length) html = '<div class="muted">暂无文本框——点下方添加。</div>';
+  box.innerHTML = html;
 }
-bindInteract();
+function updField(i, key, val) {
+  if (!design.fields[i]) return;
+  design.fields[i][key] = val;
+  renderPreviewFields();
+}
+function delField(i) {
+  design.fields.splice(i, 1);
+  selectedIdx = -1;
+  renderFieldTable(); renderPreviewFields();
+}
+document.getElementById('f-add').onclick = function () {
+  design.fields.push({type: 'name', x: 35, y: 40, w: 30, size: 16, align: 'left', bold: false, text: ''});
+  selectedIdx = design.fields.length - 1;
+  renderFieldTable(); renderPreviewFields();
+};
 
-/* 画布点击选中 */
-document.getElementById('ed-frame').addEventListener('click', function (e) {
-  var box = e.target.closest('.ed-box');
-  if (!box) { selIdx = -1; renderBoxes(); renderFieldRows(); renderProps(); return; }
-  selIdx = parseInt(box.dataset.idx, 10);
-  renderBoxes(); renderFieldRows(); renderProps();
-});
-function edAdd() {
-  design.fields.push({type: 'name', x: 35, y: 40, size: 16, align: 'left', bold: false, text: ''});
-  selIdx = design.fields.length - 1;
-  renderBoxes(); renderFieldRows(); renderProps();
-}
+/* 设计动作 */
 document.getElementById('d-new').onclick = function () {
-  design = {id: 0, name: '证书设计 ' + new Date().toISOString().slice(5, 10), bg_type: 'none', bg_url: '', fields: []};
-  selIdx = -1;
+  design = {id: 0, name: '证书设计 ' + new Date().toISOString().slice(5, 10), bg_type: 'none', bg_url: '', fields: [
+    {type: 'name', x: 43, y: 55, w: 30, size: 16, align: 'left', bold: false, text: ''},
+    {type: 'project', x: 43, y: 62, w: 30, size: 16, align: 'left', bold: false, text: ''},
+    {type: 'rank_cn', x: 43, y: 69, w: 30, size: 16, align: 'left', bold: false, text: ''},
+    {type: 'date', x: 47, y: 76, w: 25, size: 14, align: 'left', bold: false, text: ''}
+  ]};
   document.getElementById('d-name').value = design.name;
-  renderDesignList([]);   // R146：不再自动打开编辑器（浮层遮住底下的保存按钮）
+  renderPreview(); renderFieldTable();
 };
 document.getElementById('d-preset').onchange = function () {
   var o = this.selectedOptions[0];
   if (!o || !o.dataset.fields) return;
-  design.fields = JSON.parse(o.dataset.fields).map(function (f) { return Object.assign({}, f); });
-  selIdx = -1;
-  renderBoxes(); renderFieldRows(); renderProps();
+  design.fields = JSON.parse(o.dataset.fields).map(function (f) { return Object.assign({w: 30}, f); });
+  renderPreview(); renderFieldTable();
 };
 document.getElementById('d-save').onclick = async function () {
   var btn = this; btn.disabled = true;
@@ -304,7 +208,7 @@ document.getElementById('d-save').onclick = async function () {
     if (b64) payload.bg_b64 = b64;
     var r = await api('POST', '/api/events/' + CID + '/certs/designs', payload);
     design.id = r.id;
-    design.bg_url = design.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + design.id + '/bg?v=' + Date.now() + (design.bg_type === 'pdf' ? '&preview=1' : '') : '';
+    design.bg_url = design.bg_type !== 'none' ? '/api/events/' + CID + '/certs/designs/' + design.id + '/bg?preview=1&v=' + Date.now() : '';
     toast('设计已保存', 'ok');
     load();
   } catch (e) { toast(e.message, 'err'); }
@@ -313,13 +217,10 @@ document.getElementById('d-save').onclick = async function () {
 document.getElementById('d-del').onclick = async function () {
   if (!design.id) { toast('尚未保存的设计可直接新建覆盖', 'err'); return; }
   if (!confirm('删除该设计？')) return;
-  try { await api('DELETE', '/api/events/' + CID + '/certs/designs/' + design.id); design = {id: 0, name: '', bg_type: 'none', bg_url: '', fields: []}; selIdx = -1; load(); }
+  try { await api('DELETE', '/api/events/' + CID + '/certs/designs/' + design.id); design = {id: 0, name: '', bg_type: 'none', bg_url: '', fields: []}; load(); }
   catch (e) { toast(e.message, 'err'); }
 };
-document.getElementById('edit-open').onclick = function () {
-  if (!design.fields.length && !design.id) { toast('请先新建或选择一个设计', 'err'); return; }
-  openEditor();
-};
 
+window.addEventListener('resize', function () { renderPreviewFields(); });
 load().catch(function (e) { document.getElementById('design-list').innerHTML = '<div class="card err">' + esc(e.message) + '</div>'; });
 {% endblock %}
