@@ -5761,61 +5761,73 @@ async def api_runboard(competition_id: int, request: Request = None):
 
 @app.get("/api/events/{competition_id}/run-order")
 async def api_run_order_get(competition_id: int, request: Request = None):
-    """当前已保存的比赛顺序（仅待赛场次）；roster 供前端重排时自算连场数。"""
+    """当前已保存的比赛顺序（仅待赛场次）；roster 供前端重排时自算连场数；
+    category/is_group/is_showcase 为编排维度（R147）。"""
     require_admin(request)
     _comp_or_404(competition_id)
     items = []
     for e in _pending_events(competition_id):
         rs = _roster_set(e["id"])
+        d0 = _event_dims(e["name"], dances_of(e["id"]), len(rs))
         items.append({"ceid": e["id"], "code": e["code"], "name": e["name"],
                       "project": e["project_code"], "round": e["round"],
-                      "run_seq": e["run_seq"], "roster": sorted(rs)})
+                      "run_seq": e["run_seq"], "roster": sorted(rs), **d0})
     return {"order": items}
 
 
 @app.get("/api/events/{competition_id}/run-order/proposal")
 async def api_run_order_proposal(competition_id: int, request: Request = None):
-    """防连场自动排序建议：尊重同项目轮次依赖（轮次未齐不得跳轮），
-    贪心选择与上一场选手重叠最小的场次；首场取人数最少者降低开场压力。"""
+    """自动排序建议（R147 多维度）：①同项目轮次依赖（低轮未齐不得进高轮，预赛段在前决赛段在后）；
+    ②大类聚段——拉丁/摩登/交谊舞各自连排，跨大类选手不反复换装；③集体项目连排（同大类段内）；
+    ④表演型（队列舞等多对逐个上场）固定压轴；段内贪心保持相邻场次选手重叠最少（防连场），
+    块首取人数最少者降低开场压力。"""
     require_admin(request)
     _comp_or_404(competition_id)
     pending = _pending_events(competition_id)
     rosters = {e["id"]: _roster_set(e["id"]) for e in pending}
-    pending_pr = {}
-    for e in pending:
-        pending_pr[(e["project_code"], e["round"])] = pending_pr.get((e["project_code"], e["round"]), 0) + 1
+    dims = {e["id"]: _event_dims(e["name"], dances_of(e["id"]), len(rosters[e["id"]])) for e in pending}
     order, overlaps = [], []
     last = set()
-    # R75 分层贪心：按轮次分层（先全部 R1，再全部 R2…），层内贪心选与上一场重叠最小者——
-    # 保证「预赛段在前、决赛段在后」的段落结构（同项目预决赛之间自然隔开全部其他场次，
-    # 留出算分与校对时间），层内防连场不变。
+
+    def push(e):
+        nonlocal last
+        overlaps.append(len(rosters[e["id"]] & last) if order else 0)
+        order.append(e)
+        last = rosters[e["id"]]
+
+    normal = [e for e in pending if not dims[e["id"]]["is_showcase"]]
+    showcase = [e for e in pending if dims[e["id"]]["is_showcase"]]
     max_round = max((e["round"] for e in pending), default=1)
-    remaining = {e["id"]: e for e in pending}
+    remaining = {e["id"]: e for e in normal}
     for rnd in range(1, max_round + 1):
         layer = [e for e in remaining.values() if e["round"] == rnd]
-        # 依赖兜底：若某项目低轮缺失，其高轮随所在层排（不应发生）
+        blocks = {}
         for e in layer:
-            pass
-        layer.sort(key=lambda e: (len(rosters[e["id"]]), e["project_code"], e["code"]))
-        while layer:
-            if last:
-                best = min(layer, key=lambda e: len(rosters[e["id"]] & last))
-            else:
-                best = min(layer, key=lambda e: len(rosters[e["id"]]))
-            order.append(best)
-            overlaps.append(len(rosters[best["id"]] & last) if last else 0)
-            last = rosters[best["id"]]
-            layer.remove(best)
-            del remaining[best["id"]]
-        # 低轮未排完不得进高轮（轮次依赖）；若 remaining 还有低轮（异常），下一轮循环兜底
+            blocks.setdefault(dims[e["id"]]["category"], []).append(e)
+        # 大类块排序：场次数多者先（聚成大段减少碎片），同数按类别名（确定性）
+        for cat in sorted(blocks, key=lambda c: (-len(blocks[c]), c)):
+            block = blocks[cat][:]
+            block.sort(key=lambda e: (len(rosters[e["id"]]), e["project_code"], e["code"]))
+            while block:
+                if order:
+                    best = min(block, key=lambda e: (len(rosters[e["id"]] & last),
+                                                     len(rosters[e["id"]]), e["code"]))
+                else:
+                    best = min(block, key=lambda e: (len(rosters[e["id"]]), e["code"]))
+                push(best)
+                block.remove(best)
+                del remaining[best["id"]]
+        # 低轮未排完不得进高轮（轮次依赖兜底，异常场景）
         leftover_low = [e for e in remaining.values() if e["round"] <= rnd]
-        if leftover_low:
-            for e in leftover_low:
-                order.append(e)
-                overlaps.append(0)
-                del remaining[e["id"]]
+        for e in sorted(leftover_low, key=lambda e: (e["round"], e["code"])):
+            push(e)
+            del remaining[e["id"]]
+    # 表演型（队列舞等）压轴：先低轮后高轮，小队先上场
+    showcase.sort(key=lambda e: (e["round"], len(rosters[e["id"]]), e["code"]))
+    for e in showcase:
+        push(e)
     items = [{"ceid": e["id"], "code": e["code"], "name": e["name"], "project": e["project_code"],
-              "round": e["round"], "roster": sorted(rosters[e["id"]])} for e in order]
+              "round": e["round"], "roster": sorted(rosters[e["id"]]), **dims[e["id"]]} for e in order]
     return {"order": items, "overlaps": overlaps}
 
 
@@ -5999,7 +6011,35 @@ def _clean_round_words(name):
 _COMBO_DANCES = {"A三项": ["平四", "慢三", "交谊舞伦巴"], "B两项": ["平四", "交谊舞伦巴"]}
 _DANCE_KEYWORDS = ["维也纳华尔兹", "交谊舞伦巴", "华尔兹", "探戈", "狐步", "快步",
                    "恰恰", "伦巴", "牛仔", "桑巴", "斗牛",
-                   "平四", "慢三", "慢四", "吉特巴"]
+                   "平四", "慢三", "快三", "慢四", "吉特巴"]
+
+# R147 舞种大类与集体/表演型识别（赛程编排维度）：
+# 拉丁/摩登/交谊舞互为不同大类——同类场次聚段编排，避免跨大类选手反复换装；
+# 队列舞/团体舞/集体舞为表演型（多对逐个上场）——固定压轴。
+_KW_CATEGORY = {
+    "交谊舞伦巴": "交谊舞", "维也纳华尔兹": "摩登", "华尔兹": "摩登", "探戈": "摩登",
+    "狐步": "摩登", "快步": "摩登",
+    "恰恰": "拉丁", "伦巴": "拉丁", "牛仔": "拉丁", "桑巴": "拉丁", "斗牛": "拉丁",
+    "平四": "交谊舞", "慢三": "交谊舞", "快三": "交谊舞", "慢四": "交谊舞", "吉特巴": "交谊舞",
+}
+_SHOWCASE_KEYWORDS = ("队列舞", "团体舞", "集体舞")
+_GROUP_KEYWORDS = _SHOWCASE_KEYWORDS + ("集体", "六人", "八人")
+
+
+def _event_dims(name, dances, roster_n):
+    """场次编排维度：{"category": 大类, "is_group": 集体项目, "is_showcase": 表演型（压轴）}。
+    名称+舞种含 队列舞/团体舞/集体舞 → 表演型；含 集体/六人/八人 → 集体（人数>8 对才判表演型）。"""
+    txt = " ".join([str(name or "")] + [str(d) for d in (dances or [])])
+    explicit = any(k in txt for k in _SHOWCASE_KEYWORDS)
+    is_group = explicit or any(k in txt for k in _GROUP_KEYWORDS)
+    showcase = is_group and (explicit or roster_n > 8)
+    cat = "其他"
+    if not is_group:
+        for kw in sorted(_KW_CATEGORY, key=len, reverse=True):
+            if kw in txt:
+                cat = _KW_CATEGORY[kw]
+                break
+    return {"category": "集体" if is_group else cat, "is_group": is_group, "is_showcase": showcase}
 
 
 def _infer_dances(project_name):

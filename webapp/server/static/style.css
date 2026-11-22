@@ -1352,3 +1352,12 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .ed-rh.l { left: -6px; }
 .ed-rh.r { right: -6px; }
 .ed-label { display: inline-block; }
+
+/* ================= R147 赛程编排维度（大类/集体/表演型/连场） ================= */
+.tag.err { background: #fee2e2; color: #b91c1c; }
+.dim-toggles { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.dim-toggles .switch-line { margin: 0; }
+.cat-chip { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: .78rem; font-weight: 700; white-space: nowrap; }
+.ro-divider { list-style: none; text-align: center; color: #b91c1c; font-weight: 700; font-size: .88rem;
+  padding: 6px 0; margin: 6px 0 4px; border-top: 1px dashed #f0b4b4; }
+.ro-item.ro-showcase { background: #fff7f7; }
