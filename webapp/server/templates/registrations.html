@@ -86,7 +86,6 @@ async function load() {
   DATA = await api('GET', '/api/events/' + CID + '/registrations');
   renderProjects();
   renderEntryLinks();
-  renderEntryLinks();
   var s = DATA.settings;
   document.getElementById('s-open').checked = !!s.open;
   document.getElementById('s-mode-individual').checked = s.modes.indexOf('individual') > -1;
@@ -96,35 +95,7 @@ async function load() {
   renderList();
 }
 
-/* ① 设项：列表 / 添加 / 删除（项目编号自然数自动分配） */
-async function renderEntryLinks() {
-  try {
-    var d = await api('GET', '/api/events/' + CID + '/registrations/entry-links');
-    document.getElementById('entry-qr').src = d.public_qr || '';
-    document.getElementById('entry-public').value = d.public_url;
-    var box = document.getElementById('unit-links');
-    if (!d.unit_links.length) { box.innerHTML = '<div class="muted">尚无单位管理员链接——在上方输入单位名称生成。</div>'; return; }
-    var html = '<table><tr><th>单位</th><th>已报条目</th><th>管理员链接</th></tr>';
-    d.unit_links.forEach(function (u) {
-      html += '<tr><td><b>' + esc(u.unit) + '</b></td><td>' + u.count + '</td>' +
-        '<td><input readonly value="' + esc(u.url) + '" onclick="this.select()" style="width:100%"></td></tr>';
-    });
-    box.innerHTML = html + '</table>';
-  } catch (e) { /* 忽略入口加载失败 */ }
-}
-document.getElementById('u-gen').onclick = async function () {
-  var unit = document.getElementById('u-new').value.trim();
-  if (!unit) { toast('请输入单位名称', 'err'); return; }
-  try {
-    var r = await api('POST', '/api/events/' + CID + '/registrations/unit-links', {unit: unit});
-    var box = document.getElementById('unit-links');
-    var row = '<div class="ok-text">已生成「' + esc(unit) + '」管理员链接（复制发给该单位）：</div>' +
-      '<input readonly value="' + esc(r.url) + '" onclick="this.select()" style="width:100%;margin:4px 0">';
-    box.insertAdjacentHTML('afterbegin', row);
-    copyText(r.url, '链接已复制');
-    load();
-  } catch (e) { toast(e.message, 'err'); }
-};
+/* ③ 报名入口：二维码 + 单位管理员链接 */
 async function renderEntryLinks() {
   try {
     var d = await api('GET', '/api/events/' + CID + '/registrations/entry-links');

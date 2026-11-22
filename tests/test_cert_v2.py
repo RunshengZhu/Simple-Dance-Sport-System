@@ -139,4 +139,4 @@ def test_cert_design_and_generate_v2(env):
     html = req("GET", "/events/%d/certs/%d" % (cid, env["ceid"]), role="admin").text
     assert "选择证书设计" in html
     html2 = req("GET", "/events/%d/cert-design" % cid, role="admin").text
-    assert "cert-preview" in html2 and "preview-fields" in html2
+    assert "ed-canvas" in html2 and "ed-layer" in html2 and "interact.min.js" in html2

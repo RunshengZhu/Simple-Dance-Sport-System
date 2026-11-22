@@ -1338,3 +1338,17 @@ tr.scoring-now td { background: rgba(192,57,43,.08); }
 .snap-line { position: absolute; background: var(--acc); z-index: 10; }
 .snap-line.v { width: 1px; top: 0; bottom: 0; }
 .snap-line.h { height: 1px; left: 0; right: 0; }
+
+/* ================= R146 证书设计器：画布编辑（拖拽/吸附/调宽） ================= */
+.cert-editor2 { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.ed-canvas { position: relative; flex: 0 0 480px; max-width: 100%; border: 1px solid var(--line-strong); background: #fff; aspect-ratio: 595/842; overflow: hidden; }
+.ed-canvas .ed-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--hint); font-size: .85rem; overflow: hidden; }
+.ed-canvas .ed-bg img { width: 100%; display: block; }
+.ed-layer { position: absolute; inset: 0; touch-action: none; }
+.ed-box.tight { border-color: #e67e22; border-style: solid; }
+.ed-side { flex: 1 1 260px; min-width: 250px; display: flex; flex-direction: column; gap: 12px; }
+.ed-side .ed-panel { margin: 0; }
+.ed-rh { position: absolute; top: -5px; bottom: -5px; width: 11px; cursor: ew-resize; }
+.ed-rh.l { left: -6px; }
+.ed-rh.r { right: -6px; }
+.ed-label { display: inline-block; }

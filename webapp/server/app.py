@@ -1742,6 +1742,7 @@ async def api_cert_designs_save(competition_id: int, request: Request = None):
         try:
             clean.append({"type": str(f.get("type") or "custom"), "text": str(f.get("text") or "")[:60],
                           "x": float(f.get("x") or 10), "y": float(f.get("y") or 10),
+                          "w": max(2, min(100, float(f.get("w") or 30))),
                           "size": max(6, min(60, float(f.get("size") or 16))),
                           "align": f.get("align") if f.get("align") in ("left", "center", "right") else "left",
                           "bold": bool(f.get("bold"))})
@@ -1766,20 +1767,29 @@ async def api_cert_designs_save(competition_id: int, request: Request = None):
                 except Exception:
                     raise HTTPException(status_code=400, detail="不是有效的图片文件")
             bg_fname = "bg%d-%s" % (int(time.time()), secrets.token_hex(4)) + (".pdf" if bg_type == "pdf" else ".img")
-            with open(os.path.join(_cert_design_dir(competition_id), bg_fname), "wb") as f:
-                f.write(data)
             if bg_type == "pdf":
-                # R144 PDF 背景 → 栅格化首页 PNG，编辑器 WYSIWYG 预览（零客户端依赖）
+                # R146: PDF 背景 → 重制为 150dpi JPEG 单页 PDF（原 PDF 常 10MB+，逐页嵌入生成会爆体积），
+                #       同时产出 110dpi PNG 预览（编辑器 WYSIWYG）。重制失败时保留原文件。
                 try:
                     import pymupdf as _pm
                     _doc0 = _pm.open(stream=data, filetype="pdf")
-                    _pix = _doc0[0].get_pixmap(dpi=110)
+                    _pg0 = _doc0[0]
+                    _pw0, _ph0 = _pg0.rect.width, _pg0.rect.height
+                    _jpg = _pg0.get_pixmap(dpi=150).tobytes("jpg", jpg_quality=85)
+                    _doc1 = _pm.open()
+                    _p1 = _doc1.new_page(width=_pw0, height=_ph0)
+                    _p1.insert_image(_p1.rect, stream=_jpg)
+                    data = _doc1.tobytes(deflate=True, garbage=4)
+                    _doc1.close()
+                    _pix = _pg0.get_pixmap(dpi=110)
                     with open(os.path.join(_cert_design_dir(competition_id), bg_fname + ".preview.png"), "wb") as f:
                         f.write(_pix.tobytes("png"))
                     _doc0.close()
                 except Exception as e:
                     import logging
                     logging.getLogger("uvicorn.error").warning("cert bg rasterize failed: %s", e)   # 失败可见（不再静默）
+            with open(os.path.join(_cert_design_dir(competition_id), bg_fname), "wb") as f:
+                f.write(data)
     if did:
         row = _cert_design_or_404(competition_id, int(did))
         if bg_fname:
@@ -1814,26 +1824,6 @@ async def api_cert_designs_delete(competition_id: int, design_id: int, request: 
 @app.post("/api/events/{competition_id}/certs/designs/{design_id}/regen-preview")
 async def api_cert_design_regen_preview(competition_id: int, design_id: int, request: Request = None):
     """R144b：为 PDF 背景按需重新生成预览 PNG（历史设计预览缺失时用）。"""
-    require_admin(request)
-    row = _cert_design_or_404(competition_id, design_id)
-    if row["bg_type"] != "pdf" or not row["bg_fname"]:
-        raise HTTPException(status_code=400, detail="该设计不是 PDF 背景")
-    path = os.path.join(_cert_design_dir(competition_id), row["bg_fname"])
-    try:
-        import pymupdf as _pm
-        doc0 = _pm.open(path)
-        pix = doc0[0].get_pixmap(dpi=110)
-        with open(path + ".preview.png", "wb") as f:
-            f.write(pix.tobytes("png"))
-        doc0.close()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="栅格化失败: " + str(e))
-    return {"ok": True}
-
-
-@app.post("/api/events/{competition_id}/certs/designs/{design_id}/regen-preview")
-async def api_cert_design_regen_preview(competition_id: int, design_id: int, request: Request = None):
-    """R144b：为 PDF 背景按需重新生成预览 PNG。"""
     require_admin(request)
     row = _cert_design_or_404(competition_id, design_id)
     if row["bg_type"] != "pdf" or not row["bg_fname"]:
