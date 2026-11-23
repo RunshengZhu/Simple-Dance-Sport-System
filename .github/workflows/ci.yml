@@ -24,6 +24,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 仅 debug 步骤推 ci-log 分支用（诊断完成后随步骤一并移除）
     steps:
       - name: Checkout
         uses: actions/checkout@v4
