@@ -39,7 +39,19 @@ jobs:
           pip install -r requirements.txt pytest
 
       - name: Run tests
-        run: python -m pytest -q
+        run: |
+          if python -m pytest -q --tb=short > pytest-out.txt 2>&1; then
+            tail -3 pytest-out.txt
+          else
+            # 失败时把结果尾部写入 step summary（check-runs API 可读，免拉日志权限）
+            {
+              echo "### pytest 失败尾部"
+              echo '```'
+              tail -60 pytest-out.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
   lint:
     runs-on: ubuntu-latest
