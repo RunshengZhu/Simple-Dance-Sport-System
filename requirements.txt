@@ -14,6 +14,13 @@ jinja2==3.1.6
 # ---- 测试（CI/开发）----
 httpx==0.28.1
 pytest==8.4.2
+
+# ---- 证书管线（生产实测锁定；R148 前 CI 环境缺这些导致 cert 测试收集失败、红榜连片）----
+pillow==11.3.0
+pypdf==6.21.4
+reportlab==4.0.8
+pymupdf==1.26.5
+segno==1.6.6
 # desktop/src 对照基准（tests/conftest.py 以顶层包名 src 导入）顶层 import numpy，
 # 必须显式安装（R47 复审 P1：干净环境缺 numpy 导致 3 个收集错误）
 numpy==2.0.2
