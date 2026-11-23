@@ -74,11 +74,12 @@ var CID = {{ comp.id if comp else 0 }};
     h.appendChild(t);
   }
 })();
+/* R148：不再监听 score_submitted——工作台展示的都是「自己」的提交态（评分页就地更新），
+   他人提交不改变本页内容；过去每次他人提交都整页重载，12 裁判同场时所有裁判端反复白屏。 */
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
   competition_event_opened: softReload,
   competition_event_closed: softReload,
   roster_changed: softReload,
-  score_submitted: softReload,
   score_returned: softReload
 }, softReload, 6000);
 {% endblock %}

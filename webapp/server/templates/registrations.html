@@ -49,6 +49,7 @@
   <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px">
     <div><label>为以下单位生成管理员链接</label><input id="u-new" placeholder="输入单位全称"></div>
     <button class="btn small" id="u-gen">生成链接</button>
+    <button class="btn small danger" id="u-rotate" title="链接外泄时使用：此前发出的全部单位链接立即失效">作废全部单位链接</button>
   </div>
   <div id="unit-links" style="margin-top:8px"></div>
 </div>
@@ -120,6 +121,14 @@ document.getElementById('u-gen').onclick = async function () {
       '<input readonly value="' + esc(r.url) + '" onclick="this.select()" style="width:100%;margin:4px 0">';
     document.getElementById('unit-links').insertAdjacentHTML('afterbegin', row);
     copyText(r.url, '链接已复制');
+    load();
+  } catch (e) { toast(e.message, 'err'); }
+};
+document.getElementById('u-rotate').onclick = async function () {
+  if (!confirm('作废全部单位链接？\n此前发给各单位的链接立即失效——需要重新生成并重新分发，各单位未提交的填报入口会打不开。')) return;
+  try {
+    await api('POST', '/api/events/' + CID + '/registrations/unit-links/rotate', {});
+    toast('已作废——请在下方列表重新生成各单位链接', 'ok');
     load();
   } catch (e) { toast(e.message, 'err'); }
 };

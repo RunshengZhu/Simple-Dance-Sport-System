@@ -1027,12 +1027,6 @@ async def import_redirect(competition_id: int):
     return RedirectResponse("/events/{0}/roster".format(competition_id), status_code=302)
 
 
-@app.get("/events/{competition_id}/import-old", response_class=HTMLResponse)
-async def import_page(request: Request, competition_id: int):
-    require_admin(request)
-    return templates.TemplateResponse(request, "import.html", {"request": request, "comp": _comp_or_404(competition_id)})
-
-
 @app.get("/events/{competition_id}/schedule", response_class=HTMLResponse)
 async def schedule_page(request: Request, competition_id: int):
     require_admin(request)
@@ -1506,12 +1500,6 @@ def _cn_rank(n):
     return "第" + str(n) + "名"
 
 
-def _cert_dir(competition_id):
-    base = os.path.dirname(db.DEFAULT_DB)
-    d = os.path.join(base, CERT_DIR_NAME, str(competition_id))
-    os.makedirs(d, exist_ok=True)
-    return d
-
 
 def _escape_xml(t):
     from xml.sax.saxutils import escape as _e
@@ -1594,74 +1582,6 @@ def _docx_split(doc):
     return doc[:i], doc[i:j], sect, tail
 
 
-def _docx_body_fill(template_bytes, mapping, name_count=None):
-    """只对 word/document.xml 正文做段落级替换，返回（替换后的正文 XML, sectPr）。
-    供多份证书合并为单文档。"""
-    import io as _io
-    import zipfile as _zf
-    zin = _zf.ZipFile(_io.BytesIO(template_bytes))
-    xml = zin.read("word/document.xml").decode("utf-8")
-    zin.close()
-    _head, body, _sect, _tail = _docx_split(xml)
-    para_re2 = re.compile(r"<w:p[ >].*?</w:p>", re.S)
-    rpr_re2 = re.compile(r"<w:rPr>.*?</w:rPr>", re.S)
-
-    def shrink(rpr, cnt):
-        m2 = re.search(r'<w:sz w:val="(\d+)"', rpr)
-        base = int(m2.group(1)) if m2 else 28
-        new = base - (8 if cnt >= 12 else 6 if cnt >= 8 else 4 if cnt >= 5 else 0)
-        new = max(14, new)
-        if m2:
-            rpr = rpr.replace('w:val="%d"' % base, 'w:val="%d"' % new, 1)
-        else:
-            rpr += '<w:sz w:val="%d"/><w:szCs w:val="%d"/>' % (new, new)
-        return rpr
-
-    def repl_para(m0):
-        para = m0.group(0)
-        texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", para)
-        combined = "".join(texts)
-        if "{{" not in combined:
-            return para
-        out = combined
-        for k, v in mapping.items():
-            out = out.replace(k, v)
-        i = para.find("<w:r")
-        if i < 0:
-            return para
-        j = para.rfind("</w:r>") + len("</w:r>")
-        head, tail = para[:i], para[j:]
-        first_run_end = para.find("</w:r>", i) + len("</w:r>")
-        first_run = para[i:first_run_end]
-        m_rpr = rpr_re2.search(first_run)
-        rpr = m_rpr.group(0) if m_rpr else ""
-        if name_count and name_count >= 5 and "{{选手名单}}" in combined:
-            rpr = shrink(rpr, name_count)
-        return head + "<w:r>" + rpr + '<w:t xml:space="preserve">' + out + "</w:t></w:r>" + tail
-
-    return para_re2.sub(repl_para, body)
-
-
-def _docx_merge(template_bytes, filled_bodies):
-    """N 份填充后的正文合并为单一 docx（每份一页，分页符分隔），其余 zip 部件原样保留。"""
-    import io as _io
-    import zipfile as _zf
-    zin = _zf.ZipFile(_io.BytesIO(template_bytes))
-    doc = zin.read("word/document.xml").decode("utf-8")
-    _head, _body, _sect, _tail = _docx_split(doc)
-    page_break = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
-    joined = page_break.join(filled_bodies)
-    doc2 = _head + joined + _sect + _tail
-    buf2 = _io.BytesIO()
-    zout2 = _zf.ZipFile(buf2, "w", _zf.ZIP_DEFLATED)
-    for item in zin.infolist():
-        data = zin.read(item.filename)
-        if item.filename == "word/document.xml":
-            data = doc2.encode("utf-8")
-        zout2.writestr(item, data)
-    zin.close()
-    zout2.close()
-    return buf2.getvalue()
 
 
 def _cert_members_auto(conn, ev, number):
@@ -2028,13 +1948,9 @@ async def api_certs_data(competition_id: int, ceid: int, request: Request = None
                           "names": names, "unit": "、".join(units),
                           "override": num in over})
         ranks.sort(key=lambda x: (x["rank"], x["number"]))
-    tmpls = [dict(r) for r in db.rows(conn.execute(
-        "SELECT id, name, fname, created_at FROM cert_templates WHERE competition_id=? ORDER BY id DESC",
-        (competition_id,)))]
     return {"ev": {"id": ev["id"], "code": ev["code"], "name": ev["name"],
                    "scoring_type": ev["scoring_type"], "cert_printed_at": ev["cert_printed_at"] if "cert_printed_at" in ev.keys() else ""},
-            "ranks": ranks, "templates": tmpls,
-            "placeholders": ["{{赛事名称}}", "{{项目名称}}", "{{名次}}", "{{名次数字}}", "{{选手名单}}", "{{单位}}", "{{日期}}"]}
+            "ranks": ranks}
 
 
 @app.post("/api/events/{competition_id}/certs/{ceid}/members")
@@ -2055,114 +1971,6 @@ async def api_certs_members(competition_id: int, ceid: int, request: Request = N
         conn.execute("DELETE FROM cert_members WHERE event_id=? AND number=?", (ceid, number))
     conn.commit()
     return {"ok": True, "names": names}
-
-
-@app.post("/api/events/{competition_id}/certs/templates")
-async def api_certs_template_upload(competition_id: int, request: Request = None):
-    """上传证书模板（docx；base64）。doc 为二进制格式不支持，请先另存为 docx。"""
-    require_admin(request)
-    comp = _comp_or_404(competition_id)
-    body = await request.json()
-    name = str(body.get("name") or "").strip() or "证书模板"
-    b64 = str(body.get("b64") or "")
-    import base64 as _b64
-    try:
-        data = _b64.b64decode(b64)
-    except Exception:
-        raise HTTPException(status_code=400, detail="base64 解码失败")
-    if len(data) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="模板过大（>20MB）")
-    if data[:4] == b"\xd0\xcf\x11\xe0":
-        raise HTTPException(status_code=400, detail="检测到旧版 .doc 二进制格式——请用 Word/WPS 另存为 .docx 后再上传")
-    if not (data[:2] == b"PK" and b"word/document.xml" in data):
-        raise HTTPException(status_code=400, detail="不是有效的 docx 文件")
-    fname = "t%d-%s.docx" % (int(time.time()), secrets.token_hex(4))
-    path = os.path.join(_cert_dir(competition_id), fname)
-    with open(path, "wb") as f:
-        f.write(data)
-    conn = db.get_db()
-    cur = conn.execute("INSERT INTO cert_templates(competition_id, name, fname) VALUES(?,?,?)",
-                       (competition_id, name[:60], fname))
-    conn.commit()
-    return {"ok": True, "id": cur.lastrowid}
-
-
-@app.delete("/api/events/{competition_id}/certs/templates/{tid}")
-async def api_certs_template_delete(competition_id: int, tid: int, request: Request = None):
-    require_admin(request)
-    conn = db.get_db()
-    row = db.rowdict(conn.execute("SELECT * FROM cert_templates WHERE id=? AND competition_id=?",
-                                  (tid, competition_id)).fetchone())
-    if not row:
-        raise HTTPException(status_code=404, detail="模板不存在")
-    try:
-        os.remove(os.path.join(_cert_dir(competition_id), row["fname"]))
-    except OSError:
-        pass
-    conn.execute("DELETE FROM cert_templates WHERE id=?", (tid,))
-    conn.commit()
-    return {"ok": True}
-
-
-@app.post("/api/events/{competition_id}/certs/{ceid}/generate")
-async def api_certs_generate(competition_id: int, ceid: int, request: Request = None):
-    """按顺位生成全部证书 docx：每个选手一份（其姓名在名单开头），名次顺序排列，自动缩字号。
-    生成即标记该场证书已打印（可重复生成覆盖标记）。"""
-    s = require_admin(request)
-    comp = _comp_or_404(competition_id)
-    ev = _event_or_404(ceid)
-    body = await request.json()
-    tid = int(body.get("template_id") or 0)
-    conn = db.get_db()
-    trow = db.rowdict(conn.execute("SELECT * FROM cert_templates WHERE id=? AND competition_id=?",
-                                   (tid, competition_id)).fetchone())
-    if not trow:
-        raise HTTPException(status_code=400, detail="请选择证书模板")
-    tpath = os.path.join(_cert_dir(competition_id), trow["fname"])
-    with open(tpath, "rb") as f:
-        tb = f.read()
-    res = load_results(ceid)
-    if not res or not res.get("overall_results"):
-        raise HTTPException(status_code=400, detail="该场次暂无已计算成绩")
-    conn2 = db.get_db()
-    over = _cert_overrides(conn2, ceid)
-    ranks = sorted(res["overall_results"], key=lambda r: (float(r["rank"]), str(r["competitor_number"])))
-    day = (comp["date"] or "").strip() or time.strftime("%Y-%m-%d")
-    filled, total_copies = [], 0
-    for r0 in ranks:
-        num = str(r0["competitor_number"])
-        rank = int(r0["rank"])
-        names, units = _cert_members_auto(conn2, ev, num)
-        if num in over:
-            names = [x.strip() for x in over[num].split("\n") if x.strip()]
-        if not names:
-            names = [num]
-        for nm in names:
-            listing = [nm] + [x for x in names if x != nm]   # 本人姓名在名单开头
-            mapping = {
-                "{{赛事名称}}": comp["name"],
-                "{{项目名称}}": ev["name"],
-                "{{名次}}": _cn_rank(rank),
-                "{{名次数字}}": str(rank),
-                "{{选手名单}}": "、".join(listing),
-                "{{单位}}": "、".join(units),
-                "{{日期}}": day,
-            }
-            body_i = _docx_body_fill(tb, mapping, name_count=len(listing))
-            filled.append(body_i)
-            total_copies += 1
-    if not filled:
-        raise HTTPException(status_code=400, detail="没有可生成的证书（成绩为空）")
-    out_bytes = _docx_merge(tb, filled)
-    conn.execute("UPDATE events SET cert_printed_at=datetime('now','localtime') WHERE id=?", (ceid,))
-    conn.commit()
-    _audit(_actor_name(s), "cert_print", "event:{0}".format(ceid),
-           "{0} 生成 {1} 份证书（模板 {2}）".format(ev["code"], total_copies, trow["name"]), _client_ip(request))
-    sse.bus.publish(competition_id, "cert_printed", {"event_id": ceid, "copies": total_copies})
-    stamp = time.strftime("%Y%m%d%H%M")
-    return Response(out_bytes,
-                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    headers={"Content-Disposition": "attachment; filename=certs-{0}-{1}.docx".format(ev["code"], stamp)})
 
 
 # ------------------------------------------------------------------ R141 公示打印台（打印员角色）
@@ -5144,7 +4952,8 @@ async def api_register_submit(competition_id: int, request: Request = None):
         raise HTTPException(status_code=400, detail="单位报名需填写单位名称、联系人与联系电话")
     batch_id = secrets.token_hex(8)
     submit_code = "BM" + secrets.token_hex(3).upper()
-    ins, problems, seen = 0, [], set()
+    ins, new_ins, problems, seen = 0, 0, [], set()
+    merged_codes = []   # R148：合并进已有报名时，沿用旧提交码——否则响应码查无记录（幽灵码）
     for m in members:
         name = str(m.get("name") or "").strip()
         gender = str(m.get("gender") or "").strip()
@@ -5166,10 +4975,12 @@ async def api_register_submit(competition_id: int, request: Request = None):
         existing = None
         if mode == "individual":
             existing = db.rowdict(conn.execute(
-                "SELECT id, projects FROM registrations WHERE competition_id=? AND name=? "
+                "SELECT id, projects, submit_code FROM registrations WHERE competition_id=? AND name=? "
                 "AND COALESCE(contact_phone,'')=? ORDER BY id LIMIT 1",
                 (competition_id, name, contact_phone)).fetchone())
         if existing:
+            if existing["submit_code"] and existing["submit_code"] not in merged_codes:
+                merged_codes.append(existing["submit_code"])
             merged = list(dict.fromkeys(
                 [p for p in (existing["projects"] or "").split(",") if p] + projs))
             conn.execute("UPDATE registrations SET gender=?, role=?, partner=?, partner_unit=?, partner_role=?, "
@@ -5193,13 +5004,20 @@ async def api_register_submit(competition_id: int, request: Request = None):
              str(m.get("partner_role") or "").strip()[:20],
              ",".join(projs), note, submit_code))
         ins += 1
+        new_ins += 1
     if ins == 0:
         conn.rollback()
         raise HTTPException(status_code=400, detail="；".join(problems[:3]) or "无有效报名条目")
     conn.commit()
+    # R148：无新入库（全部合并进已有报名）时返回旧码——新码未落库，返回即幽灵码；
+    # 混合场景（新入库+合并）以新批码为准，并在 problems 里告知合并条目的归属码。
+    final_code = submit_code if new_ins else (merged_codes[0] if merged_codes else submit_code)
+    if new_ins and merged_codes:
+        problems.append("已有报名已合并（提交码 %s）" % "、".join(merged_codes))
     _audit("报名提交", "register_submit", "comp:{0}".format(competition_id),
-           "{0} 模式 {1} 条（提交码 {2}）".format(mode, ins, submit_code), _client_ip(request))
-    return {"ok": True, "count": ins, "submit_code": submit_code, "problems": problems}
+           "{0} 模式 {1} 条（提交码 {2}）".format(mode, ins, final_code), _client_ip(request))
+    return {"ok": True, "count": ins, "submit_code": final_code,
+            "merged": len(merged_codes), "problems": problems}
 
 
 # ---------------- R142 设项（项目编号=自然数，筹备期在「设项与报名」维护） ----------------
@@ -5275,15 +5093,58 @@ async def api_register_status(competition_id: int, request: Request = None, code
 
 
 # ---------------- R143 报名入口体系：公开二维码 + 单位管理员链接（免登录 HMAC） ----------------
+def _unit_link_seed(conn, competition_id: int) -> str:
+    """R148 单位链接轮换种子（app_meta）。空 = 未轮换过（兼容历史无 seed 段的链接）。"""
+    key = "unit_link_seed:{0}".format(competition_id)
+    row = db.rowdict(conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone())
+    return row["value"] if row else ""
+
+
+def _sign_unit(conn, competition_id: int, unit: str) -> str:
+    """单位链接签名（含轮换 seed 段）。"""
+    import hmac as _h
+    key = _link_secret(conn).encode()
+    msg = "{0}|unitmgr|{1}|{2}".format(competition_id, unit, _unit_link_seed(conn, competition_id)).encode()
+    return _h.new(key, msg, "sha256").hexdigest()[:32]
+
+
 def _unit_link(conn, competition_id: int, unit: str) -> str:
-    """单位管理员直达链接：HMAC 签名（单位名），点开即以该单位名义填报。"""
-    token = _sign_direct(conn, "unitmgr", unit, competition_id)
+    """单位管理员直达链接：HMAC 签名（单位名+轮换种子），点开即以该单位名义填报。"""
+    token = _sign_unit(conn, competition_id, unit)
     return "/competitions/{0}/unit-register/{1}/{2}".format(
         competition_id, urllib.parse.quote(unit, safe=""), token)
 
 
 def _check_unit_link(conn, competition_id: int, unit: str, token: str) -> bool:
-    return _check_direct(conn, competition_id, "unitmgr", unit, token)
+    import hmac as _h
+    key = _link_secret(conn).encode()
+    seed = _unit_link_seed(conn, competition_id)
+    msg = "{0}|unitmgr|{1}|{2}".format(competition_id, unit, seed).encode()
+    if _h.compare_digest(_h.new(key, msg, "sha256").hexdigest()[:32], token or ""):
+        return True
+    if not seed:
+        # 未轮换过：兼容历史链接（签名不含 seed 段）；一旦轮换即全部作废
+        return _check_direct(conn, competition_id, "unitmgr", unit, token)
+    return False
+
+
+@app.post("/api/events/{competition_id}/registrations/unit-links/rotate")
+async def api_unit_links_rotate(competition_id: int, request: Request = None):
+    """R148 轮换单位链接种子：此前发出的全部单位链接立即失效（防外泄后无法吊销）。
+    轮换后请在「设项与报名」重新生成各单位链接并重新分发。"""
+    s = require_admin(request)
+    ca = _compadmin(request)
+    if ca and ca["comp_id"] != competition_id:
+        raise HTTPException(status_code=403, detail="赛事管理员仅可操作自己的赛事")
+    _comp_or_404(competition_id)
+    conn = db.get_db()
+    seed = secrets.token_hex(16)
+    conn.execute("INSERT OR REPLACE INTO app_meta(key, value) VALUES(?, ?)",
+                 ("unit_link_seed:{0}".format(competition_id), seed))
+    conn.commit()
+    _audit(_actor_name(s), "unit_links_rotate", "comp:{0}".format(competition_id),
+           "全部单位链接已作废重签", _client_ip(request))
+    return {"ok": True}
 
 
 def _reg_unit_dedup_upsert(conn, competition_id: int, unit: str, m: dict,
@@ -5833,12 +5694,27 @@ async def api_run_order_proposal(competition_id: int, request: Request = None):
 
 @app.post("/api/events/{competition_id}/run-order")
 async def api_run_order_save(competition_id: int, request: Request = None):
-    """保存（或清空）比赛顺序；仅接受本赛事 pending 场次。"""
+    """保存（或清空）比赛顺序；仅接受本赛事 pending 场次。
+    R148：非清空提交必须覆盖全部待赛场次——防止客户端只传子集把其余场次顺序静默清空。"""
     require_admin(request)
     comp = _comp_or_404(competition_id)
     body = await request.json()
     order = [int(x) for x in (body.get("order") or [])]
     conn = db.get_db()
+    if order:
+        n_pending = conn.execute("SELECT COUNT(*) c FROM events WHERE competition_id=? AND status='pending'",
+                                 (comp["id"],)).fetchone()["c"]
+        uniq = set(order)
+        if len(uniq) != len(order):
+            raise HTTPException(status_code=400, detail="顺序中有重复场次，请刷新后重试")
+        known = {r["id"] for r in db.rows(conn.execute(
+            "SELECT id FROM events WHERE competition_id=? AND status='pending'", (comp["id"],)))}
+        unknown = uniq - known
+        if unknown:
+            raise HTTPException(status_code=400, detail="包含非本赛事待赛场次，请刷新后重试")
+        if n_pending != len(order):
+            raise HTTPException(status_code=400,
+                                detail="顺序不完整（{0}/{1} 场）——请刷新页面重新调整后保存".format(len(order), n_pending))
     conn.execute("UPDATE events SET run_seq=NULL WHERE competition_id=?", (comp["id"],))
     for pos, ceid in enumerate(order, 1):
         conn.execute("UPDATE events SET run_seq=? WHERE id=? AND competition_id=? AND status='pending'",
@@ -5973,10 +5849,13 @@ async def api_direct_links(competition_id: int, request: Request = None):
 async def api_credentials_export(competition_id: int, request: Request = None):
     """R76c 口令表导出（赛事管理页每行「口令表」）：本赛事全部角色账号 口令+免密直达链接 一张表。
     CSV（带 BOM，Excel 直接打开）；口令为设置/重置时留档的明文——此前建的旧账号无留档，
-    标「未记录」，重置一次口令即留档（重置为原值即可，直达链接不受影响）。"""
-    require_admin(request)
+    标「未记录」，重置一次口令即留档（重置为原值即可，直达链接不受影响）。
+    R148：等同钥匙的导出必须留痕（谁、何时、哪个赛事）。"""
+    s = require_admin(request)
     comp = _comp_or_404(competition_id)
     conn = db.get_db()
+    _audit(_actor_name(s), "credentials_export", "comp:{0}".format(competition_id),
+           comp["name"], _client_ip(request))
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["赛事ID", "赛事名称", "角色", "用户名", "显示名", "口令", "直达链接"])

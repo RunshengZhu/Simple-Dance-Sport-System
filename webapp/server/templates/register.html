@@ -153,7 +153,8 @@ document.getElementById('reg-submit').onclick = async function () {
     document.getElementById('reg-done').style.display = '';
     document.getElementById('done-code').textContent = r.submit_code;
     document.getElementById('done-count').textContent = '共提交 ' + r.count + ' 条报名' +
-      (r.problems && r.problems.length ? '；部分条目未提交：' + r.problems.join('；') : '');
+      (r.merged ? '；其中 ' + r.merged + ' 条已合并到您之前的报名（提交码不变）' : '') +
+      (r.problems && r.problems.length ? '；说明：' + r.problems.join('；') : '');
     queryStatus(r.submit_code);
   } catch (e) { msg.className = 'err'; msg.textContent = e.message; }
   btn.disabled = false;

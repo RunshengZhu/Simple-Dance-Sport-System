@@ -6,6 +6,10 @@ test_core_skating — core.skating_system 各函数 vs src.algorithms.skating_sy
 """
 import pytest
 
+# CI/本地环境可能无 numpy（桌面版对照源码的硬依赖）——缺依赖时跳过对照，
+# core 纯 Python 实现自身的测试不受影响。
+pytest.importorskip("numpy")
+
 from core import skating_system as core_sk
 from src.algorithms import skating_system as src_sk
 

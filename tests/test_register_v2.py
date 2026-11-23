@@ -88,6 +88,24 @@ def test_individual_gender_required_and_dedup(env):
     assert rows[0]["gender"] == "男"
 
 
+def test_resubmit_returns_persisted_code_r148(env):
+    """R148 回归：合并去重的重复提交必须返回库里真实存在的提交码——
+    旧实现返回新生成但未落库的码，选手凭它查询永远「未找到」（幽灵码）。"""
+    cid = env["cid"]
+    body = {"mode": "individual", "contact_name": "码回归", "contact_phone": "13800000148",
+            "members": [{"name": "码回归", "gender": "女", "projects": ["1"]}]}
+    r1 = req("POST", "/api/public/events/%d/register" % cid, json=body)
+    assert r1.status_code == 200
+    code1 = r1.json()["submit_code"]
+    r2 = req("POST", "/api/public/events/%d/register" % cid, json=body)
+    assert r2.status_code == 200
+    code2 = r2.json()["submit_code"]
+    assert code2 == code1, "重复提交应沿用首次落库的提交码（旧=%s 新=%s）" % (code1, code2)
+    # 该码必须真实可查
+    q = req("GET", "/api/public/events/%d/register/status?code=%s" % (cid, code2)).json()
+    assert q["ok"] and len(q["entries"]) == 1
+
+
 def test_unit_manager_link_flow(env):
     cid = env["cid"]
     r = req("POST", "/api/events/%d/registrations/unit-links" % cid,

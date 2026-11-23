@@ -129,8 +129,10 @@ def test_activate_public_schedule_visible(env):
     body = r.json()
     assert body["competition"]["name"] == "生命周期测试赛"
     assert {"SK-R1", "SC-E1", "AD1"} <= {e["code"] for e in body["events"]}
-    page = req("GET", "/public/schedule")   # 公开 HTML 页（激活赛事即公开赛程）
-    assert page.status_code == 200 and "SK-R1" in page.text
+    # 显式 ?comp=（全量测试共享进程时会有多个激活赛事，无参数解析会回落列表页）
+    page = req("GET", f"/public/schedule?comp={env['cid']}")
+    assert page.status_code == 200
+    assert "拉丁初赛" in page.text   # R135：公开口径不展示内部编号，展示场次名称
 
 
 # ---------------- 导入 ----------------
@@ -226,7 +228,10 @@ def test_checkin_permissions(env):
     checkin = f"/api/competition-events/{env['ceid']['SK-R1']}/checkin"
     body = {"numbers": ["101"], "state": True}
     assert req("POST", checkin, json=body).status_code == 401                 # 匿名
-    assert req("POST", checkin, json=body, role="admin").status_code == 401   # 检录需 host/marshal
+    # R85：总管理员可代行检录（一人多角）——旧契约 401 已废弃；检录后立即撤销恢复原状
+    assert req("POST", checkin, json=body, role="admin").status_code == 200
+    assert req("POST", checkin, json={"numbers": ["101"], "state": False},
+               role="admin").status_code == 200
     assert req("POST", checkin, json=body, role="J1").status_code == 401      # 裁判亦无检录权
     assert req("GET", checkin).status_code == 401                             # 状态快照也需登录
 
@@ -302,13 +307,17 @@ def test_sheet_placement_out_of_range_400(env):
     r = req("PUT", sheet, json={"values": {"101": 1, "102": 2, "103": 3, "104": 5}}, role="J1")
     assert r.status_code == 400 and "名次超出范围" in r.json()["detail"]
     r = req("PUT", sheet, json={"values": {"101": 1, "102": 1, "103": 3, "104": 4}}, role="J1")
-    assert r.status_code == 400 and "互不重复" in r.json()["detail"]
+    assert r.status_code == 400 and "名次不得重复" in r.json()["detail"]
 
 
-def test_sheet_missing_checked_competitor_400(env):
+def test_sheet_partial_placements_ok_r120(env):
+    """R120 缺评容忍：顺位法允许部分名次提交（未评选手按缺评计，不计该裁判票）——
+    旧契约「必须全部已检录选手」已废弃；后续用例会整表重提覆盖本记录。"""
     sheet = f"/api/judge/competition-events/{env['ceid']['SK-R1']}/dances/ChaCha/sheet"
     r = req("PUT", sheet, json={"values": {"101": 1, "102": 2, "103": 3}}, role="J1")
-    assert r.status_code == 400 and "全部已检录" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    # 空表仍拒绝
+    assert req("PUT", sheet, json={"values": {}}, role="J2").status_code == 400
 
 
 def test_three_judges_auto_calculate(env):

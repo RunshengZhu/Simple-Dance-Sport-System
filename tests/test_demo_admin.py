@@ -84,20 +84,25 @@ def test_compadmin_scope_on_own_comp(seeded):
     ids = seeded
     cid = ids["示例赛事（演示）"]
     assert req("POST", f"/api/events/{cid}/activate", json={}, role="ca").status_code == 200
-    # 自己赛事的详情页/导入页可开
+    # 自己赛事的详情页可开；导入页 R142 起按步骤拆分（302 → 参赛名单）
     assert req("GET", f"/events/{cid}/schedule", role="ca").status_code == 200
-    assert req("GET", f"/events/{cid}/import", role="ca").status_code == 200
+    r_imp = req("GET", f"/events/{cid}/import", role="ca")
+    assert r_imp.status_code == 302 and r_imp.headers["location"] == f"/events/{cid}/roster"
     # 可删除自己的赛事（本测试放最后验证会破坏其他用例 → 仅验证非删除路径）
     assert req("GET", f"/api/public/events/{cid}/schedule", role="ca").status_code == 200
 
 
 def test_compadmin_blocked_on_other_comp(seeded):
     ids = seeded
+    ca_cid = ids["示例赛事（演示）"]
     other = ids["普通邀请赛"]
     assert req("DELETE", f"/api/events/{other}", role="ca").status_code == 403
     assert req("POST", f"/api/events/{other}/activate", json={}, role="ca").status_code == 403
-    assert req("GET", f"/events/{other}/schedule", role="ca").status_code == 403
-    assert req("GET", f"/events/{other}/import", role="ca").status_code == 403
+    # R108：跨赛事页面访问静默弹回自己赛事（API 仍 403/JSON）
+    r_pg = req("GET", f"/events/{other}/schedule", role="ca")
+    assert r_pg.status_code == 302 and f"/events/{ca_cid}" in r_pg.headers["location"]
+    r_imp2 = req("GET", f"/events/{other}/import", role="ca")
+    assert r_imp2.status_code == 302 and f"/events/{ca_cid}" in r_imp2.headers["location"]
 
 
 def test_compadmin_cannot_create_comp_or_manage_users(seeded):
@@ -209,6 +214,9 @@ def test_schedule_import_unquoted_multivalue_columns():
         "场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手\n"
         "X1,多项舞程,XM,1,华尔兹,探戈,SKATING,6,501,502,503,504\n"
     )
+    # R71：参赛选手须先在选手库（防幽灵号）——先导入 501-504 再导赛程
+    comp_csv = "背番号,姓名,学校/单位,项目编号\n501,选手甲,单位A,XM\n502,选手乙,单位A,XM\n503,选手丙,单位B,XM\n504,选手丁,单位B,XM\n"
+    assert req("POST", "/api/events/1/imports/competitors", content=comp_csv.encode(), role="super").status_code == 200
     r = req("POST", "/api/events/1/imports/schedule", content=csv_body.replace("\\n", "\n"), role="super")
     assert r.status_code in (200, 201), r.text
     _, d, _ = None, None, None

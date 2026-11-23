@@ -9,6 +9,10 @@ import types
 
 import pytest
 
+# CI/本地环境可能无 numpy（桌面版对照源码的硬依赖）——缺依赖时跳过对照，
+# core 纯 Python 实现自身的测试不受影响。
+pytest.importorskip("numpy")
+
 from core import advancement as core_adv
 from src.algorithms import advancement as src_adv
 

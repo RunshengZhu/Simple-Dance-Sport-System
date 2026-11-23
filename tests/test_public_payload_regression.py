@@ -104,5 +104,10 @@ def test_public_lookup_ok_with_published(seeded_event):
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["number"] == "21"
-    assert d["published_results"], "查询应返回该选手已发布成绩"
-    assert {"code", "name", "round", "rank"} <= set(d["published_results"][0].keys())
+    # 新契约（R133 起）：场次列表 schedule 携带每场状态与名次；旧键 published_results 已移除
+    sched = d["schedule"]
+    assert sched, "查询应返回该选手的场次列表"
+    published = [e for e in sched if e["status"] == "published"]
+    assert published, "查询应返回该选手已发布成绩"
+    assert {"code", "name", "round", "rank"} <= set(published[0].keys())
+    assert all(e["rank"] for e in published), "已发布场次应带名次"

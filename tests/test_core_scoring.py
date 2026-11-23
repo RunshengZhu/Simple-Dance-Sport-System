@@ -10,6 +10,10 @@ test_core_scoring — core.ScoringAlgorithm vs src.ScoringAlgorithm 等价性对
 """
 import pytest
 
+# CI/本地环境可能无 numpy（桌面版对照源码的硬依赖）——缺依赖时跳过对照，
+# core 纯 Python 实现自身的测试不受影响。
+pytest.importorskip("numpy")
+
 from core import ScoringAlgorithm as CoreAlg, ScoringType, ScoreRecord
 from src.algorithms.scoring import ScoringAlgorithm as SrcAlg
 from src.models.data_models import ScoringType as SrcScoringType

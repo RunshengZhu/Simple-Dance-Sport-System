@@ -229,6 +229,11 @@ document.addEventListener('click', function (e) {
   if (chip) {
     var ceid = chip.dataset.ceid, num = chip.dataset.num;
     var state = !chip.classList.contains('on');
+    if (!state) {
+      var card0 = chip.closest('.st-event');
+      if (card0 && card0.dataset.status === 'scoring'
+          && !confirm('撤销该选手检录？评分中——其已提交的评分记录将一并作废。')) return;
+    }
     postCheckin(ceid, [num], state).then(function (d) {
       paintEvent(ceid, currentChecked(ceid, num, state), d.checked_n, d.total);
     }).catch(function (err) { toast('检录失败：' + err.message, 'err'); refreshEvent(ceid); });
@@ -237,6 +242,13 @@ document.addEventListener('click', function (e) {
   var allBtn = e.target.closest('[data-all]');
   if (allBtn) {
     var ceid2 = allBtn.dataset.all, state2 = allBtn.dataset.state === '1';
+    if (!state2) {
+      var card2 = allBtn.closest('.st-event');
+      var scoring = card2 && card2.dataset.status === 'scoring';
+      var tip = scoring ? '清空本场全部检录？评分中——已提交的评分记录将一并作废！'
+                        : '确认清空本场全部检录？';
+      if (!confirm(tip)) return;
+    }
     var nums = Array.prototype.map.call(
       document.querySelectorAll('.chip[data-ceid="' + ceid2 + '"]'), function (c) { return c.dataset.num; });
     postCheckin(ceid2, nums, state2).then(function (d) {
@@ -260,6 +272,30 @@ document.addEventListener('click', function (e) {
   var tg = e.target.closest('.toggle-done');
   if (tg) toggleDone(tg);
 });
+
+/* ---------- SSE 重载锚点：重载前记录视口内的场次卡，回来后按卡定位（卡片高度会变，scrollY 会漂移） ---------- */
+(function () {
+  var KEY = '__staffAnchor';
+  window.__beforeSoftReload = function () {
+    try {
+      var el = null;
+      document.querySelectorAll('.st-event').forEach(function (c) {
+        var r = c.getBoundingClientRect();
+        if (!el && r.bottom > 60 && r.top < window.innerHeight * 0.5) el = c;
+      });
+      if (!el) el = document.querySelector('.st-event');
+      if (el) sessionStorage.setItem(KEY, el.dataset.code || '');
+    } catch (e) {}
+  };
+  var code = null;
+  try { code = sessionStorage.getItem(KEY); sessionStorage.removeItem(KEY); } catch (e) {}
+  if (code) {
+    setTimeout(function () {
+      var el = document.querySelector('.st-event[data-code="' + code + '"]');
+      if (el) el.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }, 260);   /* 晚于 app.js 的 scrollY 恢复（0/150ms），锚点定位优先 */
+  }
+})();
 
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
   checkin_changed: function (p) { if (p && p.event_id) refreshEvent(p.event_id); },
