@@ -91,6 +91,15 @@ def env():
     return {"cid": cid, "ceid": ceid}
 
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _need_cjk_font():
+    """生成 PDF 内嵌中文文本断言依赖 CJK 字体（生产必装 wqy-zenhei，macOS 有 PingFang）；
+    CI 等无字体环境 _reportlab_font() 回退 Helvetica，中文必变豆腐块——跳过而非误报。"""
+    from server.app import _reportlab_font
+    if _reportlab_font() == "Helvetica":
+        pytest.skip("无 CJK 字体（wqy-zenhei/PingFang）——中文 PDF 文本断言在此环境无意义")
+
 def test_pdf_background_upload_preview_and_generate(env):
     cid = env["cid"]
     bg_b64 = base64.b64encode(_bg_pdf_bytes()).decode()

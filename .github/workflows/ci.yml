@@ -39,6 +39,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest
+      # 证书管线用 _reportlab_font() 嵌入中文（生产装 wqy-zenhei）——CI 装同款字体，
+      # 使 test_cert_* 的中文文本断言在 CI 真实运行（无字体环境这些测试会 skip）。
+      - name: Install CJK font (wqy-zenhei)
+        run: sudo apt-get install -y fonts-wqy-zenhei
 
       - name: Run tests
         run: |

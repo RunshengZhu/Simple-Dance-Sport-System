@@ -86,6 +86,15 @@ def _png_b64():
     return base64.b64encode(buf.getvalue()).decode()
 
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _need_cjk_font():
+    """生成 PDF 内嵌中文文本断言依赖 CJK 字体（生产必装 wqy-zenhei，macOS 有 PingFang）；
+    CI 等无字体环境 _reportlab_font() 回退 Helvetica，中文必变豆腐块——跳过而非误报。"""
+    from server.app import _reportlab_font
+    if _reportlab_font() == "Helvetica":
+        pytest.skip("无 CJK 字体（wqy-zenhei/PingFang）——中文 PDF 文本断言在此环境无意义")
+
 def test_printer_role_and_desk(env):
     r = req("POST", "/api/users", json={"username": "printer1", "password": "print123",
                                         "role": "printer", "display_name": "打印员"}, role="admin")
