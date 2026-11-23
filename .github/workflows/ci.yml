@@ -24,8 +24,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # 仅 debug 步骤推 ci-log 分支用（诊断完成后随步骤一并移除）
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,17 +50,6 @@ jobs:
             exit 1
           fi
 
-      - name: Debug — push pytest-out.txt to ci-log branch (temporary, diagnose then remove)
-        if: failure()
-        run: |
-          git config user.name "ci-log-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git fetch origin ci-log --depth=1 || true
-          git checkout -B ci-log "origin/ci-log" 2>/dev/null || git checkout --orphan ci-log
-          git add -f pytest-out.txt
-          git commit -m "ci log ${GITHUB_SHA::7}" || true
-          git push origin ci-log --force
-          echo "log at https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/ci-log/pytest-out.txt"
 
   lint:
     runs-on: ubuntu-latest
