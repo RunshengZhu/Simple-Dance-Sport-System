@@ -21,12 +21,14 @@
   </div>
   <input id="staff-search" placeholder="搜场次编号/名称" title="输入后回车定位首个匹配" style="margin-top:8px">
   <button class="btn secondary" id="scene-index-btn" aria-expanded="false" aria-haspopup="dialog" style="margin-top:8px">场次索引</button>
+  {# R149 当前场次条：检录/主持台打开即见「现在该处理哪一场」，不必在 40+ 张卡里翻找 #}
+  <div id="st-now" style="display:none;margin-top:10px"></div>
 </div>
 
 <h2>场次流程 <span class="muted">开场 → 检录 → 评分 → 成绩/播报</span></h2>
 {% for ev in items %}
 {% if ev.is_done %}
-<div class="card st-event done-card" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}">
+<div class="card st-event done-card" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-seq="{{ ev.run_seq or '' }}" data-project="{{ ev.project }}" data-pname="{{ ev.project_name or '' }}">
   <div class="done-head">
     <h3><span class="st-seq">{{ ev.run_seq or "—" }}</span>{{ ev.name }}
       <span class="ev-code muted">{{ ev.code }}</span>
@@ -43,14 +45,14 @@
   <div class="done-body" id="done-body-{{ ev.id }}">
     <div>
     {% if ev.results %}
-    {% with rows = ev.results, names = ev.names, is_final = ev.is_final, adv = ev.adv %}{% include "_announce_table.html" %}{% endwith %}
+    {% with rows = ev.results, names = ev.names, is_final = ev.is_final, adv = ev.adv, mark_mode = ev.is_mark and not ev.is_final %}{% include "_announce_table.html" %}{% endwith %}
     <p><a class="btn secondary" href="/api/events/{{ ev.competition_id }}/exports?format=markdown&code={{ ev.code }}">下载本场成绩单 (.md)</a></p>
     {% else %}<p class="muted">无结果数据。</p>{% endif %}
     </div>
   </div>
 </div>
 {% else %}
-<div class="card st-event{{ ' scoring-now' if ev.status == 'scoring' }}" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-need="{{ 1 if ev.checked_n < ev.total else 0 }}">
+<div class="card st-event{{ ' scoring-now' if ev.status == 'scoring' }}" data-ceid="{{ ev.id }}" data-code="{{ ev.code }}" data-name="{{ ev.name }}" data-status="{{ ev.status }}" data-need="{{ 1 if ev.checked_n < ev.total else 0 }}" data-seq="{{ ev.run_seq or '' }}" data-project="{{ ev.project }}" data-pname="{{ ev.project_name or '' }}">
   <h3><span class="st-seq">{{ ev.run_seq or "—" }}</span>{{ ev.name }}
     <span class="ev-code muted">{{ ev.code }}</span>
     <span class="tag {{ 'warn' if ev.status == 'scoring' else 'gray' }}">{{ '● 评分中' if ev.status == 'scoring' else '待开始' }}</span>
@@ -82,7 +84,7 @@
 {% endfor %}
 {% if not items %}<div class="card"><p class="muted">暂无场次。</p></div>{% endif %}
 <p class="muted" id="staff-empty" style="display:none">该筛选条件下没有场次。</p>
-{% set onb_key = role %}{% include "_onboarding.html" %}
+{% set onb_no_fab = true %}{% set onb_key = role %}{% include "_onboarding.html" %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
@@ -101,7 +103,7 @@ document.querySelectorAll('[data-open]').forEach(function (b) {
     } catch (e) { b.disabled = false; toast(e.message, 'err'); }
   });
 });
-/* ---------- 场次筛选 + 搜索定位（首个匹配滚入视口并高亮） ---------- */
+/* ---------- 场次筛选 + 搜索定位（首个匹配滚入视口并高亮） + R149 当前场次条 ---------- */
 (function () {
   var chips = document.querySelectorAll('.status-filter .sf-btn');
   var search = document.getElementById('staff-search');
@@ -125,24 +127,41 @@ document.querySelectorAll('[data-open]').forEach(function (b) {
     var empty = document.getElementById('staff-empty');
     if (empty) empty.style.display = shown ? 'none' : '';
   }
-  function locate() {
-    if (!kw) return;
-    var first = visibleCards()[0];
-    if (!first) return;
-    var r = first.getBoundingClientRect();
-    if (r.top < 0 || r.top > window.innerHeight * 0.4) {
-      first.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-    first.classList.remove('flash');
-    void first.offsetWidth; /* 重启动画 */
-    first.classList.add('flash');
-    setTimeout(function () { first.classList.remove('flash'); }, 1700);
+  function setMode(m) {
+    mode = m;
+    chips.forEach(function (x) { x.classList.toggle('active', x.dataset.f === m); });
+  }
+  /* R149 当前场次：评分中的场次优先；无则取首个待开始场次。打开页面即见现在该盯哪场。 */
+  function currentCard() {
+    return document.querySelector('.st-event[data-status="scoring"]') ||
+      document.querySelector('.st-event[data-status="pending"]');
+  }
+  function paintNow() {
+    var box = document.getElementById('st-now');
+    if (!box) return;
+    var cur = currentCard();
+    if (!cur) { box.style.display = 'none'; return; }
+    var seq = cur.dataset.seq;
+    var label = (seq ? '第' + seq + '场 ' : '') + cur.dataset.name;
+    var st = cur.dataset.status;
+    var prog = cur.querySelector('[id^="prog-"]');
+    box.style.display = '';
+    box.innerHTML =
+      '<div class="now-line"><span class="tag ' + (st === 'scoring' ? 'acc' : 'gray') + '">' +
+      (st === 'scoring' ? '● 评分中' : '下一场 · 待开始') + '</span>' +
+      '<b>' + esc(label) + '</b>' +
+      (prog ? '<span class="muted">' + esc(prog.textContent) + '</span>' : '') +
+      '<button type="button" class="btn small secondary" id="st-now-locate">定位到场次</button></div>';
+    document.getElementById('st-now-locate').onclick = function () {
+      setMode('all'); kw = ''; if (search) search.value = ''; apply();
+      cur.scrollIntoView({ block: 'start', behavior: 'instant' });
+      cur.classList.remove('flash'); void cur.offsetWidth; cur.classList.add('flash');
+      setTimeout(function () { cur.classList.remove('flash'); }, 1700);
+    };
   }
   chips.forEach(function (b) {
     b.addEventListener('click', function () {
-      chips.forEach(function (x) { x.classList.remove('active'); });
-      b.classList.add('active');
-      mode = b.dataset.f;
+      setMode(b.dataset.f);
       apply();
     });
   });
@@ -157,18 +176,40 @@ document.querySelectorAll('[data-open]').forEach(function (b) {
       if (e.key === 'Enter') { e.preventDefault(); clearTimeout(settleTimer); locate(); }
     });
   }
+  function locate() {
+    if (!kw) return;
+    var first = visibleCards()[0];
+    if (!first) return;
+    var r = first.getBoundingClientRect();
+    if (r.top < 0 || r.top > window.innerHeight * 0.4) {
+      first.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    first.classList.remove('flash');
+    void first.offsetWidth; /* 重启动画 */
+    first.classList.add('flash');
+    setTimeout(function () { first.classList.remove('flash'); }, 1700);
+  }
+  /* R149 默认筛选：有待办（评分中/未检录完）时直接给「待检录」视图，43 张卡不再一屏铺开 */
+  var hasTodo = !!document.querySelector('.st-event[data-status="scoring"], .st-event[data-need="1"]');
+  setMode(hasTodo ? 'need' : 'all');
+  apply();
+  paintNow();
   window.__staffApply = apply;
+  window.__staffPaintNow = paintNow;
 })();
 
 document.getElementById('logout').onclick = async function () {
   await api('POST', '/api/logout', {});
-  location.href = '/login';
+  location.href = CID ? '/competitions/' + CID + '/login' : '/competitions';   /* R149：回到本赛事登录页，而非总管理员登录 */
 };
 
 /* ---------- 检录状态轻刷新（不重载、不移动视口） ---------- */
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+  return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 function progText(ceid, n, total) {
   var el = document.getElementById('prog-' + ceid);
   if (el) { el.textContent = '检录 ' + n + ' / ' + total; if (window.popBadge) popBadge(el); }
+  if (window.__staffPaintNow) window.__staffPaintNow();   /* 当前场次条的检录计数同步 */
 }
 function paintEvent(ceid, checkedArr, n, total) {
   var set = {};
@@ -328,6 +369,12 @@ if (CID) connectSSE('/api/events/' + CID + '/stream', {
     setTimeout(function () { card.classList.remove('flash'); }, 1700);
   }
 
+  function chipLabel(card) {
+    /* R149：索引条目改为「第N场 + 名称」——内部编号（P01Z01-R1A）对检录员无意义 */
+    var seq = card.dataset.seq;
+    return (seq ? '第' + seq + '场 · ' : '') + (card.dataset.name || card.dataset.code);
+  }
+
   function buildGroup(title, list) {
     var g = document.createElement('div'); g.className = 'si-group';
     var t = document.createElement('div'); t.className = 'si-group-title';
@@ -339,15 +386,29 @@ if (CID) connectSSE('/api/events/' + CID + '/stream', {
       g.appendChild(p);
       return g;
     }
-    var box = document.createElement('div'); box.className = 'si-chips';
+    /* R149：按项目聚簇（DOM 序=出场序，同项目场次相邻）——项目名可解析才显示子标题，
+       否则退化为平铺（仍带名称）。 */
+    var box = null, curP = null;
     list.forEach(function (card) {
+      var pn = card.dataset.pname;
+      if (pn && pn !== curP) {
+        curP = pn;
+        var sub = document.createElement('div'); sub.className = 'si-sub';
+        sub.textContent = pn;
+        g.appendChild(sub);
+        box = document.createElement('div'); box.className = 'si-chips';
+        g.appendChild(box);
+      } else if (!box) {
+        box = document.createElement('div'); box.className = 'si-chips';
+        g.appendChild(box);
+      }
       var c = document.createElement('button');
       c.type = 'button'; c.className = 'sf-btn si-chip';
-      c.textContent = card.dataset.code || card.dataset.ceid;
+      c.textContent = chipLabel(card);
+      c.title = card.dataset.code || '';
       c.addEventListener('click', function () { close(); flashCard(card); });
       box.appendChild(c);
     });
-    g.appendChild(box);
     return g;
   }
 

@@ -75,19 +75,29 @@ function pickedProjects(root) {
   return Array.prototype.map.call(root.querySelectorAll('.proj-chip.on'), function (b) { return b.dataset.code; });
 }
 
-/* 成员行（单位模式多行；个人模式单行） */
+/* 成员行（单位模式多行；个人模式单行）。
+   R149：必填项（姓名/性别/项目）保持外露，选填项折进「补充信息」；单位占位文案按模式区分。 */
 function addMember() {
   var d = el('div', 'card member-row');
+  var unitHtml = MODE === 'unit'
+    ? '<div><label>单位（选填）</label><input class="m-unit" placeholder="不填则用报名单位"></div>'
+    : '<div><label>单位</label><input class="m-unit" placeholder="单位名称（选填）"></div>';
   d.innerHTML = '<div class="reg-grid">' +
     '<div><label>姓名 *</label><input class="m-name" placeholder="选手姓名"></div>' +
     '<div><label>性别 *</label><select class="m-gender"><option value="">请选择</option><option value="男">男</option><option value="女">女</option></select></div>' +
-    '<div><label>单位（选填）</label><input class="m-unit" placeholder="与上方单位相同可不填"></div>' +
-    '<div><label>身份</label><input class="m-role" placeholder="如：新生 / 老生"></div>' +
-    '<div><label>搭档姓名</label><input class="m-partner" placeholder="无搭档可不填"></div>' +
-    '<div><label>搭档单位</label><input class="m-punit"></div>' +
-    '<div><label>搭档身份</label><input class="m-prole" placeholder="如：新生"></div>' +
+    (MODE === 'individual' ? unitHtml : '') +
     '</div><label class="muted">报名项目 *</label>';
   d.appendChild(projChips([]));
+  var more = el('details', 'member-more');
+  more.innerHTML = '<summary>补充信息（选填：' + (MODE === 'unit' ? '单位 / ' : '') + '身份 / 搭档）</summary>' +
+    '<div class="reg-grid">' +
+    (MODE === 'unit' ? unitHtml : '') +
+    '<div><label>身份</label><input class="m-role" placeholder="如：新生 / 老生"></div>' +
+    '<div><label>搭档姓名</label><input class="m-partner" placeholder="无搭档可不填"></div>' +
+    '<div><label>搭档单位</label><input class="m-punit" placeholder="选填"></div>' +
+    '<div><label>搭档身份</label><input class="m-prole" placeholder="如：新生"></div>' +
+    '</div>';
+  d.appendChild(more);
   if (MODE === 'unit' && document.querySelectorAll('.member-row').length > 0) {
     var rm = el('button', 'btn small danger', '移除此成员');
     rm.type = 'button';

@@ -8,11 +8,14 @@
 {{ bar(comp, 'results') }}
 {% if adv_hints %}
 <div class="card" style="border-color:var(--gold)">
-  <b>下一流程：晋级确认</b>
-  <p class="muted" style="margin:6px 0 0">
-    {{ adv_hints | map(attribute='code') | join('、') }} 已发布且设晋级名额——
-    到 <a href="/events/{{ comp.id }}/advancement?project={{ adv_hints[0].project }}&round={{ adv_hints[0].round }}">晋级确认</a>
-    生成预案并确认，选手将自动回填到下一轮。</p>
+  <b>待办：{{
+    adv_hints | length }} 场预赛已发布，晋级名单尚未回填下一轮</b>
+  <ul class="muted" style="margin:6px 0 0;padding-left:20px">
+    {% for h in adv_hints %}
+    <li>第{{ h.run_seq or '—' }}场 {{ h.name }}
+      <a href="/events/{{ comp.id }}/advancement?project={{ h.project }}&round={{ h.round }}&event={{ h.id }}">晋级确认 →</a></li>
+    {% endfor %}
+  </ul>
 </div>
 {% endif %}
 <h1>结果中心 · {{ comp.name }}</h1>
@@ -54,40 +57,48 @@
       <span id="backup-msg" class="muted"></span>
     </div>
     {% endif %}
-    <div class="mat-item"><span class="mat-label">恢复初始状态</span>
-      <button class="btn small danger" id="reset-btn">清除全部评分与成绩</button>
-    </div>
     <div class="mat-item"><span class="mat-label">团体总分榜</span>
       <a class="btn small secondary" href="/events/{{ comp.id }}/team-standings">查看</a>
     </div>
   </div>
-  <p class="muted">仅「已发布」场次进入公开页/大屏/导出与团体总分（D5 发布制）；评分明细仅本页可见（FR-E4）。</p>
+  <p class="muted">仅「已发布」场次进入公开页/大屏/导出与团体总分；评分明细仅管理端可见。</p>
 </div>
 {% for p in payload %}
-<div class="card" data-ceid="{{ p.ev.id }}">
-  <h2>{{ p.ev.name }}（{{ p.ev.project_code }} 第{{ p.ev.round }}轮）
+{# R149：已发布场次默认折叠（12 场成绩全展开有 1.6 万像素高），待发布的保持展开 #}
+<details class="card res-card" data-ceid="{{ p.ev.id }}" {% if not p.ev.published %}open{% endif %}>
+  <summary class="res-sum">
+    <span class="rb-seq">第{{ p.ev.run_seq or '—' }}场</span>
+    <span class="rb-name">{{ p.ev.name }}</span>
     {% if p.ev.published %}<span class="tag ok">已发布</span>{% else %}<span class="tag gray">已计算 · 未发布</span>{% endif %}
-  </h2>
+  </summary>
   <p>
-    <button class="btn" onclick="doPub(this, {{ p.ev.id }}, {{ 0 if p.ev.published else 1 }})">{{ "撤回发布" if p.ev.published else "发布（进大屏）" }}</button>
+    <button class="btn {{ 'secondary' if p.ev.published else '' }}" onclick="doPub(this, {{ p.ev.id }}, {{ 0 if p.ev.published else 1 }})">{{ "撤回发布" if p.ev.published else "发布（进大屏）" }}</button>
     <button class="btn secondary" onclick="doCalc(this, {{ p.ev.id }})">手动重算</button>
     <a class="btn secondary" href="/api/competition-events/{{ p.ev.id }}/export/results" title="桌面端同格式：排名/选手编号/姓名/总分/平均分">结果表</a>
     <a class="btn secondary" href="/api/competition-events/{{ p.ev.id }}/export/details" title="桌面端同格式：选手×裁判×舞种原始打分">明细表</a>
     <button class="btn secondary" onclick="toggleDetail(this, {{ p.ev.id }})">原始打分</button>
-    <button class="btn secondary" onclick="toggleSkating(this, {{ p.ev.id }})">滑冰判定表</button>
+    <button class="btn secondary" onclick="toggleSkating(this, {{ p.ev.id }})">顺位法判定表</button>
   </p>
   {% with result = p.results %}{% include "_result_tables.html" %}{% endwith %}
   <div class="detail-box" style="display:none">
-    <h3>原始打分（仅管理端，FR-E4）</h3>
+    <h3>原始打分（仅管理端）</h3>
     <div class="detail-body muted">加载中…</div>
   </div>
   <div class="skating-box" style="display:none">
-    <h3>滑冰法判定明细表（仅管理端）</h3>
+    <h3>顺位法判定明细表（仅管理端）</h3>
     <div class="skating-body muted">加载中…</div>
   </div>
-</div>
+</details>
 {% endfor %}
-{% if not payload %}<div class="card"><p class="muted">暂无已计算场次。请在场次控制台完成评分与计算。</p></div>{% endif %}
+{% if not payload %}<div class="card"><p class="muted">暂无已计算场次。请在赛程执行总表完成评分与计算。</p></div>{% endif %}
+
+{% if payload %}
+<details class="card danger-zone">
+  <summary><b>危险操作</b> <span class="muted">恢复初始状态（清除全部评分与成绩）</span></summary>
+  <p class="muted">仅在排练/试赛后需要清空重来时使用。所有场次回到「待开始」，名单、赛程、出场顺序保留；不可撤销，建议先备份。</p>
+  <p><button class="btn danger" id="reset-btn">清除全部评分与成绩…</button></p>
+</details>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 async function bulkPublish(btn) {
@@ -160,7 +171,7 @@ async function toggleSkating(btn, ceid) {
         });
         html += '</table>';
       });
-      body.innerHTML = html || '该场次无滑冰判定明细（仅顺位法场次生成）';
+      body.innerHTML = html || '该场次无顺位法判定明细（仅顺位法场次生成）';
     } catch (e) { body.className = 'err'; body.textContent = e.message; }
   } else { box.style.display = 'none'; }
 }

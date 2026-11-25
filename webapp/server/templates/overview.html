@@ -8,20 +8,11 @@
 {{ bar(comp, 'overview') }}
 <h1>赛事总览 <span class="tag {{ 'ok' if phase == '已收官' else 'warn' if phase == '比赛中' else 'gray' }}">{{ phase }}</span></h1>
 
-<div class="card" id="print-out-card">
-  <b>🖨 公示与打印</b>
-  <p class="muted" style="margin:4px 0 8px">打印职责已集中至「公示打印台」（公示打印员角色专属页）：公示结果表（含非决赛晋级结果表/决赛名次表）与荣誉证书。</p>
-  <p>
-    <a class="btn small" href="/print" target="_blank">公示打印台 →</a>
-    {% if cert_design_events %}<a class="btn small secondary" href="/events/{{ comp.id }}/certs/{{ cert_design_events[0].id }}" target="_blank">🏅 证书设计（{{ cert_design_events[0].name }}）→</a>{% endif %}
-  </p>
-</div>
-
 {% if not setup_done and phase in ("筹备中", "待开赛") %}
 <div class="card" style="border-color:var(--gold)">
-  <b>筹备向导尚未完成</b>
-  <p class="muted" style="margin:6px 0 0">建议先走一遍向导：确认赛事信息 → 导入选手/裁判/赛程 → 建工作人员账号。
-    <a href="/events/{{ comp.id }}/setup">继续筹备向导 →</a></p>
+  <b>筹备尚未完成</b>
+  <p class="muted" style="margin:6px 0 0">按上方步骤 ①–⑥ 逐项准备：赛事信息 → 设项与报名 → 参赛名单 → 赛程编排 → 工作人员与裁判 → 荣誉证书设计。
+    <a href="/events/{{ comp.id }}/registrations">去 ② 设项与报名 →</a></p>
 </div>
 {% endif %}
 
@@ -60,9 +51,16 @@
       {% endfor %}
     </div>
     <p class="muted" style="margin:10px 0 0">
-      {% if next_ev %}按出场序，「{{ next_ev.code }}」是下一场待赛。{% endif %}
-      筹备操作在「导入 / 赛程编排」；比赛日操作在「场次控制台」；发布与晋级在「结果中心 / 晋级确认」。</p>
+      {% if next_ev %}按出场序，{{ '第%d场'|format(next_ev.run_seq) if next_ev.run_seq else '下一场' }}「{{ next_ev.name }}」待赛。{% endif %}
+      筹备在「筹备工作台」各步骤；比赛日在「比赛控制」：赛程执行总表（开场/检录/发布）、晋级确认、成绩发布与导出。</p>
   </div>
+</div>
+
+<div class="card" id="print-out-card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+  <b>🖨 公示与打印</b>
+  <span class="muted">公示结果表与荣誉证书由「公示打印员」在打印台统一打印。</span>
+  <a class="btn small secondary" href="/print" target="_blank">公示打印台 →</a>
+  {% if cert_design_events %}<a class="btn small secondary" href="/events/{{ comp.id }}/certs/{{ cert_design_events[0].id }}" target="_blank">🏅 生成证书（{{ cert_design_events[0].name }}）→</a>{% endif %}
 </div>
 
 <div class="card">

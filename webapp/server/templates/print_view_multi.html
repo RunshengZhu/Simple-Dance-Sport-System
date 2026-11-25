@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}打印 · 所选 {{ sections|length }} 场{% endblock %}
+{% block nav %}<a href="/print">← 公示打印台</a>{% endblock %}
+{% block bodyclass %}print-view{% endblock %}
+{% block content %}
+<h1>{{ comp.name }}<span class="muted"> · 公示结果表（{{ sections|length }} 场合并）</span></h1>
+<p class="muted">打印时间 {{ now }} · 合并 {{ sections|length }} 场（按所选顺序）</p>
+{% for s in sections %}
+<section class="pv-sec">
+  <h2>{{ s.ev.run_seq or "—" }} · {{ s.ev.name }}{% if s.is_final %}（决赛名次表）{% else %}（晋级结果表）{% endif %}</h2>
+  <table>
+    <tr><th>名次</th><th>背号</th><th>选手 / 队伍</th><th>单位</th>{% if s.is_final %}<th>总分</th>{% else %}<th>晋级</th>{% endif %}</tr>
+    {% for it in s.rows %}
+    <tr>
+      <td><b>{{ it.rank }}</b></td>
+      <td>{{ it.number }}</td>
+      <td>{{ it.names }}</td>
+      <td>{{ it.unit or "—" }}</td>
+      {% if s.is_final %}<td>{{ it.total if it.total is not none else "—" }}</td>
+      {% else %}<td>{% if it.adv %}<span class="ok">✓ 晋级</span>{% else %}—{% endif %}</td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endfor %}
+{% endblock %}
+{% block scripts %}
+window.onload = function () { setTimeout(function () { window.print(); }, 400); };
+{% endblock %}

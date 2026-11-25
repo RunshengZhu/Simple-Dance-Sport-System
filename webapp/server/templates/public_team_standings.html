@@ -6,10 +6,12 @@
 <div class="card">
   <table>
     <tr><th>名次</th><th>单位</th><th class="num">总分</th><th>各项目得分</th></tr>
+    {% set ns = namespace(rank=0, prev=None) %}{# R149：同分并列 #}
     {% for s in standings["standings"] %}
-    <tr class="{{ 'rank-1' if loop.index == 1 }}">
-      <td>{{ loop.index }}</td><td>{{ s.unit }}</td><td class="num">{{ s.total }}</td>
-      <td class="muted">{% for p, v in s.per_project.items() %}{{ p }}={{ v }} {% endfor %}</td>
+    {% if s.total != ns.prev %}{% set ns.rank = loop.index %}{% endif %}{% set ns.prev = s.total %}
+    <tr class="{{ 'rank-1' if ns.rank == 1 }}">
+      <td>{{ ns.rank }}</td><td>{{ s.unit }}</td><td class="num">{{ s.total }}</td>
+      <td class="muted">{% for p, v in s.per_project.items() %}{{ pn.get(p, p) }}={{ v }} {% endfor %}</td>
     </tr>
     {% endfor %}
     {% if not standings["standings"] %}<tr><td colspan="4" class="muted">暂无已发布成绩，发布后此处实时更新</td></tr>{% endif %}

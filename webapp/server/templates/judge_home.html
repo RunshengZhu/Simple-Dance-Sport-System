@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}裁判工作台{% endblock %}
 {% block bodyclass %}{% endblock %}
-{% block nav %}<span>{{ judge_code }}</span><a href="#" onclick="api('POST','/api/logout').then(()=>location='/login')">退出</a>{% endblock %}
+{% block nav %}<span>{{ judge_code }}</span><a href="#" onclick="api('POST','/api/logout').then(()=>location='{% if comp %}/competitions/{{ comp.id }}/login?role=judge{% else %}/competitions{% endif %}')">退出</a>{% endblock %}
 {% block content %}
 <h1>裁判工作台{% if comp %} · {{ comp.name }}{% endif %}<span id="j-progress"></span></h1>
 {% if not assignments %}<div class="card"><p style="margin:6px 0">
@@ -20,9 +20,15 @@
   </div>
 </div>
 {% endif %}
-<h2>完整赛程 <span class="muted">评分中的场次可点击进入打分</span></h2>
+<h2>完整赛程
+  <span class="seg" id="jh-seg">
+    <button type="button" class="seg-btn" data-f="todo">待评 / 进行中</button>
+    <button type="button" class="seg-btn" data-f="upcoming">待开赛</button>
+    <button type="button" class="seg-btn seg-on" data-f="all">全部</button>
+  </span>
+  <span class="muted">评分中的场次可点击进入打分</span></h2>
 {% for a in schedule %}
-<div class="card {% if a.status == 'scoring' %}jh-scoreable{% endif %}">
+<div class="card jh-card {% if a.status == 'scoring' %}jh-scoreable{% endif %}" data-st="{{ a.status }}" data-mine="{{ 1 if a.my_done else 0 }}">
   <h2><span class="st-seq">{{ a.run_seq or "—" }}</span>{{ a.name }}
     {% if a.status == 'scoring' %}<span class="tag acc">● 评分中</span>
     {% elif a.status == 'published' %}<span class="tag ok">已发布</span>
@@ -55,6 +61,28 @@
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
+/* R149：完整赛程默认只看「待评 / 进行中」，已完成的 40+ 张卡不再把当前工作淹没。
+   「全部」一键切回旧视图；选择记忆在本次页面内。 */
+(function () {
+  var seg = document.getElementById('jh-seg');
+  if (!seg) return;
+  function apply(f) {
+    document.querySelectorAll('.jh-card').forEach(function (c) {
+      var st = c.dataset.st, mine = c.dataset.mine === '1';
+      var show = f === 'all' ||
+        (f === 'todo' && (st === 'scoring' || st === 'calculated')) ||
+        (f === 'upcoming' && st === 'pending');
+      c.style.display = show ? '' : 'none';
+    });
+    seg.querySelectorAll('.seg-btn').forEach(function (b) { b.classList.toggle('seg-on', b.dataset.f === f); });
+  }
+  seg.addEventListener('click', function (e) {
+    var b = e.target.closest('.seg-btn');
+    if (b) apply(b.dataset.f);
+  });
+  var firstScoring = document.querySelector('.jh-card[data-st="scoring"]');
+  apply(firstScoring ? 'todo' : 'all');
+})();
 /* J3：待评/已评计数徽章 */
 (function () {
   var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));

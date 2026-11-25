@@ -1,6 +1,7 @@
 {# R115 角色快速说明叠层组件：用法 {% include "_onboarding.html" with onb_key="judge" %}
-   常驻右下悬浮「?」+ 首次自动弹出；轮播支持左右滑动/按钮翻页；localStorage 记忆已读。 #}
-<div id="onb-fab-{{ onb_key }}" class="onb-fab" title="快速说明">?</div>
+   常驻右下悬浮「?」+ 首次自动弹出；轮播支持左右滑动/按钮翻页；localStorage 记忆已读。
+   R149：设 onb_no_fab=true 可隐藏悬浮「?」（检录/主持台页头已有「? 流程说明」链接，双入口重复）。 #}
+{% if not onb_no_fab %}<div id="onb-fab-{{ onb_key }}" class="onb-fab" title="快速说明">?</div>{% endif %}
 <script>
 (function () {
   var SLIDES = {

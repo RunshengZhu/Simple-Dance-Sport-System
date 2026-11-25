@@ -9,9 +9,11 @@
 <div class="card">
   <h2>团体总分榜（单位）</h2>
   <table><tr><th>名次</th><th>单位</th><th class="num">总分</th><th>各项目得分</th></tr>
+  {% set ns = namespace(rank=0, prev=None) %}{# R149：同分并列 #}
   {% for s in standings["standings"] %}
-  <tr><td>{{ loop.index }}</td><td>{{ s["unit"] }}</td><td class="num">{{ s["total"] }}</td>
-      <td class="muted">{% for p, v in s["per_project"].items() %}{{ p }}={{ v }} {% endfor %}</td></tr>
+  {% if s["total"] != ns.prev %}{% set ns.rank = loop.index %}{% endif %}{% set ns.prev = s["total"] %}
+  <tr><td>{{ ns.rank }}</td><td>{{ s["unit"] }}</td><td class="num">{{ s["total"] }}</td>
+      <td class="muted">{% for p, v in s["per_project"].items() %}{{ pn.get(p, p) }}={{ v }} {% endfor %}</td></tr>
   {% endfor %}</table>
   <p class="muted">口径：名次赋分（第1~8名 9-7-6-5-4-3-2-1），仅计各项目最末轮；双人跨单位归主报单位。</p>
 </div>
@@ -22,7 +24,7 @@
 {% for p in payload %}
 <div class="card" id="ev-{{ p.ev.code }}">
   <h2>第{{ p.ev.run_seq or "—" }}场 · {{ p.ev.name }}<span class="muted">（第{{ p.ev.round }}轮）</span></h2>
-  {% with rows = p.results["overall_results"], names = p.names, is_final = p.is_final, adv = p.adv %}{% include "_announce_table.html" %}{% endwith %}
+  {% with rows = p.results["overall_results"], names = p.names, is_final = p.is_final, adv = p.adv, mark_mode = p.is_mark and not p.is_final %}{% include "_announce_table.html" %}{% endwith %}
 </div>
 {% endfor %}
 {% if not payload %}<p class="muted">暂无已发布成绩。</p>{% endif %}

@@ -585,10 +585,31 @@ def _current_competition(request: Request):
     return _active_competition()
 
 
+def _natural_key(s):
+    """自然排序键（裁判 J1 < J2 < … < J10；项目 P2 < P10）。字典序会得到 J1、J10、J11、J12、J2…"""
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(s))]
+
+
 def _project_names(conn, competition_id: int):
     """R135 项目编号→项目名称映射（公示口径不展示编号）。"""
     return {r["code"]: (r["name"] or r["code"]) for r in db.rows(conn.execute(
         "SELECT code, name FROM projects WHERE competition_id=?", (competition_id,)))}
+
+
+def _proj_labels(conn, competition_id: int):
+    """R149 场次项目码(P01Z01)→显示名：projects 精确码 → 主干前缀(P01) → 原码。
+    公众侧（成绩/总分/大屏/晋级下拉）统一口径，不露内部分组编号。"""
+    pn = _project_names(conn, competition_id)
+    out = {}
+    for r in db.rows(conn.execute(
+            "SELECT DISTINCT project_code FROM events WHERE competition_id=?", (competition_id,))):
+        c = r["project_code"] or ""
+        if c in pn:
+            out[c] = pn[c]
+        else:
+            m0 = re.match(r"^[A-Z]+\d+", c)
+            out[c] = pn.get(m0.group(0), c) if m0 else c
+    return out
 
 
 def _public_comp_or_404(competition_id, request=None):
@@ -920,12 +941,10 @@ async def overview_page(request: Request, competition_id: int):
     running_ev = next((e for e in evs if e["status"] in ("scoring", "calculated")), None)
     adv_pending = 0
     for e in evs:
-        if e["status"] == "published" and e["round"] == 1 and e["advancement_count"]:
-            has_next = conn.execute(
-                "SELECT 1 FROM events WHERE competition_id=? AND project_code=? AND round=?",
-                (competition_id, e["project_code"], e["round"] + 1)).fetchone()
-            if has_next:
-                adv_pending += 1
+        # R149：只统计「已发布且晋级者尚未回填下一轮」的场次（含第 2 轮以后的预赛）——
+        # 旧逻辑只看「已发布 + 有下一轮」，确认之后待办仍常驻
+        if e["status"] == "published" and e["advancement_count"] and not _advancement_backfilled(conn, e):
+            adv_pending += 1
     if not evs:
         phase = "筹备中"
     elif all(e["status"] == "published" for e in evs):
@@ -953,7 +972,9 @@ async def overview_page(request: Request, competition_id: int):
         actions.append({"urgent": False, "text": f"{adv_pending} 个预赛已发布，晋级名单待确认",
                         "href": f"/events/{competition_id}/advancement", "btn": "去确认"})
     if next_ev:
-        actions.append({"urgent": False, "text": f"下一场：{next_ev['name']}（{next_ev['code']}）",
+        # R149：对外文案用出场序号，不再夹带内部场次编号
+        seq_txt = f"第{next_ev['run_seq']}场" if next_ev.get("run_seq") else "下一场"
+        actions.append({"urgent": False, "text": f"{seq_txt}：{next_ev['name']}",
                         "href": f"/events/{competition_id}/console/{next_ev['id']}", "btn": "开场"})
     if not actions:
         actions.append({"urgent": False, "text": "暂无待办——全部场次已发布",
@@ -980,8 +1001,8 @@ async def roster_page(request: Request, competition_id: int):
     entries = db.rows(conn.execute(
         "SELECT number, project_code, name, partner, partner_unit, unit FROM competitors WHERE competition_id=? "
         "ORDER BY project_code, CAST(number AS INTEGER), number", (competition_id,)))
-    judges = db.rows(conn.execute(
-        "SELECT code, name, unit FROM judges WHERE competition_id=? ORDER BY code", (competition_id,)))
+    judges = sorted(db.rows(conn.execute(
+        "SELECT code, name, unit FROM judges WHERE competition_id=?", (competition_id,))), key=_natural_key)
     teams = db.rows(conn.execute(
         "SELECT number, name, unit, project_code FROM competitors WHERE competition_id=? AND number LIKE 'T%' ORDER BY number",
         (competition_id,)))
@@ -1107,12 +1128,10 @@ async def results_page(request: Request, competition_id: int):
         res = load_results(ev["id"])
         if res:
             payload.append({"ev": ev, "results": res})
-        if (ev["status"] == "published" and ev["round"] == 1 and ev["advancement_count"]):
-            has_next = db.get_db().execute(
-                "SELECT 1 FROM events WHERE competition_id=? AND project_code=? AND round=?",
-                (competition_id, ev["project_code"], ev["round"] + 1)).fetchone()
-            if has_next:
-                adv_hints.append({"code": ev["code"], "round": ev["round"], "project": ev["project_code"]})
+        if (ev["status"] == "published" and ev["advancement_count"]
+                and not _advancement_backfilled(db.get_db(), ev, res)):   # R149：已回填的不再提示
+            adv_hints.append({"code": ev["code"], "name": ev["name"], "run_seq": ev["run_seq"],
+                              "round": ev["round"], "project": ev["project_code"], "id": ev["id"]})
     # R67 突出重点：待发布（已计算）场次置顶，已发布按场次序殿后
     payload.sort(key=lambda p: (0 if p["ev"]["status"] == "calculated" else 1, p["ev"]["run_seq"] or 0))
     return templates.TemplateResponse(request, "results.html", {"request": request, "comp": comp,
@@ -1213,6 +1232,8 @@ async def judge_home(request: Request):
                 ev["first_undone"] = next((d["dance"] for d in st_list if not d["submitted"]),
                                           st_list[0]["dance"] if st_list else None)
                 assignments.append(ev)
+            else:
+                ev["my_done"] = None   # R149：模板按此渲染 data-mine 过滤标记
             schedule.append(ev)
     return templates.TemplateResponse(request, "judge_home.html", {
         "comp": comp, "judge_code": s["judge_code"], "assignments": assignments,
@@ -2023,6 +2044,48 @@ async def print_view_page(request: Request, competition_id: int, ceid: int):
         "now": time.strftime("%Y-%m-%d %H:%M")})
 
 
+@app.get("/events/{competition_id}/print/view", response_class=HTMLResponse)
+async def print_view_batch_page(request: Request, competition_id: int, ids: str = ""):
+    """R149 合并打印：所选多场次公示表合并为一页打印视图（打印台勾选后一键打印）。
+    与单场 /print/view/{ceid} 同口径；仅已发布场次有效。"""
+    s = require_staff(request, competition_id)
+    comp = _comp_or_404(competition_id)
+    conn = db.get_db()
+    want = []
+    for x in (ids or "").split(","):
+        x = x.strip()
+        if x.isdigit():
+            want.append(int(x))
+    if not want:
+        raise HTTPException(status_code=400, detail="未提供场次（ids 参数）")
+    next_rounds = {(r["project_code"], r["round"]) for r in db.rows(conn.execute(
+        "SELECT DISTINCT project_code, round FROM events WHERE competition_id=?", (competition_id,)))}
+    sections = []
+    for ceid in want:
+        ev = db.rowdict(conn.execute(
+            "SELECT * FROM events WHERE id=? AND competition_id=?", (ceid, competition_id)).fetchone())
+        if not ev or not ev["published"]:
+            continue
+        res = load_results(ceid)
+        rows = (res or {}).get("overall_results", [])
+        nb = _display_names(conn, competition_id, ev["project_code"])
+        is_final = (ev["project_code"], ev["round"] + 1) not in next_rounds
+        items = []
+        for r0 in rows:
+            num = str(r0["competitor_number"])
+            nm, units = _cert_members_auto(conn, ev, num)
+            items.append({"rank": r0["rank"], "number": num, "names": "、".join(nm) or num,
+                          "unit": "、".join(units), "total": r0.get("total_score"),
+                          "adv": bool(r0.get("advancement_status"))})
+        sections.append({"ev": ev, "rows": items, "is_final": is_final,
+                         "adv": ev["advancement_count"] or 0})
+    if not sections:
+        raise HTTPException(status_code=400, detail="所选场次均未发布，暂无可打印内容")
+    return templates.TemplateResponse(request, "print_view_multi.html", {
+        "request": request, "comp": comp, "sections": sections,
+        "now": time.strftime("%Y-%m-%d %H:%M")})
+
+
 # ------------------------------------------------------------------ R141 证书 v2：背景 + 文本框（设计器/生成）
 _CERT_PRESETS = [
     {"key": "std4", "name": "标准四行（背景已印选手姓名/组别/名次/比赛日期栏）",
@@ -2369,12 +2432,14 @@ async def public_results(request: Request):
             if res:
                 payload.append({"ev": ev, "results": res, "names": name_by_number,
                                 "is_final": (ev["project_code"], ev["round"] + 1) not in next_rounds,
+                                "is_mark": scoring_kind(ev) == "mark",
                                 "adv": ev["advancement_count"] or 0})
     standings = _team_standings(comp["id"], published_only=True) if comp else {"standings": []}
     fp = _public_fingerprint(comp["id"]) if comp else 'W/"0-0-0"'
     return _etag_page(request, comp["id"] if comp else 0, "results", fp, lambda: templates.TemplateResponse(
         request, "public_results.html",
-        {"request": request, "comp": comp, "payload": payload, "standings": standings}))
+        {"request": request, "comp": comp, "payload": payload, "standings": standings,
+         "pn": _proj_labels(db.get_db(), comp["id"]) if comp else {}}))
 
 
 @app.get("/screen", response_class=HTMLResponse)
@@ -2853,7 +2918,7 @@ async def api_import_schedule_full(competition_id: int, request: Request = None)
             "INSERT INTO events(competition_id, code, name, project_code, round, scoring_type, advancement_count, team_mode, run_seq) "
             "VALUES(?,?,?,?,?,?,?,?,?)",
             (competition_id, code_by_seq[seq],
-             "{0} {1}".format(g["name"], round_names.get(g["round"], "")), g["proj"], g["round"],
+             "{0} {1}".format(_strip_round_suffix(g["name"]), round_names.get(g["round"], "")), g["proj"], g["round"],
              styp, g["adv"], tmode, seq))
         eid = cur.lastrowid
         # 舞种：按项目名推断（复用 _infer_dances 逻辑内联）
@@ -4234,8 +4299,17 @@ async def staff_page(request: Request):
     items = []
     name_by_number = {}
     if comp:
+        # R149 场次索引按项目分组：project_code(P01Z01)→项目名解析（精确→主干前缀→None）
+        _pn = _project_names(conn, comp["id"])
+
+        def _proj_label(code):
+            if code in _pn:
+                return _pn[code]
+            m0 = re.match(r"^[A-Z]+\d+", code or "")
+            return _pn.get(m0.group(0)) if m0 else None
+
         events = db.rows(conn.execute(
-            "SELECT id,code,name,project_code,round,status,announced,advancement_count,run_seq FROM events "
+            "SELECT id,code,name,project_code,round,status,announced,advancement_count,run_seq,scoring_type FROM events "
             "WHERE competition_id=? ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
             (comp["id"],)))
         for ev in events:
@@ -4248,7 +4322,10 @@ async def staff_page(request: Request):
                        "by": r["checked_by"] or "",
                        "name": (name_by_number.get(r["competitor_number"]) or "").strip()} for r in rows]
             item = {"id": ev["id"], "code": ev["code"], "name": ev["name"],
-                    "project": ev["project_code"], "round": ev["round"], "status": ev["status"],
+                    "project": ev["project_code"], "project_name": _proj_label(ev["project_code"]),
+                    "round": ev["round"], "status": ev["status"],
+                    "scoring_type": ev["scoring_type"] if "scoring_type" in ev.keys() else "",
+                    "is_mark": scoring_kind(ev) == "mark",
                     "announced": bool(ev["announced"]),
                     "run_seq": ev["run_seq"] if "run_seq" in ev.keys() else None,
                     "advancement_count": ev["advancement_count"] if "advancement_count" in ev.keys() else 0,
@@ -4543,11 +4620,35 @@ async def advancement_page(request: Request, competition_id: int):
     conn = db.get_db()
     projects = [r["project_code"] for r in db.rows(conn.execute(
         "SELECT DISTINCT project_code FROM events WHERE competition_id=? ORDER BY project_code", (competition_id,)))]
-    project = request.query_params.get("project") or (projects[0] if projects else "")
+    # R149 项目显示名：下拉不再直接露 P01Z01 类内部编号
+    project_labels = _proj_labels(conn, competition_id)
+    q_project = request.query_params.get("project")
+    q_round = request.query_params.get("round")
+    project = q_project or (projects[0] if projects else "")
     rounds = [r["round"] for r in db.rows(conn.execute(
         "SELECT DISTINCT round FROM events WHERE competition_id=? AND project_code=? ORDER BY round", (competition_id, project)))]
-    try: rnd = int(request.query_params.get("round") or (rounds[-1] if rounds else 1))
-    except ValueError: rnd = rounds[-1] if rounds else 1
+    try: rnd = int(q_round) if q_round else None
+    except ValueError: rnd = None
+    # R149 默认落点：URL 未指定轮次时，跳到首个「已发布且晋级未回填」的轮次；
+    # 旧逻辑默认 rounds[-1]（决赛）——晋级工作实际发生在预赛/半决赛，打开页面却总停在决赛空表。
+    if rnd is None:
+        q = ("SELECT * FROM events WHERE competition_id=? AND status='published' AND advancement_count>0 "
+             "ORDER BY COALESCE(run_seq, 9999)")
+        args = [competition_id]
+        if q_project:   # URL 指定了项目时只在该项目内找待确认轮次
+            q = q.replace("advancement_count>0", "advancement_count>0 AND project_code=?")
+            args.append(q_project)
+        for e in db.rows(conn.execute(q, args)):
+            if not _advancement_backfilled(conn, e):
+                if e["project_code"] != project:
+                    project = e["project_code"]
+                    rounds = [r["round"] for r in db.rows(conn.execute(
+                        "SELECT DISTINCT round FROM events WHERE competition_id=? AND project_code=? ORDER BY round",
+                        (competition_id, project)))]
+                rnd = e["round"]
+                break
+    if rnd is None:
+        rnd = rounds[-1] if rounds else 1
     proposal = []
     status = ""
     try:
@@ -4580,6 +4681,7 @@ async def advancement_page(request: Request, competition_id: int):
         (competition_id, project, rnd + 1)).fetchone())
     return templates.TemplateResponse(request, "advancement.html", {
         "request": request, "comp": comp, "projects": projects, "project": project,
+        "project_labels": project_labels,
         "rounds": rounds, "round": rnd, "plan": plan,
         "names": _display_names(conn, competition_id, project),
         "adv": conn.execute("SELECT COALESCE(SUM(advancement_count),0) a FROM events WHERE competition_id=? AND project_code=? AND round=?",
@@ -4598,8 +4700,13 @@ async def teams_page(request: Request, competition_id: int):
 async def screen_control_page(request: Request, competition_id: int):
     require_admin(request)
     comp = _comp_or_404(competition_id)
+    # R149 成绩模式锁定指定场次：下拉列出已发布场次（第N场 + 名称）
+    pub = db.rows(db.get_db().execute(
+        "SELECT id, name, run_seq FROM events WHERE competition_id=? AND published=1 "
+        "ORDER BY COALESCE(run_seq, 9999)", (competition_id,)))
     return templates.TemplateResponse(request, "screen_control.html", {
-        "request": request, "comp": comp, "mode": SCREEN_CONTROL.get("mode", "auto")})
+        "request": request, "comp": comp, "mode": SCREEN_CONTROL.get("mode", "auto"),
+        "pub_events": pub, "pinned_event_id": SCREEN_CONTROL.get("event_id")})
 
 
 @app.get("/events/{competition_id}/team-standings", response_class=HTMLResponse)
@@ -4627,6 +4734,7 @@ async def team_standings_public_page(request: Request):
     return _etag_page(request, comp["id"], "standings", fp, lambda: templates.TemplateResponse(
         request, "public_team_standings.html", {
         "request": request, "comp": comp,
+        "pn": _proj_labels(db.get_db(), comp["id"]),
         "standings": _team_standings(comp["id"], published_only=True)}))
 
 
@@ -4657,10 +4765,25 @@ async def api_screen_control_set(request: Request = None):
     mode = body.get("mode")
     if mode not in ("auto", "scoring", "results", "standings", "welcome"):
         raise HTTPException(status_code=400, detail="未知大屏模式")
+    # R149 成绩模式可锁定指定场次（只轮播该场）——颁奖/重播某场成绩时使用
+    ev_id = body.get("event_id")
+    if mode == "results" and ev_id is not None:
+        try:
+            ev_id = int(ev_id)
+        except (TypeError, ValueError):
+            ev_id = None
+        else:
+            row = db.get_db().execute(
+                "SELECT 1 FROM events WHERE id=? AND published=1", (ev_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=400, detail="该场次不存在或尚未发布")
+    else:
+        ev_id = None
     SCREEN_CONTROL["mode"] = mode
+    SCREEN_CONTROL["event_id"] = ev_id
     if SCREEN_CONTROL.get("comp_id"):
         sse.bus.publish(SCREEN_CONTROL["comp_id"], "screen_state_changed", {"mode": mode})
-    return {"ok": True, "mode": mode}
+    return {"ok": True, "mode": mode, "event_id": ev_id}
 
 
 @app.get("/api/competition-events/{ceid}/skating-table")
@@ -4838,7 +4961,7 @@ def _public_payload(comp=None):
     if not comp:
         return None
     events = db.rows(db.get_db().execute(
-        "SELECT code,name,project_code,round,status,published,id,run_seq,advancement_count FROM events WHERE competition_id=? "
+        "SELECT code,name,project_code,round,status,published,id,run_seq,advancement_count,scoring_type FROM events WHERE competition_id=? "
         "ORDER BY COALESCE(run_seq, 9999), round, project_code, code",
         (comp["id"],)))
     next_rounds_pub = {(r["project_code"], r["round"]) for r in db.rows(db.get_db().execute(
@@ -4854,9 +4977,11 @@ def _public_payload(comp=None):
                     r = dict(r)
                     r["competitor_name"] = name_by_number.get(str(r["competitor_number"]), "")
                     rows.append(r)
-                published.append({"code": ev["code"], "name": ev["name"], "project": ev["project_code"],
+                published.append({"id": ev["id"], "code": ev["code"], "name": ev["name"], "project": ev["project_code"],
                                   "round": ev["round"], "results": rows,
+                                  "run_seq": ev["run_seq"] if "run_seq" in ev.keys() else None,
                                   "is_final": (ev["project_code"], ev["round"] + 1) not in next_rounds_pub,
+                                  "is_mark": scoring_kind(ev) == "mark",
                                   "adv": ev["advancement_count"] or 0})
     return {"competition": {k: comp[k] for k in ("id", "name", "date", "location")},
             "events": events, "published_results": published,
@@ -5532,7 +5657,7 @@ async def api_screen_state(competition_id: int, request: Request = None):
     comp = _public_comp_or_404(competition_id, request)
     conn = db.get_db()
     scoring = db.rows(conn.execute(
-        "SELECT code,name,project_code,round FROM events WHERE competition_id=? AND status='scoring'",
+        "SELECT code,name,project_code,round,run_seq FROM events WHERE competition_id=? AND status='scoring'",
         (competition_id,)))
     payload = _public_payload(comp) or {"published_results": [], "events": []}
     if payload.get("competition"):
@@ -5540,7 +5665,9 @@ async def api_screen_state(competition_id: int, request: Request = None):
     return {"competition": payload["competition"], "scoring_now": scoring,
             "published_results": payload["published_results"],
             "team_standings": _team_standings(comp["id"], published_only=True),
+            "pn": _proj_labels(conn, competition_id),
             "forced_mode": SCREEN_CONTROL.get("mode", "auto"),
+            "forced_event_id": SCREEN_CONTROL.get("event_id"),
             "updated_at": int(time.time())}
 
 
@@ -5563,6 +5690,28 @@ async def runboard_page(request: Request, competition_id: int):
     require_admin(request)
     comp = _comp_or_404(competition_id)
     return templates.TemplateResponse(request, "runboard.html", {"request": request, "comp": comp})
+
+
+def _advancement_backfilled(conn, ev, res=None):
+    """R149 晋级回填状态：本场晋级者是否已全部进入下一轮（同项目同轮+1 的全部分场）名单。
+    决赛/无下一轮 → True（不适用）。此前「晋级待确认」只按「已发布且有下一轮」判定，
+    确认回填之后提示与红色主按钮仍常驻（总览、结果中心、执行总表三处都认不出「已确认」）。"""
+    if not ev.get("advancement_count"):
+        return True
+    nxt = [r["id"] for r in db.rows(conn.execute(
+        "SELECT id FROM events WHERE competition_id=? AND project_code=? AND round=?",
+        (ev["competition_id"], ev["project_code"], ev["round"] + 1)))]
+    if not nxt:
+        return True
+    res = res or load_results(ev["id"])
+    adv = {str(r["competitor_number"]) for r in ((res or {}).get("overall_results") or [])
+           if r.get("advancement_status")}
+    if not adv:
+        return False
+    ph = ",".join("?" * len(nxt))
+    placed = {r["competitor_number"] for r in db.rows(conn.execute(
+        "SELECT DISTINCT competitor_number FROM event_competitors WHERE event_id IN ({0})".format(ph), nxt))}
+    return adv <= placed
 
 
 @app.get("/api/events/{competition_id}/runboard")
@@ -5606,6 +5755,7 @@ async def api_runboard(competition_id: int, request: Request = None):
             "announced": bool(ev["announced"]), "run_seq": ev["run_seq"],
             "scoring_type": ev["scoring_type"], "advancement_count": ev["advancement_count"] or 0,
             "has_next": (ev["project_code"], ev["round"] + 1) in next_rounds,
+            "adv_done": _advancement_backfilled(conn, ev, res),
             "cert_needed": ev["status"] == "published" and ev["scoring_type"] in ("顺位法", "评分制"),
             "cert_printed": bool(ev["cert_printed_at"]) if "cert_printed_at" in ev.keys() else False,
             "dances": dances, "roster": roster_list, "checked": checked,
@@ -5798,7 +5948,7 @@ async def staff_links_page(competition_id: int, request: Request = None):
             (competition_id, competition_id))):
         links.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
                       "url": _abs_url(request, _direct_link(conn, competition_id, u["role"], u["username"]))})
-    for j in db.rows(conn.execute("SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+    for j in sorted(db.rows(conn.execute("SELECT code, name FROM judges WHERE competition_id=?", (competition_id,))), key=_natural_key):
         links.append({"role": "judge", "username": j["code"], "name": j["name"] or ("裁判" + j["code"]),
                       "url": _abs_url(request, _direct_link(conn, competition_id, "judge", j["code"]))})
     # R112b 每条链接预生成二维码（segno→PNG data URI），点击行展开扫码直达
@@ -5838,8 +5988,8 @@ async def api_direct_links(competition_id: int, request: Request = None):
         url_role = "admin" if u["role"] == "compadmin" else u["role"]
         out.append({"role": u["role"], "username": u["username"], "name": u["display_name"],
                     "url": _abs_url(request, _direct_link(conn, competition_id, url_role, u["username"]))})
-    for j in db.rows(conn.execute(
-            "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+    for j in sorted(db.rows(conn.execute(
+            "SELECT code, name FROM judges WHERE competition_id=?", (competition_id,))), key=_natural_key):
         out.append({"role": "judge", "username": j["code"], "name": j["name"] or ("裁判" + j["code"]),
                     "url": _abs_url(request, _direct_link(conn, competition_id, "judge", j["code"]))})
     return {"links": out}
@@ -5868,12 +6018,17 @@ async def api_credentials_export(competition_id: int, request: Request = None):
         w.writerow([competition_id, comp["name"], role_name, u["username"], u["display_name"],
                     u["pw_plain"] or "（未记录，重置一次口令即留档）",
                     _abs_url(request, _direct_link(conn, competition_id, url_role, u["username"]))])
-    for j in db.rows(conn.execute(
-            "SELECT code, name FROM judges WHERE competition_id=? ORDER BY code", (competition_id,))):
+    for j in sorted(db.rows(conn.execute(
+            "SELECT code, name FROM judges WHERE competition_id=?", (competition_id,))), key=_natural_key):
         w.writerow([competition_id, comp["name"], "裁判", j["code"], j["name"] or ("裁判" + j["code"]),
                     "免口令（直达链接登录）", _abs_url(request, _direct_link(conn, competition_id, "judge", j["code"]))])
     return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": 'attachment; filename="credentials-{0}.csv"'.format(competition_id)})
+
+
+def _strip_round_suffix(name):
+    """R149：场次总表的项目名称若已以「第N轮」结尾（导出再导入即如此），拼接轮次前先去掉，避免「第1轮 第1轮」。"""
+    return re.sub(r"\s*第\s*\d+\s*轮\s*$", "", str(name or "").strip())
 
 
 def _clean_round_words(name):

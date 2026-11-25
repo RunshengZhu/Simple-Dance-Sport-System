@@ -18,13 +18,14 @@
   {% endif %}
 </div>
 <table>
-  <tr><th>序</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
+  <tr><th>序</th><th>名称</th><th>轮次</th><th>状态</th></tr>
   {% for ev in events %}
   <tr class="{{ 'scoring-now' if ev.status == 'scoring' }}"><td><b>{{ ev.run_seq or "—" }}</b></td>
-  <td>{{ ev.name }}</td><td>{{ ev.project_code }}</td><td>{{ ev.round }}</td>
-  <td>{% if ev.status == "scoring" %}<span class="ok">● 评分中</span>{% elif ev.status == "published" %}已发布{% elif ev.status == "calculated" %}已计算{% else %}待赛{% endif %}</td></tr>
+  {# R149：观众口径不露内部项目编号（P01Z01），名称已含项目信息 #}
+  <td>{{ ev.name }}</td><td>第 {{ ev.round }} 轮</td>
+  <td>{% if ev.status == "scoring" %}<span class="tag warn">● 评分中</span>{% elif ev.status == "published" %}<span class="tag ok">已发布</span>{% elif ev.status == "calculated" %}<span class="tag acc">已计算</span>{% else %}<span class="tag gray">待赛</span>{% endif %}</td></tr>
   {% endfor %}
-  {% if not events %}<tr><td colspan="5" class="muted">暂无赛程</td></tr>{% endif %}
+  {% if not events %}<tr><td colspan="4" class="muted">暂无赛程</td></tr>{% endif %}
 </table>
 {% endblock %}
 {% block scripts %}

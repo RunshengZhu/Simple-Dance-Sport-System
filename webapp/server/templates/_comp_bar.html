@@ -10,7 +10,8 @@
       <a href="/files/training/training-slides.pdf" target="_blank" title="培训幻灯片（按角色流程）">培训</a>
       <a href="/judge-guide" target="_blank" title="裁判快速流程（可打印）">裁判页</a>
       {% if not request.state.is_compadmin %}<a href="/users">用户</a>{% endif %}
-      <a href="#" class="exit-link" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href='/login'});return false">退出</a>
+      {# R149：赛事管理员退出回到本赛事登录页（此前所有角色退出都落到「总管理员登录」）#}
+      <a href="#" class="exit-link" data-exit="{% if request.state.is_compadmin %}/competitions/{{ comp.id }}/login?role=admin{% else %}/login{% endif %}" onclick="fetch('/api/logout',{method:'POST'}).then(function(){location.href=this.getAttribute('data-exit')}.bind(this));return false">退出</a>
     </span>
   </div>
   {% if nav %}
@@ -19,11 +20,13 @@
     <a class="nav-l1 {{ 'cur' if gid == nav.cur_group }}" href="{{ nav.base }}{{ items[0][0] }}">{{ glabel }}</a>
     {% endfor %}
   </div>
+  {% if nav.cur_items %}{# 页面不属于任何步骤时（如单场证书页）不渲染空的步骤栏——会只剩一道红色竖条 #}
   <div class="nav-level2">
     {% for item in nav.cur_items %}
     <a class="nav-sub-item {{ 'active' if item.label == nav.cur_label }}" href="{{ item.path }}">{{ item.label }}</a>
     {% endfor %}
   </div>
+  {% endif %}
   {% if nav.prep_step %}
   <div class="prep-step-banner">
     <span class="prep-step-tag">筹备第 {{ nav.prep_step.idx }} / {{ nav.prep_step.total }} 步</span>

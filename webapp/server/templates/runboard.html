@@ -18,15 +18,17 @@
       <option value="published">已发布</option>
     </select>
     <input id="rb-search" placeholder="搜场序/名称" class="rb-filter">
-    <button class="btn" id="rb-publish-all">一键发布全部</button>
+    <button class="btn" id="rb-publish-all" title="发布全部「已计算」场次">一键发布全部</button>
     <a class="btn secondary" href="/print" target="_blank">🖨 公示打印台</a>
     <button class="btn small" id="dbg-toggle" title="调试工具：一键生成裁判评分 / 代打浮层">🐞 调试</button>
   </span>
 </div>
 <div class="card" id="judge-bar" style="display:none">
   <b>裁判启用</b>
-  <span id="judge-chips" style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:8px"></span>
-  <span class="muted" style="margin-left:8px">点击启用/禁用（禁用裁判不可评分，收齐判定按启用裁判）</span>
+  <span id="judge-bar-sum" class="muted" style="margin-left:8px"></span>
+  <button type="button" class="btn small secondary" id="judge-bar-toggle" style="margin-left:8px" aria-expanded="false">展开 ▾</button>
+  <div id="judge-chips" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+  <p class="muted" id="judge-bar-hint" style="display:none;margin:6px 0 0">点击启用/禁用（禁用裁判不可评分，收齐判定按启用裁判）</p>
 </div>
 <div id="board"><div class="card muted">加载中…</div></div>
 <div id="dbg-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:80;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeDebugJudge()">
@@ -105,6 +107,11 @@ function render() {
       return stName(s) + ' ' + (by[s] || 0);
     }).join(' · ') + ' · 裁判 ' + DATA.judges_total + ' 名' +
     (certPending.length ? ' · <span class="tag warn">🏅 ' + certPending.length + ' 场证书待打印——见「公示打印台」</span>' : '');
+  // R149：一键发布只在有「已计算」场次时出现，并标明数量（常亮的红色主按钮容易被误点）
+  var calcN = by.calculated || 0;
+  var paBtn = document.getElementById('rb-publish-all');
+  paBtn.style.display = calcN ? '' : 'none';
+  paBtn.textContent = '发布已计算的 ' + calcN + ' 场';
   // 行卡
   var box = document.getElementById('board');
   var html = '';
@@ -132,13 +139,23 @@ function render() {
     if (e.status === 'published') actions += '<button class="btn small secondary" onclick="act(' + e.id + ',\'announce\')">' + (e.announced ? '取消播报' : '播报') + '</button>';
 
     if (DEBUG && e.status !== 'published') actions += '<button class="btn small warn" onclick="debugGenerate(' + e.id + ')">⚡生成评分</button>';
-    if (e.advancement_count > 0 && e.has_next && (e.status === 'calculated' || e.status === 'published'))
-      actions += '<a class="btn small" href="/events/' + CID + '/advancement?project=' + encodeURIComponent(e.project) + '&round=' + e.round + '&event=' + e.id + '">晋级确认</a>';
+    var prelim = e.advancement_count > 0 && e.has_next;   // 非决赛轮：有下一轮要回填
+    var done = e.status === 'calculated' || e.status === 'published';
+    if (prelim && done) {
+      // R149：晋级状态真实可辨——已回填显示完成标记（可点「调整」重开），未回填才是主按钮
+      var advHref = '/events/' + CID + '/advancement?project=' + encodeURIComponent(e.project) + '&round=' + e.round + '&event=' + e.id;
+      if (e.adv_done) actions += '<span class="tag ok" title="晋级名单已回填下一轮">晋级已回填 ✓</span>' +
+        '<a class="btn small secondary" href="' + advHref + '" title="重新打开晋级确认页调整名单">调整</a>';
+      else actions += '<a class="btn small" href="' + advHref + '">晋级确认</a>';
+    }
     var top3 = e.top3.map(function (t) {
       return '<span class="rb-top">第' + t.rank + ' ' + esc(t.number) + '</span>';
     }).join(' ');
     var progTxt = e.total_pairs ? (e.submitted_pairs + '/' + e.total_pairs + ' · ' + prog + '%') : '—';
     var checkedTxt = rosterN ? (checkedN + '/' + rosterN) : '—';
+    var advMetric = '<span class="rb-metric"><span class="rb-k">晋级</span><span class="rb-v">' + e.advancement_count + '</span></span>';
+    if (prelim && done) advMetric = '<span class="rb-metric"><span class="rb-k">晋级</span><span class="rb-v">' + e.advancement_count +
+      (e.adv_done ? ' · 已回填 ✓' : ' · 待确认') + '</span></span>';
     // R100b 行卡分层：头部（序号/编号/名称/状态/动作）+ 指标条（块化，独立行）
     html += '<div class="card rb-row' + (e.status === 'scoring' ? ' scoring-now' : '') + '" data-ceid="' + e.id + '" data-st="' + e.status + '">' +
       '<div class="rb-head">' +
@@ -154,19 +171,22 @@ function render() {
       '<div class="rb-metrics" onclick="toggleDetail(' + e.id + ')">' +
       '<span class="rb-metric"><span class="rb-k">检录</span><span class="rb-v">' + checkedTxt + '</span></span>' +
       '<span class="rb-metric"><span class="rb-k">评分</span><span class="rb-v">' + progTxt + '</span></span>' +
-      (e.advancement_count > 0 ? '<span class="rb-metric"><span class="rb-k">晋级</span><span class="rb-v">' + e.advancement_count + '</span></span>' : '') +
+      (e.advancement_count > 0 ? advMetric : '') +
       (e.status === 'published' ? '<span class="rb-metric"><span class="rb-k">播报</span><span class="rb-v">' + (e.announced ? '✓' : '未') + '</span></span>' : '') +
-      ((e.status === 'calculated' || e.status === 'published') ? '<span class="rb-metric rb-metric-wide"><span class="rb-k">前三</span><span class="rb-v">' + (top3 || '—') + '</span></span>' : '') +
+      // 非决赛轮（Mark 制预赛）的「第1名」只是票数并列，不是名次——不展示前三，只看晋级
+      ((e.status === 'calculated' || e.status === 'published') && !prelim ? '<span class="rb-metric rb-metric-wide"><span class="rb-k">前三</span><span class="rb-v">' + (top3 || '—') + '</span></span>' : '') +
       '</div>';
     html += '<div class="rb-detail" id="rb-detail-' + e.id + '" style="display:none">';
-    if (e.top3.length) {
+    if (e.top3.length && !prelim) {
       html += '<div class="rb-sec rb-top3line"><b>录取名次</b> ' + top3 + '</div>';
     }
     if (rosterN) {
+      // R149：不再把参数拼进 onclick 属性（引号会把处理函数截断成 toggleCheckin(13, 导致点击报错）——改 data 属性 + 事件委托
       html += '<div class="rb-sec"><b class="rb-sec-title">上场名单与检录</b> ';
       e.roster.forEach(function (n) {
         var on = e.checked.indexOf(n) > -1;
-        html += '<span class="chip ' + (on ? 'on' : 'off') + '" onclick="toggleCheckin(' + e.id + ',' + JSON.stringify(n) + ',' + (!on) + ')" title="点击切换检录">' + esc(n) + '</span>';
+        html += '<span class="chip ' + (on ? 'on' : 'off') + '" data-ck-ev="' + e.id + '" data-ck-num="' + esc(n) +
+          '" data-ck-state="' + (!on ? '1' : '0') + '" title="点击切换检录">' + esc(n) + '</span>';
       });
       html += '</div>';
     }
@@ -191,9 +211,10 @@ function render() {
   box.innerHTML = html || '<div class="card muted">该筛选条件下没有场次。</div>';
   renderJudgeBar();
   // R112c 自动展开评分中场次详情（裁判评分矩阵+检录一目了然）
+  // R149：管理员手动展开的行在重渲染（SSE 刷新/检录切换）后保持展开，不再被收起
   DATA.events.forEach(function (e) {
     var el = document.getElementById('rb-detail-' + e.id);
-    if (el) el.style.display = (e.status === 'scoring') ? '' : 'none';
+    if (el) el.style.display = (e.status === 'scoring' || OPEN_ROWS[e.id]) ? '' : 'none';
   });
   // R123 晋级确认页锚点跳转：#ev-{ceid} → 滚动定位 + 高亮闪烁。
   // R138 修复：锚点定位只执行一次（既往每次 SSE 刷新 render() 都重放定位/闪烁，
@@ -211,9 +232,13 @@ function render() {
   }
 }
 
+var OPEN_ROWS = {};   // R149：手动展开的行（ceid → 1），重渲染后保持
 function toggleDetail(id) {
   var el = document.getElementById('rb-detail-' + id);
-  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+  if (!el) return;
+  var open = el.style.display === 'none';
+  el.style.display = open ? '' : 'none';
+  if (open) OPEN_ROWS[id] = 1; else delete OPEN_ROWS[id];
 }
 
 var ACT_BUSY = {};
@@ -255,9 +280,10 @@ async function toggleJudgeEnabled(code, enabled) {
   try { await api('POST', '/api/events/' + CID + '/judges-toggle', {judge: code, enabled: enabled}); await load(); }
   catch (e) { toast(e.message, 'err'); }
 }
+var JB_OPEN_KEY = 'rb-judge-bar';
 function renderJudgeBar() {
   var bar = document.getElementById('judge-bar');
-  if (!bar) return;
+  if (!bar || !DATA) return;
   var dis = DATA.judges_disabled || [];
   var box = document.getElementById('judge-chips');
   box.innerHTML = '';
@@ -272,24 +298,62 @@ function renderJudgeBar() {
     b.onclick = function () { toggleJudgeEnabled(j, !on); };
     box.appendChild(b);
   });
+  // R149：裁判栏默认折叠成一行（常驻的 12 个大芯片占掉首屏，手机上第一屏看不到任何场次）
+  var onN = DATA.judges_all.length - dis.length;
+  document.getElementById('judge-bar-sum').innerHTML =
+    '启用 <b>' + onN + '</b> / ' + DATA.judges_all.length +
+    (dis.length ? ' · <span class="tag warn">停用 ' + dis.length + '</span>' : '');
+  var open = localStorage.getItem(JB_OPEN_KEY) === '1' || dis.length > 0;   // 有停用裁判时自动展开提示
+  var tg = document.getElementById('judge-bar-toggle');
+  box.style.display = open ? 'flex' : 'none';
+  document.getElementById('judge-bar-hint').style.display = open ? '' : 'none';
+  tg.textContent = open ? '收起 ▴' : '展开 ▾';
+  tg.setAttribute('aria-expanded', open ? 'true' : 'false');
   bar.style.display = '';
 }
+document.getElementById('judge-bar-toggle').onclick = function () {
+  var open = localStorage.getItem(JB_OPEN_KEY) === '1';
+  localStorage.setItem(JB_OPEN_KEY, open ? '0' : '1');
+  renderJudgeBar();
+};
+/* R149 检录芯片：事件委托（onclick 内联属性被引号截断的回归修复）。
+   切换后就地更新数据并重渲染，不再走全量 load（保留展开状态与滚动位置）。 */
+document.getElementById('board').addEventListener('click', function (ev) {
+  var c = ev.target.closest('.chip[data-ck-ev]');
+  if (!c) return;
+  ev.stopPropagation();
+  toggleCheckin(parseInt(c.dataset.ckEv, 10), c.dataset.ckNum, c.dataset.ckState === '1');
+});
+var CK_BUSY = {};
 async function toggleCheckin(id, num, state) {
-  try { await api('POST', '/api/competition-events/' + id + '/checkin', {numbers: [num], state: state}); await load(); }
-  catch (e) { toast(e.message, 'err'); }
+  if (CK_BUSY[id + ':' + num]) return;
+  CK_BUSY[id + ':' + num] = 1;
+  try {
+    await api('POST', '/api/competition-events/' + id + '/checkin', {numbers: [num], state: state});
+    var e = DATA.events.filter(function (x) { return x.id === id; })[0];
+    if (e) {
+      e.checked = e.checked.filter(function (x) { return x !== num; });
+      if (state) e.checked.push(num);
+    }
+    render();
+  } catch (err) { toast('检录失败：' + err.message, 'err'); }
+  finally { delete CK_BUSY[id + ':' + num]; }
 }
 
 document.getElementById('rb-publish-all').onclick = async function () {
-  if (!confirm('发布全部「已计算」场次？')) return;
-  var btn = this; btn.disabled = true;
-  var ok = 0;
-  DATA.events.filter(function (e) { return e.status === 'calculated'; });
-  for (var i = 0; i < DATA.events.length; i++) {
-    if (DATA.events[i].status !== 'calculated') continue;
-    try { await api('POST', '/api/competition-events/' + DATA.events[i].id + '/publish', {}); ok++; } catch (e) {}
+  var btn = this;
+  var todo = DATA.events.filter(function (e) { return e.status === 'calculated'; });
+  if (!todo.length) { toast('没有「已计算」待发布的场次'); return; }
+  if (!confirm('发布全部「已计算」场次（' + todo.length + ' 场）？')) return;
+  btn.disabled = true;
+  var ok = 0, failed = [];
+  for (var i = 0; i < todo.length; i++) {
+    try { await api('POST', '/api/competition-events/' + todo[i].id + '/publish', {}); ok++; }
+    catch (e) { failed.push(todo[i].code + '：' + e.message); }   // R149：失败场次逐条反馈，不再静默吞掉
   }
   btn.disabled = false;
-  toast('已发布 ' + ok + ' 场', 'ok');
+  if (failed.length) toast('已发布 ' + ok + ' 场；失败 ' + failed.length + ' 场——' + failed.slice(0, 2).join('；'), 'err', 7000);
+  else toast('已发布 ' + ok + ' 场', 'ok');
   await load();
 };
 document.getElementById('rb-filter-st').onchange = render;

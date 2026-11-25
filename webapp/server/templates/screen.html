@@ -37,9 +37,10 @@ function setSection(id) {
 function renderScoring() {
   var list = stateData.scoring_now || [];
   document.getElementById('scoring-list').innerHTML = list.length
-    ? '<table><tr><th>场次</th><th>名称</th><th>项目</th><th>轮次</th></tr>' +
+    ? '<table><tr><th>场次</th><th>轮次</th></tr>' +
       list.map(function (e) {
-        return '<tr><td>' + esc(e.code) + '</td><td>' + esc(e.name) + '</td><td>' + esc(e.project_code) + '</td><td>第' + esc(e.round) + '轮</td></tr>';
+        /* R149：大屏不露内部编号（P01Z01-R1A），观众口径=第N场+名称 */
+        return '<tr><td>' + (e.run_seq ? '第' + esc(e.run_seq) + '场 · ' : '') + esc(e.name) + '</td><td>第' + esc(e.round) + '轮</td></tr>';
       }).join('') + '</table>'
     : '暂无进行中场次';
 }
@@ -48,25 +49,45 @@ function renderResults() {
   var pub = stateData.published_results || [];
   var box = document.getElementById('results-list');
   if (!pub.length) { box.innerHTML = '<p class="muted" style="font-size:2vw">暂无已发布成绩</p>'; return; }
-  var i = resIdx % pub.length;
-  var p = pub[i];
-  var rows = (p.results || []).slice(0, 8).map(function (r) {
-    return '<tr' + (String(r.rank) === '1' ? ' class="rank-1"' : '') + '><td>' + esc(r.rank) + '</td><td>' + esc(r.competitor_number) + '</td><td>' +
-      esc(r.competitor_name || '') + '</td><td>' + esc(r.total_score) + '</td></tr>';
-  }).join('');
-  // 成绩公告一次只显示一个场次，含选手（单人/双人）或队伍名称，右上角标注轮换进度（1/N）
+  /* R149 锁定场次：forced_event_id 指定单场（颁奖/重播），不再轮换 */
+  var pinned = stateData.forced_event_id;
+  var list = pub;
+  if (pinned) {
+    list = pub.filter(function (p) { return p.id === pinned; });
+    if (!list.length) list = pub.slice();
+  }
+  var i = pinned ? 0 : resIdx % list.length;
+  var p = list[i];
+  var isMarkPrelim = p.is_mark && !p.is_final;
+  var rows, head;
+  if (isMarkPrelim) {
+    /* R149：Mark制预赛=晋级名单口径——全行展示 + 晋级列，票数不是名次 */
+    head = '<tr><th>背番号</th><th>选手 / 队伍</th><th>Mark数</th><th>晋级</th></tr>';
+    rows = (p.results || []).map(function (r) {
+      return '<tr><td>' + esc(r.competitor_number) + '</td><td>' + esc(r.competitor_name || '') + '</td><td>' +
+        esc(r.total_score) + '</td><td>' + (r.advancement_status ? '<b class="ok-text">✓ 晋级</b>' : '<span class="muted">未晋级</span>') + '</td></tr>';
+    }).join('');
+  } else {
+    head = '<tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th>总分</th></tr>';
+    rows = (p.results || []).slice(0, 8).map(function (r) {
+      return '<tr' + (String(r.rank) === '1' ? ' class="rank-1"' : '') + '><td>' + esc(r.rank) + '</td><td>' + esc(r.competitor_number) + '</td><td>' +
+        esc(r.competitor_name || '') + '</td><td>' + esc(r.total_score) + '</td></tr>';
+    }).join('');
+  }
+  // 成绩公告一次只显示一个场次，右上角标注轮换进度（1/N）
   box.innerHTML = '<h2 style="font-size:2.6vw">' + esc(p.name) +
-    '<span class="muted" style="font-size:1.6vw;margin-left:1.5vw">' + (i + 1) + ' / ' + pub.length + '</span></h2>' +
-    '<table><tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th>总分</th></tr>' + rows + '</table>';
+    '<span class="muted" style="font-size:1.6vw;margin-left:1.5vw">' + (pinned ? '已锁定' : ((i + 1) + ' / ' + list.length)) + '</span></h2>' +
+    '<table>' + head + rows + '</table>';
 }
 
 function renderStandings() {
   var ts = stateData.team_standings || {};
   var list = ts.standings || [];
+  var PN = stateData.pn || {};
   document.getElementById('standings-list').innerHTML = list.length
     ? '<table><tr><th>名次</th><th>单位</th><th>总分</th><th>各项目</th></tr>' +
       list.slice(0, 8).map(function (s, i) {
-        var per = Object.keys(s.per_project || {}).map(function (k) { return esc(k) + '=' + esc(s.per_project[k]); }).join(' ');
+        var per = Object.keys(s.per_project || {}).map(function (k) { return esc(PN[k] || k) + '=' + esc(s.per_project[k]); }).join(' ');
         return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.unit) + '</td><td>' + esc(s.total) + '</td><td style=\'font-size:1.4vw\'>' + per + '</td></tr>';
       }).join('') + '</table>'
     : '暂无团体总分';
@@ -89,6 +110,7 @@ function rotate() {
   idx += 1;
 }
 
+var lastPubCount = 0;
 async function refresh() {
   // R63 混沌压测修复：弱网下 fetch 失败/响应不完整不得中断轮播——保留上一轮 state，下个周期重试
   try {
@@ -96,6 +118,10 @@ async function refresh() {
     if (d) {
       stateData = d;
       forcedMode = stateData.forced_mode || 'auto';
+      /* R149 最新成绩优先：新成绩发布后立刻切到新场次，观众不用等一轮轮换 */
+      var n = (stateData.published_results || []).length;
+      if (n > lastPubCount && lastPubCount > 0) resIdx = n - 1;
+      lastPubCount = n;
       renderScoring(); renderResults(); renderStandings();
     }
   } catch (e) { /* 网络异常：静默保留旧数据 */ }

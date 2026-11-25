@@ -28,7 +28,7 @@
     <button class="btn" onclick="openEvent(false)">开启评分</button>
     <button class="btn secondary" onclick="openEvent(true)">重开（清空评分）</button>
     <button class="btn secondary" onclick="closeEvent()">关闭评分</button>
-    <button class="btn danger" onclick="returnScores()">退回评分（FR-G5）</button>
+    <button class="btn danger" onclick="returnScores()">退回评分</button>
     <span id="cand-count" class="muted"></span>
   </p>
   <details class="pool">
@@ -65,7 +65,7 @@
 {% if ev.status in ('scoring', 'calculated') %}
 <p class="lifecycle-bar">
   <button class="btn secondary" onclick="closeEvent()">关闭评分</button>
-  <button class="btn danger" onclick="returnScores()">退回评分（FR-G5）</button>
+  <button class="btn danger" onclick="returnScores()">退回评分</button>
   {% if next_ev %}<a class="btn secondary" href="/events/{{ comp.id }}/console/{{ next_ev.id }}">下一场 → {{ next_ev.code }}</a>{% endif %}
 </p>
 {% endif %}

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """core/ 算法编排：DB 行 → core 模型 → calculate_results → JSON。"""
 
+import re
 import sys
 import os
 
@@ -183,9 +184,14 @@ def dances_of(event_id):
         "SELECT name FROM event_dances WHERE event_id=? ORDER BY ord", (event_id,)))]
 
 
+def _natural_key(s):
+    """自然排序键：J1 < J2 < … < J10（ORDER BY code 是字典序，会得到 J1、J10、J11、J12、J2…）。"""
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(s))]
+
+
 def judges_of(competition_id):
-    return [r["code"] for r in db.rows(db.get_db().execute(
-        "SELECT code FROM judges WHERE competition_id=? ORDER BY code", (competition_id,)))]
+    return sorted((r["code"] for r in db.rows(db.get_db().execute(
+        "SELECT code FROM judges WHERE competition_id=?", (competition_id,)))), key=_natural_key)
 
 
 def is_complete(event, roster_list, dances, judge_codes):

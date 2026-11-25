@@ -10,7 +10,7 @@
 <div class="card">
   <label>项目</label>
   <select id="proj">
-    {% for p in projects %}<option value="{{ p }}" {% if p == project %}selected{% endif %}>{{ p }}</option>{% endfor %}
+    {% for p in projects %}<option value="{{ p }}" {% if p == project %}selected{% endif %}>{{ project_labels[p] }}</option>{% endfor %}
   </select>
   <label>轮次</label>
   <select id="rnd">

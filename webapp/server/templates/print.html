@@ -1,37 +1,86 @@
 {% extends "base.html" %}
 {% block title %}公示打印台{% endblock %}
 {% block bodyclass %}{% endblock %}
-{% block nav %}<span>公示打印台 · {{ who }}</span><a href="#" onclick="api('POST','/api/logout').then(()=>location='/login')">退出</a>{% endblock %}
+{% block nav %}<span>公示打印台 · {{ who }}</span><a href="#" onclick="api('POST','/api/logout').then(()=>location='{% if comp %}/competitions/{{ comp.id }}/login?role=printer{% else %}/competitions{% endif %}')">退出</a>{% endblock %}
 {% block content %}
 <h1>公示打印台{% if comp %} · {{ comp.name }}{% endif %}</h1>
 <p class="muted">各场次成绩发布后，可在此打印：公示结果表（含非决赛晋级结果 / 决赛名次）与荣誉证书。总表节奏控制请找主持人/管理员。</p>
 {% if not comp %}<div class="card"><p class="muted">暂无赛事。</p></div>{% endif %}
-{% for e in items %}
+{% if comp %}
 <div class="card">
-  <h2><span class="st-seq">{{ e.run_seq or "—" }}</span>{{ e.name }}
-    {% if e.status == 'published' %}<span class="tag ok">已发布</span>
-    {% elif e.status == 'calculated' %}<span class="tag acc">已计算</span>
-    {% elif e.status == 'scoring' %}<span class="tag warn">● 评分中</span>
-    {% else %}<span class="tag gray">待开始</span>{% endif %}
-    {% if e.cert_needed and not e.cert_printed_at %}<span class="tag warn">🏅 证书未打印</span>
-    {% elif e.cert_needed and e.cert_printed_at %}<span class="tag ok">🏅 证书已打印</span>{% endif %}
-  </h2>
-  <p class="muted">第{{ e.round }}轮 · {{ e.scoring_type }}{% if e.is_final %} · 决赛{% endif %}</p>
-  {% if e.status == 'published' %}
-  <p>
-    <a class="btn" href="/events/{{ comp.id }}/print/view/{{ e.id }}" target="_blank">🖨 打印公示结果表{% if e.is_final %}（名次表）{% else %}（晋级结果表）{% endif %}</a>
-    {% if e.cert_needed %}
-    <a class="btn secondary" href="/events/{{ comp.id }}/certs/{{ e.id }}" target="_blank">🏅 荣誉证书生成</a>
-    {% endif %}
+  {# R149 紧凑表：43 张卡变一张表；勾选后合并打印，少跑多趟 #}
+  <p class="pt-actions">
+    <button class="btn" id="pt-batch" disabled>🖨 合并打印所选结果表</button>
+    <button class="btn secondary" id="pt-sel-unprinted">只选未打印证书的场次</button>
+    <button class="btn secondary" id="pt-sel-all">全选已发布</button>
+    <button class="btn secondary" id="pt-sel-none">清空</button>
+    <span class="muted" id="pt-count"></span>
   </p>
-  {% else %}
-  <p class="muted">成绩发布后可打印。</p>
-  {% endif %}
+  <div class="table-fit">
+    <table class="pt-table">
+      <tr><th></th><th>场次</th><th>状态</th><th>证书</th><th>操作</th></tr>
+      {% for e in items %}
+      <tr class="pt-row {% if e.status != 'published' %}pt-dim{% endif %}" data-ceid="{{ e.id }}">
+        <td>{% if e.status == 'published' %}<input type="checkbox" class="pt-ck" data-ceid="{{ e.id }}">{% endif %}</td>
+        <td><span class="st-seq">{{ e.run_seq or "—" }}</span>{{ e.name }}
+          <span class="muted">第{{ e.round }}轮{% if e.is_final %} · 决赛{% endif %}</span></td>
+        <td>{% if e.status == 'published' %}<span class="tag ok">已发布</span>
+            {% elif e.status == 'calculated' %}<span class="tag acc">已计算</span>
+            {% elif e.status == 'scoring' %}<span class="tag warn">● 评分中</span>
+            {% else %}<span class="tag gray">待开始</span>{% endif %}</td>
+        <td>{% if e.cert_needed and not e.cert_printed_at %}<span class="tag warn">🏅 未打印</span>
+            {% elif e.cert_needed and e.cert_printed_at %}<span class="tag ok">🏅 已打印</span>
+            {% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if e.status == 'published' %}
+          <a class="btn small secondary" href="/events/{{ comp.id }}/print/view/{{ e.id }}" target="_blank">🖨 结果表</a>
+          {% if e.cert_needed %}<a class="btn small secondary" href="/events/{{ comp.id }}/certs/{{ e.id }}" target="_blank">🏅 证书</a>{% endif %}
+        {% else %}<span class="muted">发布后可打印</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      {% if not items %}<tr><td colspan="5" class="muted">暂无场次。</td></tr>{% endif %}
+    </table>
+  </div>
 </div>
-{% endfor %}
+{% endif %}
 {% endblock %}
 {% block scripts %}
 var CID = {{ comp.id if comp else 0 }};
+(function () {
+  var batch = document.getElementById('pt-batch');
+  var count = document.getElementById('pt-count');
+  function selected() {
+    return Array.prototype.map.call(document.querySelectorAll('.pt-ck:checked'), function (c) { return c.dataset.ceid; });
+  }
+  function paint() {
+    var sel = selected();
+    batch.disabled = !sel.length;
+    count.textContent = sel.length ? '已选 ' + sel.length + ' 场' : '';
+  }
+  document.addEventListener('change', function (e) {
+    if (e.target.classList && e.target.classList.contains('pt-ck')) paint();
+  });
+  batch.addEventListener('click', function () {
+    var sel = selected();
+    if (!sel.length) return;
+    window.open('/events/' + CID + '/print/view?ids=' + sel.join(','), '_blank');
+  });
+  document.getElementById('pt-sel-unprinted').addEventListener('click', function () {
+    /* 未打印证书的场次默认要出结果表+证书：勾选这些行，打印员逐行点「证书」 */
+    document.querySelectorAll('.pt-row').forEach(function (r) {
+      var ck = r.querySelector('.pt-ck');
+      if (ck) ck.checked = !!r.querySelector('.tag.warn');
+    });
+    paint();
+  });
+  document.getElementById('pt-sel-all').addEventListener('click', function () {
+    document.querySelectorAll('.pt-ck').forEach(function (c) { c.checked = true; });
+    paint();
+  });
+  document.getElementById('pt-sel-none').addEventListener('click', function () {
+    document.querySelectorAll('.pt-ck').forEach(function (c) { c.checked = false; });
+    paint();
+  });
+})();
 if (CID) connectSSE('/api/events/' + CID + '/stream', {
   results_published: softReload,
   cert_printed: softReload,

@@ -8,7 +8,48 @@
   <p>{{ comp.date or "日期待定" }} · {{ comp.location or "地点待定" }}</p>
 </section>
 
+{% set n_scoring = events | selectattr("status", "equalto", "scoring") | list | length %}
+{% set n_pub = events | selectattr("published", "equalto", true) | list | length %}
+{% set n_calc = events | selectattr("status", "equalto", "calculated") | list | length %}
+{% set n_pending = events | selectattr("status", "equalto", "pending") | list | length %}
+{# R149 赛事状态条：观众打开首页先知道「比赛进行到哪了」，再往下看 #}
+<div class="card home-status{% if n_scoring %} live{% endif %}">
+  {% if n_scoring %}
+  <span class="tag warn">● 正在比赛</span>
+  {% for e in events if e.status == 'scoring' %}
+  <b>第{{ e.run_seq or "—" }}场 {{ e.name }}</b>{% if not loop.last %}、{% endif %}
+  {% endfor %}
+  {% elif n_calc %}
+  <span class="tag acc">成绩整理中</span><span class="muted">{{ n_calc }} 场已完赛，成绩确认后即时发布</span>
+  {% elif n_pub and not n_pending %}
+  <span class="tag ok">已收官</span><span class="muted">全部 {{ events | length }} 场成绩已公示，可在下方「成绩公告」查看</span>
+  {% elif n_pub %}
+  <span class="tag ok">进行中</span><span class="muted">已发布 {{ n_pub }} / {{ events | length }} 场成绩</span>
+  {% else %}
+  <span class="tag gray">尚未开赛</span><span class="muted">共 {{ events | length }} 场比赛，开赛后此处实时更新</span>
+  {% endif %}
+</div>
+
+{% if comp.reg_open %}
+<div class="card" style="border-color:var(--acc)">
+  <h2 style="margin:0 0 4px">📝 报名通道已开放</h2>
+  <p class="muted" style="margin:0 0 10px">{{ comp.name }} 正在接收报名，点击下方进入报名页填写并提交。</p>
+  <a class="btn" href="/competitions/{{ comp.id }}/register">进入报名 →</a>
+</div>
+{% endif %}
+
 {% include "_lookup_widget.html" %}
+
+{# R149 分区导航：按内容存在性生成锚点，观众直达关心的分区 #}
+{% set has_results = published | length > 0 %}
+{% set has_standings = standings | length > 0 %}
+{% if has_results or has_standings %}
+<nav class="anchor-bar" aria-label="页面分区">
+  <a class="anchor-chip" href="#sec-schedule">赛程</a>
+  {% if has_results %}<a class="anchor-chip" href="#sec-results">成绩公告</a>{% endif %}
+  {% if has_standings %}<a class="anchor-chip" href="#sec-standings">团体总分</a>{% endif %}
+</nav>
+{% endif %}
 
 <div class="card comp-login">
   <b>参赛与工作人员入口</b>
@@ -28,15 +69,14 @@
       <a href="/screen?comp={{ comp.id }}">大屏</a></p>
 </div>
 
-<h2>赛程</h2>
+<h2 id="sec-schedule">赛程</h2>
 <div class="card table-fit">
   <table>
-    <tr><th>序</th><th>名称</th><th>项目</th><th>轮次</th><th>状态</th></tr>
+    <tr><th>序</th><th>名称</th><th>轮次</th><th>状态</th></tr>
     {% for e in events %}
     <tr class="ev-row{% if e.results or e.advanced or e.status != 'pending' %} clickable{% endif %}{% if e.status == 'scoring' %} scoring-now{% endif %}">
       <td><b>{{ e.run_seq or "—" }}</b></td>
-      <td>{{ e.name }} <span class="ev-code muted">{{ e.code }}</span></td>
-      <td>{{ e.project_code }}</td>
+      <td>{{ e.name }}</td>
       <td>第 {{ e.round }} 轮</td>
       <td>
         {% if e.status == 'pending' %}<span class="tag gray">待开始</span>
@@ -46,7 +86,7 @@
       </td>
     </tr>
     {% if e.results or e.advanced or e.status != 'pending' %}
-    <tr class="ev-detail" hidden><td colspan="5">
+    <tr class="ev-detail" hidden><td colspan="4">
       {% if e.status == 'scoring' %}<p class="muted" style="margin:4px 0">评分中——成绩确认后发布。</p>
       {% elif e.status == 'calculated' %}<p class="muted" style="margin:4px 0">成绩整理中，即将发布。</p>{% endif %}
       {% if e.advanced %}
@@ -69,11 +109,22 @@
 </div>
 
 {% if published %}
-<h2>成绩公告</h2>
+<h2 id="sec-results">成绩公告</h2>
 {% for p in published %}
 <div class="card">
-  <h3>{{ p.code }} {{ p.name }} <span class="tag ok">已发布</span></h3>
+  <h3>第{{ p.run_seq or "—" }}场 · {{ p.name }} <span class="tag ok">已发布</span></h3>
   <div class="table-fit">
+    {% if p.is_mark and not p.is_final %}
+    {# R149：Mark制预赛不显示名次列（并列票数序号会被误读成名次） #}
+    <table>
+      <tr><th>背番号</th><th>选手 / 队伍</th><th class="num">Mark数</th><th>晋级</th></tr>
+      {% for r in p.results %}
+      <tr><td>{{ r.competitor_number }}</td><td>{{ r.competitor_name or "—" }}</td><td class="num">{{ r.total_score }}</td>
+      <td>{% if r.advancement_status %}<b class="ok-text">✓ 晋级</b>{% else %}<span class="muted">未晋级</span>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    {% if p.adv %}<p class="muted" style="font-size:.85rem;margin:6px 0 0">Mark制预赛：以全部裁判 Mark 票数取前 {{ p.adv }} 名（对）晋级，同票并列一并晋级；票数不代表名次。</p>{% endif %}
+    {% else %}
     <table>
       <tr><th>名次</th><th>背番号</th><th>选手 / 队伍</th><th class="num">总分</th><th>{{ "录取" if p.is_final else "晋级" }}</th></tr>
       {% for r in p.results %}
@@ -88,25 +139,21 @@
       {% endfor %}
     </table>
     {% if p.is_final and p.adv %}<p class="muted" style="font-size:.85rem;margin:6px 0 0">本场 {{ p.results|length }} 人（对）上场，顺位录取 {{ p.adv }} 名；超出名额者不计入名次。</p>{% endif %}
+    {% endif %}
   </div>
 </div>
 {% endfor %}
 {% endif %}
 
-{% if comp.reg_open %}
-<div class="card" style="border-color:var(--acc)">
-  <h2 style="margin:0 0 4px">📝 报名通道已开放</h2>
-  <p class="muted" style="margin:0 0 10px">{{ comp.name }} 正在接收报名，点击下方进入报名页填写并提交。</p>
-  <a class="btn" href="/competitions/{{ comp.id }}/register">进入报名 →</a>
-</div>
-{% endif %}
 {% if standings %}
-<h2>团体总分榜</h2>
+<h2 id="sec-standings">团体总分榜</h2>
 <div class="card table-fit">
   <table>
     <tr><th>名次</th><th>单位</th><th class="num">总分</th></tr>
+    {% set ns = namespace(rank=0, prev=None) %}{# R149：同分并列 #}
     {% for s in standings %}
-    <tr><td>{{ loop.index }}</td><td>{{ s.unit }}</td><td class="num">{{ s.total }}</td></tr>
+    {% if s.total != ns.prev %}{% set ns.rank = loop.index %}{% endif %}{% set ns.prev = s.total %}
+    <tr><td>{{ ns.rank }}</td><td>{{ s.unit }}</td><td class="num">{{ s.total }}</td></tr>
     {% endfor %}
   </table>
 </div>

@@ -18,25 +18,29 @@
 </div>
 {% if dance_nav and dance_nav|length > 1 %}
 <div class="dance-nav">
-  <span class="dn-label">本场舞种：</span>
   {% for d in dance_nav %}
   {% if d.cur %}
-  <span class="dn-chip cur" id="dn-cur">{{ d.name }}{% if d.submitted %} ✓ 已提交{% else %} · 打分中{% endif %}</span>
+  <span class="dn-chip cur" id="dn-cur">{{ d.name }}{% if d.submitted %} ✓{% else %} · 打分中{% endif %}</span>
   {% else %}
-  <a class="dn-chip {{ 'done' if d.submitted else 'todo' }}" href="/judge/competition-events/{{ ev.id }}/dances/{{ d.name }}">{{ d.name }} {% if d.submitted %}✓ 已提交{% else %}● 待提交{% endif %}</a>
+  <a class="dn-chip {{ 'done' if d.submitted else 'todo' }}" href="/judge/competition-events/{{ ev.id }}/dances/{{ d.name }}">{{ d.name }}{% if d.submitted %} ✓{% else %} ●{% endif %}</a>
   {% endif %}
   {% endfor %}
 </div>
 {% endif %}
 {% if judge_disabled %}<p class="err" style="padding:10px 12px;border-radius:10px">⛔ 您已被管理员禁用评分，只能查看，无法提交。</p>{% endif %}
 {% if debug_judge %}<p class="warn" style="padding:8px 12px;border-radius:10px">🐞 调试代打模式：以裁判 <b>{{ debug_judge }}</b> 身份写入评分（提交走调试接口）。</p>{% endif %}
-<h1>{{ dance }} <span class="muted">{{ ev.name }} / {{ ev.scoring_type }}</span>
-  <span class="quota-badge {% if is_mark %}q-mark{% elif is_skating %}q-skate{% else %}q-score{% endif %}">
+{# R149 首屏压缩：标题一行 + 关键参数并入 meta 行，规则说明折叠进「?」（原六层首屏只留两行） #}
+<div class="js-head">
+  <h1>{{ dance }} <span class="quota-badge {% if is_mark %}q-mark{% elif is_skating %}q-skate{% else %}q-score{% endif %}">
     {% if is_mark %}晋级名额 <b>{{ ev.advancement_count or "按现场通知" }}</b>
     {% elif is_skating %}{% if ev.advancement_count %}前 <b>{{ ev.advancement_count }}</b> 晋级 · {% endif %}顺位 <b>1~{{ n }}</b>
     {% else %}评分 <b>0~10</b>{% endif %}
   </span>
-  <button type="button" class="btn small secondary" id="guide-btn" style="margin-left:8px">? 评分说明</button></h1>
+  <button type="button" class="btn small secondary" id="guide-btn" title="打分要点">? 规则</button></h1>
+  <p class="js-meta muted"><span title="{{ ev.name }}">{{ ev.name }}</span> · {{ ev.scoring_type }} ·
+    {% if is_score %}上场 {{ n }} 支队伍{% else %}上场 {{ n }} 名{% endif %}
+    {% if checked|length < n %} · <b class="warn-text">未检录 {{ n - checked|length }} 人置灰</b>{% endif %}</p>
+</div>
 <div id="guide-pop" class="guide-pop" hidden>
   <div class="guide-pop-box">
     <b>打分要点 · {{ ev.scoring_type }}</b>
@@ -135,6 +139,7 @@
 <div class="submit-bar">
   <span id="progress" class="muted"></span>
   <button class="btn big" id="submit" onclick="submitSheet()" {% if judge_disabled %}disabled title="已被管理员禁用评分"{% endif %}>提交「{{ dance }}」{% if is_skating %}名次表{% elif is_score %}评分表{% else %}Mark{% endif %}（当前舞种）</button>
+  <a class="btn big secondary" id="next-btn" style="display:none">下一舞种 →</a>
   <span id="msg"></span>
 </div>
 {% if not debug_judge %}<p class="muted">提交后如场次未关闭可再次修改提交。</p>{% endif %}
@@ -483,6 +488,26 @@ if (SKATING) {
 }
 
 var SUBMIT_BUSY = false;
+/* R149：提交成功后，提交键切换为「下一舞种/返回待评」——明确告诉裁判该去哪 */
+function showNextStep() {
+  var nxt = null;
+  {% if dance_nav and dance_nav|length > 1 %}
+  nxt = [{% for d in dance_nav %}{{ {'name': d.name, 'submitted': d.submitted} | tojson }}{% if not loop.last %}, {% endif %}{% endfor %}].filter(function (d) { return !d.submitted; })[0] || null;
+  {% endif %}
+  var btn = document.getElementById('submit'), nb = document.getElementById('next-btn');
+  if (nxt && nxt.name !== DANCE) {
+    btn.style.display = 'none';
+    nb.textContent = '下一舞种：' + nxt.name + ' →';
+    nb.href = '/judge/competition-events/' + CEID + '/dances/' + encodeURIComponent(nxt.name);
+    nb.style.display = '';
+  } else {
+    btn.textContent = '本舞种已提交 ✓';
+    btn.disabled = true;
+    nb.textContent = '返回待评场次 →';
+    nb.href = '/judge';
+    nb.style.display = '';
+  }
+}
 async function submitSheet() {
   if (SUBMIT_BUSY) return;   // R138 防双击重复提交
   var el = document.getElementById('msg');
@@ -500,10 +525,11 @@ async function submitSheet() {
   try {
     var r = await api('PUT', SUBMIT_URL, {values: collect()});
     el.className = 'ok';
-    el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判') + (DEBUGJ ? '（调试代打）' : '——仅当前舞种「' + DANCE + '」，请切换舞种继续');
+    el.textContent = '已提交' + (r.auto_calculated ? '（全员收齐，已自动计算）' : '，等待其他裁判') + (DEBUGJ ? '（调试代打）' : '');
     var dnCur = document.getElementById('dn-cur');
-    if (dnCur) dnCur.innerHTML = DANCE + ' ✓ 已提交';
+    if (dnCur) dnCur.innerHTML = DANCE + ' ✓';
     if (!DEBUGJ) { try { sessionStorage.removeItem('sheet:' + CEID + ':' + encodeURIComponent(DANCE)); } catch (err) {} }
+    if (!DEBUGJ) showNextStep();
   } catch (e) { el.className = 'err'; el.textContent = e.message; }
   finally {
     SUBMIT_BUSY = false;
