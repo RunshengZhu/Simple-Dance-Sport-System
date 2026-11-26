@@ -113,8 +113,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-ui.txt pytest
 
+      # --with-deps 在部分 runner 镜像上 apt 阶段失败——拆分：先装浏览器，再尽量装系统依赖，
+      # 失败时把安装日志推到 ci-log 分支定位（R150 首跑即在此步失败）
       - name: Install Chromium
-        run: python -m playwright install --with-deps chromium
+        run: |
+          set +e
+          python -m playwright install chromium > chromium-install.log 2>&1
+          CODE=$?
+          python -m playwright install-deps chromium >> chromium-install.log 2>&1 || true
+          set -e
+          tail -30 chromium-install.log
+          if [ $CODE -ne 0 ]; then exit $CODE; fi
+
+      - name: Push chromium install log (failure only)
+        if: failure()
+        run: |
+          git config user.name "ci-log"
+          git config user.email "ci@noreply"
+          git checkout -B ci-log
+          git add -f chromium-install.log
+          git commit -m "chromium 安装日志（$GITHUB_SHA）" || exit 0
+          git push -f origin ci-log
 
       - name: Run WebUI flow tests
         run: |
