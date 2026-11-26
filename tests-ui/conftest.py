@@ -92,6 +92,30 @@ def page(ctx):
     return ctx.new_page()
 
 
+_FAILED_SHOT = 0
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item, call):
+    """失败时把当前页面截图存到 tests-ui/artifacts/（CI 上随 ci-log 分支回传）。"""
+    global _FAILED_SHOT
+    outcome = yield
+    rep = outcome.get_result()
+    if rep.when != "call" or not rep.failed:
+        return
+    for key in ("page", "as_admin", "j1"):
+        pg = item.funcargs.get(key)
+        if pg is None:
+            continue
+        try:
+            os.makedirs("tests-ui/artifacts", exist_ok=True)
+            _FAILED_SHOT += 1
+            pg.screenshot(path="tests-ui/artifacts/%02d-%s.png" % (_FAILED_SHOT, item.name))
+        except Exception:
+            pass
+        break
+
+
 @pytest.fixture()
 def as_admin(page, ctx, base_url, client):
     """管理员已登录的 page（API cookie 注入）。"""

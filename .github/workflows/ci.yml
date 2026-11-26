@@ -97,6 +97,8 @@ jobs:
   webui:
     # R150 纯 WebUI 动线层：真实浏览器按角色动线点击（自起临时库，不触生产）
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 失败时把测试日志/截图推到 ci-log 分支供远程排查
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -112,7 +114,23 @@ jobs:
           pip install -r requirements.txt -r requirements-ui.txt pytest
 
       - name: Install Chromium
-        run: playwright install --with-deps chromium
+        run: python -m playwright install --with-deps chromium
 
       - name: Run WebUI flow tests
-        run: python -m pytest tests-ui -q --tb=short
+        run: |
+          if python -m pytest tests-ui -q --tb=short > ui-out.txt 2>&1; then
+            tail -3 ui-out.txt
+          else
+            tail -60 ui-out.txt
+            exit 1
+          fi
+
+      - name: Push test log and screenshots (failure only)
+        if: failure()
+        run: |
+          git config user.name "ci-log"
+          git config user.email "ci@noreply"
+          git checkout -B ci-log
+          git add -f ui-out.txt tests-ui/artifacts/ 2>/dev/null || true
+          git commit -m "webui 失败日志（$GITHUB_SHA）" || exit 0
+          git push -f origin ci-log
