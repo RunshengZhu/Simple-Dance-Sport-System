@@ -1,0 +1,3 @@
+# R150 WebUI 动线测试层（tests-ui/）专用依赖——只被 CI webui job 与本地 UI 测试安装，
+# 不进 requirements.txt（主 test/release-gate job 无需浏览器层）。
+playwright==1.60.0

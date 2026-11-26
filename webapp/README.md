@@ -40,16 +40,23 @@ $VENV/bin/python run.py                # 监听 0.0.0.0:8321
 
 ## 测试
 
-```bash
-# 1) core 等价性测试（pytest 环境）
-python -m pytest            # 74 passed（对照 src/ 桌面实现）
+三层测试体系（详见 `docs/CI.md`），全部对临时库运行、不碰生产数据：
 
-# 2) 服务端 E2E 冒烟（需服务已启动、全新 DB）
-rm -rf data && python run.py &      # 另一终端
-python server/selftest.py           # 31 项：登录/越权/导入/开场/评分/自动计算/发布/晋级回填/导出/备份
+```bash
+# L1：单测 + ASGI 层 API（最快）
+python -m pytest -q
+
+# L2：真实 HTTP 全链路·角色动线 A–H（临时库自起服；含 comp21 事故回归 + doctor 体检）
+bash webapp/tools/ci.sh
+
+# L3：纯 WebUI 固化动线（Playwright 真实浏览器按角色点击；自起临时库）
+pip install -r requirements-ui.txt && python -m playwright install chromium
+python -m pytest tests-ui -q
 ```
 
-E2E 覆盖：登录（含错误口令、非法裁判 ID）、未登录越权、导入校验、开场、双端评分提交、重复名次拒绝、收齐自动计算、结果与桌面版口径对照、发布/撤回与公开可见性、明细权限隔离、晋级预案与下一轮回填、Markdown/打印 HTML 导出、备份。
+覆盖：登录/越权、导入校验、开场检录、三制评分（Mark/顺位/评分制）、收齐自动计算、
+发布/撤回可见性、晋级互斥回填、公开端与大屏、打印/证书管线、恢复与 reset 加固，
+以及手机端关键布局。
 
 ## 部署（Linux 服务器，1.6G RAM 可用）
 

@@ -2146,6 +2146,7 @@ async def api_certs_generate_v2(competition_id: int, ceid: int, request: Request
     bg_reader = None
     bg_img = None
     bg_path = None
+    pw, ph = 595.0, 842.0   # R150：无背景设计走 A4 缺省页尺寸（此前 bg_type=none 时 NameError 500，CI 动线 G 抓到）
     bg_type = design["bg_type"]
     if bg_type != "none" and design["bg_fname"]:
         bg_path = os.path.join(_cert_design_dir(competition_id), design["bg_fname"])

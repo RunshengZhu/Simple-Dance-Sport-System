@@ -33,7 +33,7 @@
     <h3><span class="st-seq">{{ ev.run_seq or "—" }}</span>{{ ev.name }}
       <span class="ev-code muted">{{ ev.code }}</span>
       <span class="tag {{ 'ok' if ev.status == 'published' else 'acc' }}">{{ '已发布' if ev.status == 'published' else '已计算' }}</span>
-      <span class="tag {{ 'ok' if ev.announced else 'gray' }}">{{ '已播报 ✓' if ev.announced else '未播报' }}</span>
+      <span class="tag {{ 'ok' if ev.announced else 'gray' }}" id="ann-tag-{{ ev.id }}">{{ '已播报 ✓' if ev.announced else '未播报' }}</span>
     </h3>
     <div class="done-actions">
       <button type="button" class="btn secondary ann-btn" data-ceid="{{ ev.id }}" data-state="{{ 0 if ev.announced else 1 }}">
@@ -303,8 +303,8 @@ document.addEventListener('click', function (e) {
     api('POST', '/api/competition-events/' + ceid3 + '/announce', {announced: state3}).then(function () {
       ann.dataset.state = state3 ? '0' : '1';
       ann.textContent = state3 ? '取消播报' : '标记已播报';
-      var head = ann.closest('.done-head');
-      var tag = head ? head.querySelector('h3 .tag:nth-of-type(2)') : null;
+      /* R150：徽章按 id 定位——旧 :nth-of-type(2) 被 h3 内同型 span 干扰，翻转不生效（UI 动线测试抓到） */
+      var tag = document.getElementById('ann-tag-' + ceid3);
       if (tag) { tag.textContent = state3 ? '已播报 ✓' : '未播报';
                  tag.classList.toggle('ok', state3); tag.classList.toggle('gray', !state3); }
     }).catch(function (err) { toast('播报标记失败：' + err.message, 'err'); });

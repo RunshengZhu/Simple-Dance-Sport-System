@@ -24,6 +24,7 @@ import httpx  # noqa: E402
 import pytest  # noqa: E402
 
 from server import app as app_module, db as db_module  # noqa: E402
+from api_harness import Api, CSV_COMPETITORS, CSV_JUDGES, CSV_SCHEDULE  # noqa: E402
 
 db_module.init_db()
 
@@ -44,75 +45,35 @@ def req(method, path, content=None, json=None, role=None):
     return asyncio.run(_run())
 
 
-def _login(slot, payload):
-    r = req("POST", "/api/login", json=payload)
-    assert r.status_code == 200, r.text
-    _SESSIONS[slot] = r.headers["set-cookie"].split("session=")[1].split(";")[0]
-
-
+api = Api(req, store=_SESSIONS)
 COMP_NAME = "发版门禁赛"
 POINTS = {1: 9, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1}
-
-CSV_COMPETITORS = (
-    "背番号,姓名,学校/单位,项目编号\n"
-    + "".join("%d,选手%d,%s,P01A\n" % (n, n, "甲院" if n % 4 in (1, 2) else "乙院") for n in range(101, 113))
-    + "".join("%d,单项%d,%s,P02\n" % (n, n, "甲院" if n in (201, 202) else "乙院") for n in (201, 202, 203, 204))
-    + "205,外项选手,丙院,P03\n"
-).encode("utf-8")
-
-CSV_JUDGES = ("裁判ID,姓名\nJ1,甲裁\nJ2,乙裁\nJ3,丙裁\n").encode("utf-8")
-
-CSV_SCHEDULE = (
-    "场次编号,场次名称,项目编号,轮次,舞种,评分类型,晋级人数,参赛选手\n"
-    'P01Z01-R1A,平四初赛A,P01Z01,1,平四,MARK,4,"101,102,103,104,105,106"\n'
-    'P01Z01-R1B,平四初赛B,P01Z01,1,平四,MARK,4,"107,108,109,110,111,112"\n'
-    'P01Z01-R2A,平四复赛A,P01Z01,2,平四,MARK,2,""\n'
-    'P01Z01-R2B,平四复赛B,P01Z01,2,平四,MARK,2,""\n'
-    'P01Z01-R3,平四决赛,P01Z01,3,平四,SKATING,8,""\n'
-    'P02-R1,单项决赛,P02,1,华尔兹,SKATING,8,"201,202,203,204"\n'
-).encode("utf-8")
 
 
 @pytest.fixture(scope="module", autouse=True)
 def env():
-    _login("admin", {"role": "admin", "password": "admin123"})
-    r = req("POST", "/api/events", json={"name": COMP_NAME, "date": "2026-01-01",
-                                         "location": "CI"}, role="admin")
-    assert r.status_code == 200
-    cid = r.json()["id"]
-    assert req("POST", "/api/events/%d/activate" % cid, role="admin").status_code == 200
+    api.login_admin()
+    cid = api.create_activate(COMP_NAME)
     for kind, body in (("competitors", CSV_COMPETITORS), ("judges", CSV_JUDGES),
                        ("schedule", CSV_SCHEDULE)):
         r = req("POST", "/api/events/%d/imports/%s" % (cid, kind), content=body, role="admin")
         assert r.status_code == 200, (kind, r.text)
-    for code in ("J1", "J2", "J3"):
-        _login(code, {"role": "judge", "judge_id": code})
+    api.login_judges()
     sched = req("GET", "/api/public/events/%d/schedule" % cid).json()["events"]
     ceid = {e["code"]: e["id"] for e in sched}
     yield {"cid": cid, "ceid": ceid}
 
 
 def _checkin(cid, ceid):
-    p = req("GET", "/api/competition-events/%d/progress" % ceid, role="admin").json()
-    r = req("POST", "/api/competition-events/%d/checkin" % ceid,
-            json={"numbers": p["roster"], "state": True}, role="admin")
-    assert r.status_code == 200, r.text
+    api.checkin_all(ceid)
 
 
 def _score_mark(ceid, marked):
-    for role in ("J1", "J2", "J3"):
-        r = req("PUT", "/api/judge/competition-events/%d/dances/平四/sheet" % ceid,
-                json={"values": {n: True for n in marked}}, role=role)
-        assert r.status_code == 200, r.text
-        if role == "J3":
-            assert r.json().get("auto_calculated") is True
+    api.score_mark(ceid, marked)
 
 
 def _score_skate(ceid, dance, placement):
-    for role in ("J1", "J2", "J3"):
-        r = req("PUT", "/api/judge/competition-events/%d/dances/%s/sheet" % (ceid, dance),
-                json={"values": placement}, role=role)
-        assert r.status_code == 200, r.text
+    api.score_skate(ceid, dance, placement)
 
 
 # ---------------- 1) 开赛名单归属（事故回归） ----------------

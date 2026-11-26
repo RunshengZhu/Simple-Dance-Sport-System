@@ -521,6 +521,7 @@ async function submitSheet() {
   }
   var btn = document.getElementById('submit');
   SUBMIT_BUSY = true;
+  var okFlip = false;
   if (btn) { btn.disabled = true; btn.dataset.oldText = btn.textContent; btn.textContent = '提交中…'; }
   try {
     var r = await api('PUT', SUBMIT_URL, {values: collect()});
@@ -530,10 +531,11 @@ async function submitSheet() {
     if (dnCur) dnCur.innerHTML = DANCE + ' ✓';
     if (!DEBUGJ) { try { sessionStorage.removeItem('sheet:' + CEID + ':' + encodeURIComponent(DANCE)); } catch (err) {} }
     if (!DEBUGJ) showNextStep();
+    okFlip = true;   /* R150：成功翻转（已提交✓/下一舞种）不得被 finally 恢复旧文案覆盖（UI 动线测试抓到） */
   } catch (e) { el.className = 'err'; el.textContent = e.message; }
   finally {
     SUBMIT_BUSY = false;
-    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.oldText || btn.textContent; }
+    if (btn && !okFlip) { btn.disabled = false; btn.textContent = btn.dataset.oldText || btn.textContent; }
   }
 }
 var DEBUGJ = {% if debug_judge %}true{% else %}false{% endif %};
