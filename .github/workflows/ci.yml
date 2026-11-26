@@ -95,8 +95,9 @@ jobs:
         run: bash webapp/tools/ci.sh
 
   webui:
-    # R150 纯 WebUI 动线层：真实浏览器按角色动线点击（自起临时库，不触生产）
-    runs-on: ubuntu-latest
+    # R150 纯 WebUI 动线层：真实浏览器按角色动线点击（自起临时库，不触生产）。
+    # 钉在 24.04：runner 镜像升到 26.04 后 Playwright 1.60 拒装（平台未支持）
+    runs-on: ubuntu-24.04
     permissions:
       contents: write   # 失败时把测试日志/截图推到 ci-log 分支供远程排查
     steps:
@@ -113,27 +114,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-ui.txt pytest
 
-      # --with-deps 在部分 runner 镜像上 apt 阶段失败——拆分：先装浏览器，再尽量装系统依赖，
-      # 失败时把安装日志推到 ci-log 分支定位（R150 首跑即在此步失败）
       - name: Install Chromium
-        run: |
-          set +e
-          python -m playwright install chromium > chromium-install.log 2>&1
-          CODE=$?
-          python -m playwright install-deps chromium >> chromium-install.log 2>&1 || true
-          set -e
-          tail -30 chromium-install.log
-          if [ $CODE -ne 0 ]; then exit $CODE; fi
-
-      - name: Push chromium install log (failure only)
-        if: failure()
-        run: |
-          git config user.name "ci-log"
-          git config user.email "ci@noreply"
-          git checkout -B ci-log
-          git add -f chromium-install.log
-          git commit -m "chromium 安装日志（$GITHUB_SHA）" || exit 0
-          git push -f origin ci-log
+        run: python -m playwright install --with-deps chromium
 
       - name: Run WebUI flow tests
         run: |
