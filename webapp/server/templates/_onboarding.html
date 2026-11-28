@@ -6,29 +6,29 @@
 (function () {
   var SLIDES = {
     judge: [
-      {img: "/static/manual/r113/onb/dl-qr.png", t: "① 扫码直达", x: "「工作人员与直达链接」页有你的专属二维码——扫码即进，无需口令。扫一次存书签。"},
-      {img: "/static/manual/r113/onb/j-workbench.png", t: "② 点横幅进正在评的场次", x: "主持人开赛后，点红色横幅按钮，直达你还没打完的舞种。"},
-      {img: "/static/manual/r113/onb/j-mark.png", t: "③ Mark 制（预赛）：点行给 Mark", x: "点选手行给 Mark（再点取消）；「全选 / 清空」整批调整；勾满晋级名额后底部提交键才可用。"},
-      {img: "/static/manual/r113/onb/j-skating.png", t: "④ 顺位法（决赛）：点行排名次", x: "按名次依次点选手（1=最好，不并列）；「直接指定」模式先点选手再点下方名次键盘；排完全部选手提交。"},
-      {img: "/static/manual/r113/onb/j-score.png", t: "⑤ 评分制（集体舞）：打 0~10 分", x: "点输入框给分（一位小数）；全部选手打完即可提交。提交后未关场可修改重交，误刷新自动恢复。"}
+      {img: "/static/manual/r150/onb/dl-qr.png", t: "① 扫码直达", x: "「工作人员与直达链接」页有你的专属二维码——扫码即进，无需口令。扫一次存书签。"},
+      {img: "/static/manual/r150/onb/j-workbench.png", t: "② 点横幅进正在评的场次", x: "主持人开赛后，点红色横幅按钮，直达你还没打完的舞种；工作台默认只看待评/进行中。"},
+      {img: "/static/manual/r150/onb/j-mark.png", t: "③ Mark 制（预赛）：点行给 Mark", x: "点选手行给 Mark（绿=选中晋级）；「全选 / 清空」整批调整；勾满晋级名额后底部提交键才可用，提交后照引导进下一舞种。"},
+      {img: "/static/manual/r150/onb/j-skating.png", t: "④ 顺位法（决赛）：点行排名次", x: "按名次依次点选手（1=最好，不并列）；「直接指定」模式先点选手再点下方名次键盘；排完全部选手提交。"},
+      {img: "/static/manual/r150/onb/j-score.png", t: "⑤ 评分制（集体舞）：打 0~10 分", x: "点输入框给分（一位小数）；全部选手打完即可提交。提交后未关场可修改重交，误刷新自动恢复。"}
     ],
     marshal: [
-      {img: "/static/manual/r113/onb/m-check.png", t: "① 认卡", x: "红章 = 全场出场序；红框高亮 = 正在评分；芯片 = 背号 + 姓名。"},
-      {img: "/static/manual/r113/onb/m-chiprow.png", t: "② 点芯片检录", x: "点一下变绿 = 到场，再点取消；整队到齐点「全部检录」。"},
-      {img: "/static/manual/r113/onb/m-done.png", t: "③ 成绩出来后", x: "已完成场次「查看成绩 ▾」原位展开：名次 / 姓名 / 晋级列清楚，可下载成绩单。"},
-      {img: "/static/manual/r113/onb/m-filter.png", t: "④ 场次多时", x: "「待检录 / 已完成」筛选 + 编号搜索 + 「场次索引」跳转；「前置轮次未完成」＝等上一轮晋级回填。"}
+      {img: "/static/manual/r150/onb/m-check.png", t: "① 认卡", x: "红章 = 全场出场序；红框高亮 = 正在评分；芯片 = 背号 + 姓名；页首「当前场次条」告诉你现在盯哪场。"},
+      {img: "/static/manual/r150/onb/m-chiprow.png", t: "② 点芯片检录", x: "点一下变绿 = 到场，再点取消；整队到齐点「全部检录」。"},
+      {img: "/static/manual/r150/onb/m-done.png", t: "③ 成绩出来后", x: "已完成场次「查看成绩 ▾」原位展开：名次 / 姓名 / 晋级列清楚，可下载成绩单。"},
+      {img: "/static/manual/r150/onb/m-filter.png", t: "④ 场次多时", x: "默认「待检录」视图 + 编号搜索 + 「场次索引」（按项目分组、场次名称）跳转；「前置轮次未完成」＝等上一轮晋级回填。"}
     ],
     host: [
-      {img: "/static/manual/r113/onb/host-open.png", t: "① 检录完成后点「开赛」", x: "对「待开始」场次直接点红色「开赛」——无需找管理员，裁判工作台立即出现该场。"},
-      {img: "/static/manual/r113/onb/m-done.png", t: "② 成绩出来后播报", x: "「查看成绩 ▾」原位展开（含晋级 / 录取列），照单宣读后点「标记已播报」；可下载成绩单。"}
+      {img: "/static/manual/r150/onb/host-open.png", t: "① 检录完成后点「开赛」", x: "对「待开始」场次直接点红色「开赛」——无需找管理员，裁判工作台立即出现该场。"},
+      {img: "/static/manual/r150/onb/m-done.png", t: "② 成绩出来后播报", x: "「查看成绩 ▾」原位展开（含晋级 / 录取列），照单宣读后点「标记已播报」；可下载成绩单。"}
     ],
     admin: [
-      {img: "/static/manual/r113/onb/rb-open.png", t: "① 开场", x: "待开始行点「开场」——上场名单来自导入 / 上一轮晋级回填，默认全上。"},
-      {img: "/static/manual/r113/onb/rb-checkin.png", t: "② 检录", x: "检录 / 主持台点名（绿=到场）；总表展开行「上场名单与检录」也可代检录。未到场评分页自动灰显。"},
-      {img: "/static/manual/r113/onb/rb-judgebar.png", t: "③ 评分（控制上场裁判）", x: "顶部「裁判启用」栏一键停用/恢复裁判，默认全部启用；正在评分的场次自动展开，裁判 × 舞种矩阵实时。"},
-      {img: "/static/manual/r113/onb/rb-scoring.png", t: "④ 算分", x: "最后一位裁判提交即自动算分；也可「手动计算」。有异常点「退回评分」作废重来。"},
-      {img: "/static/manual/r113/onb/rb-published.png", t: "⑤ 发布", x: "「发布」或「一键发布全部」——观众页 / 成绩查询即时可见；发错可「撤回」。"},
-      {img: "/static/manual/r113/onb/adv.png", t: "⑥ 晋级与播报", x: "非决赛轮「晋级确认」：按名额自动名单 + 蛇形分配预览，确认后回填下一轮；主持台播报收官。"}
+      {img: "/static/manual/r150/onb/rb-open.png", t: "① 开场", x: "待开始行点「开场」——上场名单来自导入 / 上一轮晋级回填，默认全上。"},
+      {img: "/static/manual/r150/onb/rb-checkin.png", t: "② 检录", x: "检录 / 主持台点名（绿=到场）；总表展开行「上场名单与检录」也可代检录。未到场评分页自动灰显。"},
+      {img: "/static/manual/r150/onb/rb-judgebar.png", t: "③ 评分（控制上场裁判）", x: "顶部「裁判启用」栏默认折叠一行，展开后一键停用/恢复裁判；正在评分的场次自动展开，裁判 × 舞种矩阵实时。"},
+      {img: "/static/manual/r150/onb/rb-scoring.png", t: "④ 算分", x: "最后一位裁判提交即自动算分；也可「手动计算」。有异常点「退回评分」作废重来。"},
+      {img: "/static/manual/r150/onb/rb-published.png", t: "⑤ 发布", x: "行内「发布」或顶部「一键发布」（只在有已计算场次时出现并标数量）——观众页即时可见；发错可「撤回」。"},
+      {img: "/static/manual/r150/onb/adv.png", t: "⑥ 晋级与播报", x: "非决赛轮「晋级确认」：按名额自动名单 + 蛇形分配预览，确认后回填下一轮；主持台播报收官。"}
     ]
   };
   var key = {{ onb_key | tojson }};

@@ -9,25 +9,26 @@
 <div class="step">
   <h3><span class="st-seq">1</span> 打开工作台</h3>
   {% if guide_role == 'marshal' %}
-  <img src="/static/manual/r113/staff-marshal-home.png" alt="检录台：场次卡 + 检录芯片（含姓名）" loading="lazy">
+  <img src="/static/manual/r150/staff-marshal-home.png" alt="检录台：场次卡 + 检录芯片（含姓名）" loading="lazy">
   {% else %}
-  <img src="/static/manual/r113/staff-host-home.png" alt="主持台：场次卡 + 开赛按钮" loading="lazy">
+  <img src="/static/manual/r150/staff-host-home.png" alt="主持台：场次卡 + 开赛按钮" loading="lazy">
   {% endif %}
-  <p class="muted">用管理员发的账号口令登录本赛事（直达链接也可）。按场序列出场次卡：
-  「待开始」等开赛、「评分中」红框高亮、「已发布」可看成绩。</p>
+  <p class="muted">用管理员发的账号口令登录本赛事（直达链接也可）。打开即「待检录」视图 + 页首
+  「<b>当前场次条</b>」（现在该盯哪场，点「定位到场次」即闪烁跳转）；场次卡：「待开始」等开赛、
+  「评分中」红框高亮、「已完成」收进对应筛选。</p>
 </div>
 
 {% if guide_role == 'marshal' %}
 <div class="step">
   <h3><span class="st-seq">2</span> 检录：点芯片，绿=到场</h3>
-  <img src="/static/manual/r113/onb/m-chiprow.png" alt="检录芯片：背号 + 姓名，点击变绿" loading="lazy">
+  <img src="/static/manual/r150/onb/m-chiprow.png" alt="检录芯片：背号 + 姓名，点击变绿" loading="lazy">
   <p class="muted">对照上场名单点芯片（背号 + 姓名），变绿即到场，再点取消；整队到齐点「全部检录」。
   卡头实时显示「检录 N / M」。未检录的背号在裁判评分页灰显 🔒——检录完裁判立即可评。</p>
 </div>
 {% else %}
 <div class="step">
   <h3><span class="st-seq">2</span> 开赛：检录完成后点「开赛」</h3>
-  <img src="/static/manual/r113/onb/host-open.png" alt="待开始场次卡：开赛按钮 + 检录芯片（含姓名）" loading="lazy">
+  <img src="/static/manual/r150/onb/host-open.png" alt="待开始场次卡：开赛按钮 + 检录芯片（含姓名）" loading="lazy">
   <p class="muted">主持人可对「待开始」场次直接点「<b>开赛</b>」开启本场评分（无需找管理员）——
   裁判工作台立即出现该场。开赛后如需关闭/重开，联系赛事管理员。</p>
 </div>
@@ -35,16 +36,16 @@
 
 <div class="step">
   <h3><span class="st-seq">3</span> 成绩出来后原位查看</h3>
-  <img src="/static/manual/r113/m-staff-done.png" alt="已完成场次：查看成绩展开" loading="lazy">
+  <img src="/static/manual/r150/m-staff-done.png" alt="已完成场次：查看成绩展开" loading="lazy">
   <p class="muted">已完成的场次卡片内点「<b>查看成绩 ▾</b>」——名次 / 背番号 / <b>选手姓名</b> / 总分 /
   <b>晋级（决赛为「录取」）</b>一列标清 ✓，原地展开不跳页；宣读或核对后点「标记已播报」打勾备忘。</p>
 </div>
 
 <div class="step">
   <h3><span class="st-seq">4</span> 场次多时快速定位</h3>
-  <img src="/static/manual/r113/onb/m-filter.png" alt="筛选：全部 / 待检录 / 已完成" loading="lazy">
-  <p class="muted">用顶部「待检录 / 已完成」筛选 + 编号搜索；点「场次索引」按分组跳转；
-  卡片左上的<b>红色场序章</b>就是全场统一的出场序号。</p>
+  <img src="/static/manual/r150/onb/m-filter.png" alt="筛选：全部 / 待检录 / 已完成" loading="lazy">
+  <p class="muted">用顶部「待检录 / 已完成」筛选 + 编号/名称搜索；点「场次索引」按项目分组浏览
+  （第N场 + 场次名称，不露内部编号）；卡片左上的<b>红色场序章</b>就是全场统一的出场序号。</p>
 </div>
 
 <div class="card">
@@ -61,7 +62,7 @@
   　<a href="/manual">完整手册</a></p>
 </div>
 
-<p class="muted" style="margin-top:1.5rem">检录/主持快速流程 v1（截图版）· 2026-11-13 · 体育舞蹈评分系统</p>
+<p class="muted" style="margin-top:1.5rem">检录/主持快速流程 v2（截图版）· 2026-11-28 · 体育舞蹈评分系统</p>
 {% endblock %}
 {% block scripts %}
 {% endblock %}
