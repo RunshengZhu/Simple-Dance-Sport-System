@@ -1637,8 +1637,10 @@ async def cert_design_page(request: Request, competition_id: int):
 
 @app.get("/events/{competition_id}/certs/{ceid}", response_class=HTMLResponse)
 async def certs_page(request: Request, competition_id: int, ceid: int):
-    """R145 场次证书页：选设计 + 核对名单 + 生成（设计在筹备阶段「⑥ 荣誉证书设计」维护）。"""
-    require_admin(request)
+    """R145 场次证书页：选设计 + 核对名单 + 生成（设计在筹备阶段「⑥ 荣誉证书设计」维护）。
+    R151a：放开到本赛事工作人员——公示打印台的「🏅 证书」按钮是打印员主场，
+    此前 require_admin 会把打印员踢到总管理员登录页（E2E 全角色动线抓到）。"""
+    require_staff(request, competition_id)
     comp = _comp_or_404(competition_id)
     ev = _event_or_404(ceid)
     conn = db.get_db()
@@ -1651,7 +1653,7 @@ async def certs_page(request: Request, competition_id: int, ceid: int):
 
 @app.get("/api/events/{competition_id}/certs/designs")
 async def api_cert_designs_list(competition_id: int, request: Request = None):
-    require_admin(request)
+    require_staff(request, competition_id)
     conn = db.get_db()
     rows = [dict(r) for r in db.rows(conn.execute(
         "SELECT id, name, bg_type, fields, created_at FROM cert_designs WHERE competition_id=? ORDER BY id DESC",
@@ -1952,7 +1954,7 @@ def _cert_draw_page(cv, fields, ev, comp, num, rank, names, unit, day, pw, ph, f
 
 @app.get("/api/events/{competition_id}/certs/{ceid}")
 async def api_certs_data(competition_id: int, ceid: int, request: Request = None):
-    require_admin(request)
+    require_staff(request, competition_id)
     comp = _comp_or_404(competition_id)
     ev = _event_or_404(ceid)
     conn = db.get_db()
@@ -2126,7 +2128,7 @@ def _cert_design_dir(competition_id):
 @app.post("/api/events/{competition_id}/certs/{ceid}/generate-v2")
 async def api_certs_generate_v2(competition_id: int, ceid: int, request: Request = None):
     """证书 v2 生成：背景（PDF/图片）+ 文本框按坐标填充。输出单一 PDF（每位选手一页，按名次排序）。"""
-    s = require_admin(request)
+    s = require_staff(request, competition_id)
     comp = _comp_or_404(competition_id)
     ev = _event_or_404(ceid)
     body = await request.json()

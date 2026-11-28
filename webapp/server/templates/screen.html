@@ -84,11 +84,15 @@ function renderStandings() {
   var ts = stateData.team_standings || {};
   var list = ts.standings || [];
   var PN = stateData.pn || {};
+  /* R151a：同分并列名次（与管理榜/公众榜口径一致——此前 1、2 应为 1、1） */
+  var rank = 0, prev = null;
   document.getElementById('standings-list').innerHTML = list.length
     ? '<table><tr><th>名次</th><th>单位</th><th>总分</th><th>各项目</th></tr>' +
       list.slice(0, 8).map(function (s, i) {
+        if (prev === null || s.total !== prev) rank = i + 1;
+        prev = s.total;
         var per = Object.keys(s.per_project || {}).map(function (k) { return esc(PN[k] || k) + '=' + esc(s.per_project[k]); }).join(' ');
-        return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.unit) + '</td><td>' + esc(s.total) + '</td><td style=\'font-size:1.4vw\'>' + per + '</td></tr>';
+        return '<tr' + (rank === 1 ? ' class="rank-1"' : '') + '><td>' + rank + '</td><td>' + esc(s.unit) + '</td><td>' + esc(s.total) + '</td><td style=\'font-size:1.4vw\'>' + per + '</td></tr>';
       }).join('') + '</table>'
     : '暂无团体总分';
 }
